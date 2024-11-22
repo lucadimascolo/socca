@@ -56,7 +56,7 @@ b_ = gammaincinv(2.00*n_,0.5)
 n_ = jp.array(n_)
 b_ = jp.array(b_)
 class Sersic(Profile):
-    def __init__(self, **kwargs):
+    def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.re = kwargs.get('re', None)
         self.ns = kwargs.get('ns', None)
@@ -68,4 +68,17 @@ class Sersic(Profile):
         bn = jp.interp(ns,n_,b_)
         se = jp.power(r/re,1.00/ns)-1.00
         return Ie*jp.exp(-bn*se)
+    
+# Exponential profile
+# --------------------------------------------------------
+class Exponential(Profile):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.re = kwargs.get('re', None)
+        self.Ie = kwargs.get('Ie', None)
+
+    @staticmethod
+    @jax.jit
+    def profile(r,Ie,re):
+        return Ie*jp.exp(-r/re)
     
