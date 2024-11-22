@@ -8,9 +8,15 @@ import nautilus
 import dill
 
 class fitter:
-    def __init__(self,img,mod):
+    def __init__(self,img,mod,noise='normal'):
         self.img = img
         self.mod = mod
+
+        data  = self.img.data.at[self.img.mask==1.00].get()
+        sigma = self.img.sigma.at[self.img.mask==1.00].get()
+
+        if noise=='normal':
+            self.pdfnoise = lambda x: jax.scipy.stats.norm.logpdf(x,loc=data,scale=sigma).sum()
 
     def _prior_transform(self,pp):
         prior = []
@@ -56,11 +62,9 @@ class fitter:
         return mraw, msmo
 
     def _log_likelihood(self,pp):
-        _, msmo = self._get_model(pp)
-
-        res = self.img.data-msmo
-        return jax.scipy.stats.norm.logpdf(res.at[self.img.mask==1.00].get(),scale=0.05).sum()
-    
+        _, mod = self._get_model(pp)
+        mod = mod.at[self.img.mask==1.00].get()
+        return self.pdfnoise(mod)
 
     def run(self,nlive=100,dlogz=0.01,method='dynesty'):
         self.method = method

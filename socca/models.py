@@ -4,6 +4,8 @@ import types
 # Models
 # ========================================================
 
+# General model structure
+# --------------------------------------------------------
 class Model:
     def __init__(self):
         self.ncomp  = 0

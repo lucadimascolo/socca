@@ -73,7 +73,7 @@ class Image:
 
 #   Initialize image structure
 #   --------------------------------------------------------
-    def __init__(self,img,**kwargs):
+    def __init__(self,img,noise=None,**kwargs):
         self.hdu = _img_loader(img,kwargs.get('img_idx',0))
         self.hdu = _reduce_axes(self.hdu)
 
@@ -87,11 +87,12 @@ class Image:
         self.data = jp.array(self.hdu.data)
         self.grid = WCSgrid(self.hdu,self.wcs)
         
+        self.mask = np.ones(self.data.shape,dtype=int)
+        self.sigma = self.getsigma(noise)
+
         if 'center' in kwargs and 'csize' in kwargs:
             self.cutout(center=kwargs['center'],csize=kwargs['csize'])
-        
-        self.mask = np.ones(self.data.shape,dtype=int)
-        
+                
         if 'addmask' in kwargs:
             self.addmask(regions = kwargs['addmask'].get('regions'),
                          combine = kwargs['addmask'].get('combine',True),
@@ -102,6 +103,7 @@ class Image:
             self.addpsf(img = kwargs['addpsf'].get('img'),
                   normalize = kwargs['addpsf'].get('normalize',True),
                         idx = kwargs['addpsf'].get('idx',0))
+
 
 #   Build elliptical distance grid
 #   --------------------------------------------------------
@@ -132,6 +134,9 @@ class Image:
 
         cutout = Cutout2D(self.mask,center,csize,wcs=self.wcs)
         self.mask = jp.array(cutout.data); del cutout
+
+        cutout = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
+        self.sigma = jp.array(cutout.data); del cutout
 
         self.grid = WCSgrid(self.hdu,self.wcs)
 
@@ -174,7 +179,6 @@ class Image:
 
 #   Add PSF
 #   --------------------------------------------------------
-
     def addpsf(self,img,normalize=True,idx=0):
         if isinstance(img,np.ndarray):
             kernel = img.copy()
@@ -191,3 +195,35 @@ class Image:
         self.psf_fft = np.pad(kernel,pad_width,mode='constant')
         self.psf_fft = jp.fft.rfft2(jp.fft.fftshift(self.psf_fft))
         self.psf_fft = jp.abs(self.psf_fft)
+
+#   --------------------------------------------------------
+
+    def getsigma(self,noise):
+        if noise is None:
+            print('Using MAD for estimating noise level')
+            sigma = scipy.stats.median_abs_deviation(self.data,axis=None,scale='normal')
+            print(f'- noise level: {sigma:.2E}')
+        elif isinstance(noise,dict):
+            key = list(noise.keys())[0]
+            if isinstance(noise[key],float):
+                sigma = noise[key]
+            else:
+                sigma = _img_loader(noise[key],noise.get('idx',0)).data.copy()
+                
+            if key in ['var','variance']:
+                sigma = np.sqrt(sigma)
+            elif key in ['wht','wgt','weight','weights','invvar']:
+                sigma = 1.00/np.sqrt(sigma)
+            elif key not in ['sigma','sig','std','rms','stddev']:
+                raise ValueError('unrecognized noise identifier]')
+        else:
+            raise ValueError('noise must be a float or a dictionary')
+
+        if isinstance(sigma,float):
+            sigma = np.full(self.data.shape,sigma)
+
+        sigma[np.isinf(sigma)] = 0.00
+        sigma[np.isnan(sigma)] = 0.00
+        self.mask[sigma==0.00] = 0.00
+        
+        return jp.array(sigma)
