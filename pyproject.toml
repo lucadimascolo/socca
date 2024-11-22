@@ -20,7 +20,6 @@ dynesty    = "*"
 nautilus   = "*"
 corner     = "*"
 dill       = "*"
-socca = { git = "https://github.com/lucadimascolo/socca.git", branch = "main" }
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
