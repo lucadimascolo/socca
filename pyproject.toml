@@ -1,26 +1,29 @@
-[tool.poetry]
+[project]
 name = "socca"
 version = "0.0.1"
 description = "Source Characterization using a Composable Analysis"
-authors = ["Luca Di Mascolo <lucadimascolo@gmail.com>"]
-license = "MIT"
+authors = [
+    { name = "Luca Di Mascolo", email = "lucadimascolo@gmail.com" }
+]
+license = { name = "MIT" }
+requires-python = ">=3.12"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-matplotlib = "*"
-numpy      = "*"
-scipy      = "*"
-astropy    = "*"
-pyregion   = "*"
-reproject  = "*"
-jax        = "*"
-jaxlib     = "*"
-numpyro    = "*"
-dynesty    = "*"
-nautilus   = "*"
-corner     = "*"
-dill       = "*"
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "scipy",
+    "astropy",
+    "pyregion",
+    "reproject",
+    "jax",
+    "jaxlib",
+    "numpyro",
+    "dynesty",
+    "nautilus>=1.0",
+    "corner",
+    "dill"
+]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
