@@ -58,7 +58,9 @@ class fitter:
         #   mgrid = jax.scipy.signal.fftconvolve(mgrid,self.img.psf,mode='same')
             msmo = jp.fft.rfft2(jp.fft.fftshift(mraw))*self.img.psf_fft
             msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo)).real
-
+        else:
+            msmo = mraw
+            
         return mraw, msmo
 
     def _log_likelihood(self,pp):
