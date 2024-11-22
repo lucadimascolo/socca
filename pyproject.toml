@@ -2,10 +2,8 @@
 name = "socca"
 version = "0.0.1"
 description = "Source Characterization using a Composable Analysis"
-authors = [
-    { name = "Luca Di Mascolo", email = "lucadimascolo@gmail.com" }
-]
-license = { name = "MIT" }
+authors = [{name="Luca Di Mascolo",email="lucadimascolo@gmail.com" }]
+license = {"file" = "LICENSE"}
 requires-python = ">=3.12"
 
 dependencies = [
@@ -19,10 +17,14 @@ dependencies = [
     "jaxlib",
     "numpyro",
     "dynesty",
-    "nautilus>=1.0",
+    "nautilus-sampler",
     "corner",
     "dill"
 ]
+
+[tool.setuptools.packages.find]
+include = ["socca*"]
+exclude = ["input*"]
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]
