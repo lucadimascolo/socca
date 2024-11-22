@@ -5,7 +5,8 @@ from astropy.nddata import Cutout2D
 
 import pyregion
 import reproject
-import re
+
+import matplotlib.pyplot as plt
 
 # Support functions
 # ========================================================
@@ -19,7 +20,7 @@ def _hdu_mask(mask,hdu):
 # Load image
 # --------------------------------------------------------
 def _img_loader(img,idx=0):
-    if   isinstance(img,fits.hdu.image.ImageHDU):
+    if   isinstance(img,(fits.ImageHDU,fits.PrimaryHDU)):
         return img
     elif isinstance(img,fits.hdu.hdulist.HDUList):
         return img[idx]
@@ -86,18 +87,18 @@ class Image:
 
         self.data = jp.array(self.hdu.data)
         self.grid = WCSgrid(self.hdu,self.wcs)
-        
-        self.mask = np.ones(self.data.shape,dtype=int)
-        self.sigma = self.getsigma(noise)
 
+        self.mask = jp.ones(self.data.shape,dtype=int)
+        self.sigma = self.getsigma(noise)
+       
         if 'center' in kwargs and 'csize' in kwargs:
             self.cutout(center=kwargs['center'],csize=kwargs['csize'])
-                
+
         if 'addmask' in kwargs:
             self.addmask(regions = kwargs['addmask'].get('regions'),
                          combine = kwargs['addmask'].get('combine',True),
                             mask = kwargs['addmask'].get('mask',None))
-
+        
         self.psf = None
         if 'addpsf' in kwargs:
             self.addpsf(img = kwargs['addpsf'].get('img'),
@@ -125,18 +126,18 @@ class Image:
         getwcs : bool, optional
             If True, return the WCS object of the cutout.
         """
-        cutout = Cutout2D(self.data,center,csize,wcs=self.wcs)
-        cuthdu = fits.ImageHDU(data=cutout.data,header=cutout.wcs.to_header())
+        cutout_data  = Cutout2D(self.data,center,csize,wcs=self.wcs)
+        cutout_mask  = Cutout2D(self.mask,center,csize,wcs=self.wcs)
+        cutout_sigma = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
+
+        cuthdu = fits.ImageHDU(data=cutout_data.data,header=cutout_data.wcs.to_header())
         
         self.hdu  = cuthdu 
-        self.wcs  = cutout.wcs
-        self.data = jp.array(cutout.data); del cutout
+        self.wcs  = cutout_data.wcs
 
-        cutout = Cutout2D(self.mask,center,csize,wcs=self.wcs)
-        self.mask = jp.array(cutout.data); del cutout
-
-        cutout = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
-        self.sigma = jp.array(cutout.data); del cutout
+        self.data  = jp.array(cutout_data.data);  del cutout_data
+        self.mask  = jp.array(cutout_mask.data);  del cutout_mask
+        self.sigma = jp.array(cutout_sigma.data); del cutout_sigma
 
         self.grid = WCSgrid(self.hdu,self.wcs)
 
@@ -161,20 +162,22 @@ class Image:
         if combine: data = data*self.mask.copy()
 
         hdu = fits.PrimaryHDU(data=data,header=self.wcs.to_header())
-        
+
         for ri, r in enumerate(regions):
             if isinstance(r,str):
                 reg = pyregion.open(r)
-                idx = reg.get_mask(hdu=hdu).astype(bool)
+                idx = reg.get_mask(hdu=hdu)
+                idx = idx.astype(bool)
                 hdu.data[idx] = 0.00
             elif isinstance(r,pyregion.Shape):
                 idx = r.get_mask(hdu=hdu).astype(bool)
                 hdu.data[idx] = 0.00
             elif isinstance(r,np.ndarray):
-                hdu.data = hdu.data*(r==1.00)
-            elif isinstance(r,fits.ImageHDU):
+                hdu.data = hdu.data*(r==1.00).astype(float)
+            elif isinstance(r,fits.ImageHDU,fits.PrimaryHDU):
                 data = _hdu_mask(mask,self.hdu)
                 hdu.data = hdu.data*data    
+        
         self.mask = hdu.data.astype(int).copy()
 
 #   Add PSF
@@ -209,7 +212,7 @@ class Image:
                 sigma = noise[key]
             else:
                 sigma = _img_loader(noise[key],noise.get('idx',0)).data.copy()
-                
+
             if key in ['var','variance']:
                 sigma = np.sqrt(sigma)
             elif key in ['wht','wgt','weight','weights','invvar']:
@@ -224,6 +227,6 @@ class Image:
 
         sigma[np.isinf(sigma)] = 0.00
         sigma[np.isnan(sigma)] = 0.00
-        self.mask[sigma==0.00] = 0.00
+        self.mask.at[sigma==0.00].set(0)
         
         return jp.array(sigma)

@@ -12,8 +12,10 @@ class fitter:
         self.img = img
         self.mod = mod
 
-        data  = self.img.data.at[self.img.mask==1.00].get()
-        sigma = self.img.sigma.at[self.img.mask==1.00].get()
+        self.mask = jp.where(self.img.mask==1.00)
+
+        data  = self.img.data.at[self.mask].get()
+        sigma = self.img.sigma.at[self.mask].get()
 
         if noise=='normal':
             self.pdfnoise = lambda x: jax.scipy.stats.norm.logpdf(x,loc=data,scale=sigma).sum()
@@ -46,7 +48,7 @@ class fitter:
             kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
                      if key.startswith(f'src_{nc:02d}') and \
                         key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.mod.profile[nc]).parameters.keys())}
-            
+
             rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
                                      pars[f'src_{nc:02d}_yc'],
                                      pars[f'src_{nc:02d}_theta'],
@@ -55,17 +57,16 @@ class fitter:
             mraw += self.mod.profile[nc](rgrid,**kwarg)
 
         if self.img.psf is not None:
-        #   mgrid = jax.scipy.signal.fftconvolve(mgrid,self.img.psf,mode='same')
             msmo = jp.fft.rfft2(jp.fft.fftshift(mraw))*self.img.psf_fft
             msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo)).real
         else:
             msmo = mraw
-            
+
         return mraw, msmo
 
     def _log_likelihood(self,pp):
         _, mod = self._get_model(pp)
-        mod = mod.at[self.img.mask==1.00].get()
+        mod = mod.at[self.mask].get()
         return self.pdfnoise(mod)
 
     def run(self,nlive=100,dlogz=0.01,method='dynesty'):

@@ -90,15 +90,16 @@ class Exponential(Profile):
 class PolyExponential(Exponential):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
-        self.c1 = kwargs.get('c1', None)
-        self.c2 = kwargs.get('c2', None)
-        self.c3 = kwargs.get('c3', None)
-        self.c4 = kwargs.get('c4', None)
+        self.c1 = kwargs.get('c1',0.00)
+        self.c2 = kwargs.get('c2',0.00)
+        self.c3 = kwargs.get('c3',0.00)
+        self.c4 = kwargs.get('c4',0.00)
+        self.rc = kwargs.get('rc',1.00/3.60E+03)
 
     @staticmethod
     @jax.jit
-    def profile(r,Ie,re,c1,c2,c3,c4):
-        factor = 1.00+c1*r+c2*(r**2)+c3*(r**3)+c4*(r**4)
+    def profile(r,Ie,re,c1,c2,c3,c4,rc):
+        factor = 1.00+c1*(r/rc)+c2*((r/rc)**2)+c3*((r/rc)**3)+c4*((r/rc)**4)
         return factor*Ie*jp.exp(-r/re)
 
 # Modified Exponential
