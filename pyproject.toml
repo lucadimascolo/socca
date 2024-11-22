@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "socca"
+version = "0.0.1"
+description = "Source Characterization using a Composable Analysis"
+authors = ["Luca Di Mascolo <lucadimascolo@gmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+matplotlib = "*"
+numpy      = "*"
+scipy      = "*"
+astropy    = "*"
+pyregion   = "*"
+reproject  = "*"
+jax        = "*"
+jaxlib     = "*"
+numpyro    = "*"
+dynesty    = "*"
+nautilus   = "*"
+corner     = "*"
+dill       = "*"
+socca = { git = "https://github.com/lucadimascolo/socca.git", branch = "main" }
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
