@@ -81,4 +81,33 @@ class Exponential(Profile):
     @jax.jit
     def profile(r,Ie,re):
         return Ie*jp.exp(-r/re)
-    
+
+# PolyExponential
+# Mancera Piña et al., A&A, 689, A344 (2024)
+# --------------------------------------------------------
+class PolyExponential(Exponential):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.c1 = kwargs.get('c1', None)
+        self.c2 = kwargs.get('c2', None)
+        self.c3 = kwargs.get('c3', None)
+        self.c4 = kwargs.get('c4', None)
+
+    @staticmethod
+    @jax.jit
+    def profile(r,Ie,re,c1,c2,c3,c4):
+        factor = 1.00+c1*r+c2*(r**2)+c3*(r**3)+c4*(r**4)
+        return factor*Ie*jp.exp(-r/re)
+
+# Modified Exponential
+# Mancera Piña et al., A&A, 689, A344 (2024)
+# --------------------------------------------------------
+class ModExponential(Exponential):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.alpha = kwargs.get('alpha', None)
+
+    @staticmethod
+    @jax.jit
+    def profile(r,Ie,re,rm,alpha):
+        return Ie*jp.exp(-r/re)*(1.00+r/rm)**alpha
