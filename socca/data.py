@@ -105,7 +105,6 @@ class Image:
                   normalize = kwargs['addpsf'].get('normalize',True),
                         idx = kwargs['addpsf'].get('idx',0))
 
-
 #   Build elliptical distance grid
 #   --------------------------------------------------------
     def getgrid(self,xc,yc,theta=0.00,e=0.00):
@@ -129,6 +128,10 @@ class Image:
         cutout_data  = Cutout2D(self.data,center,csize,wcs=self.wcs)
         cutout_mask  = Cutout2D(self.mask,center,csize,wcs=self.wcs)
         cutout_sigma = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
+
+        if self.psf is not None:
+            cutout_psf = Cutout2D(self.psf,center,csize,wcs=self.wcs)
+            self.addpsf(cutout_psf.data,normalize=False)
 
         cuthdu = fits.ImageHDU(data=cutout_data.data,header=cutout_data.wcs.to_header())
         
@@ -194,9 +197,9 @@ class Image:
 
         self.psf = kernel
 
-        pad_width = [(0,max(0,s-k)) for s, k in zip(self.data.shape, kernel.shape)]
+        pad_width = [(0,max(0,s-k)) for s, k in zip(self.data.shape,kernel.shape)]
         self.psf_fft = np.pad(kernel,pad_width,mode='constant')
-        self.psf_fft = jp.fft.rfft2(jp.fft.fftshift(self.psf_fft))
+        self.psf_fft = jp.fft.rfft2(jp.fft.fftshift(self.psf_fft),s=self.psf_fft.shape)
         self.psf_fft = jp.abs(self.psf_fft)
 
 #   --------------------------------------------------------

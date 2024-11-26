@@ -20,6 +20,11 @@ class fitter:
         if noise=='normal':
             self.pdfnoise = lambda x: jax.scipy.stats.norm.logpdf(x,loc=data,scale=sigma).sum()
 
+        if not hasattr(self.img, 'shape'):
+            setattr(self.img, 'shape', self.img.data.shape)
+        else:
+            self.img.shape = self.img.data.shape
+
     def _prior_transform(self,pp):
         prior = []
         for pi, p in enumerate(pp):
@@ -56,11 +61,10 @@ class fitter:
      
             mraw += self.mod.profile[nc](rgrid,**kwarg)
 
+        msmo = mraw.copy()
         if self.img.psf is not None:
-            msmo = jp.fft.rfft2(jp.fft.fftshift(mraw))*self.img.psf_fft
-            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo)).real
-        else:
-            msmo = mraw
+            msmo = jp.fft.rfft2(jp.fft.fftshift(mraw),s=self.img.shape)*self.img.psf_fft
+            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=self.img.shape)).real
 
         return mraw, msmo
 
