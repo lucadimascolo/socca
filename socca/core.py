@@ -20,8 +20,8 @@ class fitter:
         if noise=='normal':
             self.pdfnoise = lambda x: jax.scipy.stats.norm.logpdf(x,loc=data,scale=sigma).sum()
 
-        if not hasattr(self.img, 'shape'):
-            setattr(self.img, 'shape', self.img.data.shape)
+        if not hasattr(self.img,'shape'):
+            setattr(self.img,'shape',self.img.data.shape)
         else:
             self.img.shape = self.img.data.shape
 

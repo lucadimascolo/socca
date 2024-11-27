@@ -207,7 +207,8 @@ class Image:
     def getsigma(self,noise):
         if noise is None:
             print('Using MAD for estimating noise level')
-            sigma = scipy.stats.median_abs_deviation(self.data,axis=None,scale='normal')
+            sigma = scipy.stats.median_abs_deviation(self.data[self.data!=0.00],axis=None,scale='normal')
+            sigma = float(sigma)
             print(f'- noise level: {sigma:.2E}')
         elif isinstance(noise,dict):
             key = list(noise.keys())[0]
