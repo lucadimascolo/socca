@@ -186,7 +186,7 @@ class Image:
 #   Add PSF
 #   --------------------------------------------------------
     def addpsf(self,img,normalize=True,idx=0):
-        if isinstance(img,np.ndarray):
+        if isinstance(img,(np.ndarray,jp.ndarray)):
             kernel = img.copy()
         else:
             hdu = _img_loader(img,idx)
