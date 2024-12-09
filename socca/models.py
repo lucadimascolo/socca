@@ -56,7 +56,9 @@ class Profile:
         for key in kwarg.keys():
             if isinstance(kwarg[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
                 raise ValueError('Priors must be fixed values, not distributions.')
-        
+            if kwarg[key] is None:
+                raise ValueError(f'keyword {key} is set to None. Please provide a valid value.')
+            
         mgrid = self.profile(rgrid,**kwarg)
 
         if convolve:
