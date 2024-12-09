@@ -52,6 +52,11 @@ class Profile:
     def getmap(self,img,convolve=False):
         rgrid = img.getgrid(self.xc,self.yc,self.theta,self.e)
         kwarg = {key: eval(f'self.{key}') for key in list(inspect.signature(self.profile).parameters.keys()) if key!='r'}
+        
+        for key in kwarg.keys():
+            if isinstance(kwarg[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+                raise ValueError('Priors must be fixed values, not distributions.')
+        
         mgrid = self.profile(rgrid,**kwarg)
 
         if convolve:
