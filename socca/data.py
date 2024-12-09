@@ -89,7 +89,7 @@ class Image:
         self.grid = WCSgrid(self.hdu,self.wcs)
 
         self.mask = jp.ones(self.data.shape,dtype=int)
-        self.mask = self.mask.at(jp.isnan(self.data)).set(0)
+        self.mask = self.mask.at[jp.isnan(self.data)].set(0)
         
         self.sigma = self.getsigma(noise)
        
