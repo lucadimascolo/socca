@@ -30,6 +30,7 @@ class Model:
 
         self.profile.append(prof.profile)
         self.ncomp += 1
+        
 
 # General profile class
 # --------------------------------------------------------
@@ -47,6 +48,20 @@ class Profile:
     @abstractmethod
     def profile(self,r):
         pass
+
+    def getmap(self,img,convolve=False):
+        rgrid = img.getgrid(self.xc,self.yc,self.theta,self.e)
+        kwarg = {key: eval(f'self.{key}') for key in list(inspect.signature(self.profile).parameters.keys()) if key!='r'}
+        mgrid = self.profile(rgrid,**kwarg)
+
+        if convolve:
+            if img.psf is None:
+                 warnings.warn('No PSF defined, so no convolution will be performed.')
+            else:
+                mgrid = jp.fft.rfft2(jp.fft.fftshift(mgrid),s=img.data.shape)*img.psf_fft
+                mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
+        return mgrid
+
 
 # Sersic profile
 # --------------------------------------------------------

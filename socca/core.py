@@ -1,7 +1,5 @@
 from .utils import *
 
-import inspect
-
 import dynesty
 import nautilus
 
