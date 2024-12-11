@@ -46,25 +46,35 @@ class fitter:
                 del kwarg
 
         mraw = jp.zeros_like(self.img.grid.x)
+        mpts = jp.fft.rfft2(mraw,s=self.img.shape)
 
         for nc in range(self.mod.ncomp):
             kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
                      if key.startswith(f'src_{nc:02d}') and \
                         key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.mod.profile[nc]).parameters.keys())}
 
-            rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
-                                     pars[f'src_{nc:02d}_yc'],
-                                     pars[f'src_{nc:02d}_theta'],
-                                     pars[f'src_{nc:02d}_e'])
-     
-            mraw += self.mod.profile[nc](rgrid,**kwarg)
+            if self.mod.type[nc]=='Point':
+                uphase, vphase = self.img.fft.shift(kwarg['xc'],kwarg['yc'])
+                mpts += kwarg['Ic']*self.img.fft.pulse*jp.exp(-(uphase+vphase))
+            else:
+                rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
+                                         pars[f'src_{nc:02d}_yc'],
+                                         pars[f'src_{nc:02d}_theta'],
+                                         pars[f'src_{nc:02d}_e'])
+        
+                mraw += self.mod.profile[nc](rgrid,**kwarg)
 
         msmo = mraw.copy()
         if self.img.psf is not None:
-            msmo = jp.fft.rfft2(jp.fft.fftshift(mraw),s=self.img.shape)*self.img.psf_fft
+            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=self.img.shape))*self.img.psf_fft
             msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=self.img.shape)).real
-
-        return mraw, msmo
+       
+        mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=self.img.shape)).real
+        
+        if self.img.psf is None:
+            msmo = msmo+mpts
+            
+        return mraw+mpts, msmo
 
     def _log_likelihood(self,pp):
         _, mod = self._get_model(pp)

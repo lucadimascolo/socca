@@ -14,8 +14,8 @@ def loguniform(low,high):
 
 # Normal
 # --------------------------------------------------------
-def normal(mean,std):
-    return scipy.stats.norm(loc=mean,scale=std)
+def normal(loc,scale):
+    return scipy.stats.norm(loc=loc,scale=scale)
 
 # Split-normal
 # --------------------------------------------------------

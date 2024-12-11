@@ -14,8 +14,11 @@ class Model:
         self.paridx = []
         self.profile = []
         self.tied = []
+        self.type = []
 
     def addcomponent(self,prof):
+        self.type.append(prof.__class__.__name__)
+
         for pi, p in enumerate(prof.__dict__.keys()):
             par = eval(f'prof.{p}')
             self.params.append( f'src_{self.ncomp:02d}_{p}')
@@ -27,7 +30,6 @@ class Model:
                 self.tied.append(True)
             else:
                 self.tied.append(False)
-
         self.profile.append(prof.profile)
         self.ncomp += 1
         
@@ -136,3 +138,32 @@ class ModExponential(Exponential):
     @jax.jit
     def profile(r,Ie,re,rm,alpha):
         return Ie*jp.exp(-r/re)*(1.00+r/rm)**alpha
+
+
+# Point source
+# --------------------------------------------------------
+class Point:
+    def __init__(self,**kwargs):
+        self.xc = kwargs.get('xc',None)
+        self.yc = kwargs.get('yc',None)
+        self.Ic = kwargs.get('Ic',None)
+    
+    def getmap(self,img,convolve=False):
+        kwarg = {key: eval(f'self.{key}') for key in ['xc','yc','Ic']}
+        
+        for key in kwarg.keys():
+            if isinstance(kwarg[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+                raise ValueError('Priors must be fixed values, not distributions.')
+            if kwarg[key] is None:
+                raise ValueError(f'keyword {key} is set to None. Please provide a valid value.')
+            
+        uphase, vphase = img.fft.shift(self.xc,self.yc)
+        mgrid = self.Ic*img.fft.pulse*jp.exp(-(uphase+vphase))
+
+        if convolve:
+            if img.psf is None:
+                 warnings.warn('No PSF defined, so no convolution will be performed.')
+            else:
+                mgrid = mgrid*img.psf_fft
+            mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
+        return mgrid

@@ -66,19 +66,45 @@ class WCSgrid:
         self.x = jp.array(gridwx)
         self.y = jp.array(gridwy)
 
+class FFTspec:
+    def __init__(self,hdu):
+        self.pulse = jp.fft.rfft2(jp.fft.ifftshift(jp.fft.ifft2(jp.full(hdu.data.shape,1.00+0.00j))).real)
+        self.freq  = [jp.array(np.broadcast_to(np.fft.rfftfreq(hdu.data.shape[1])[None,:],self.pulse.shape)),
+                      jp.array(np.broadcast_to(np.fft.fftfreq(hdu.data.shape[0])[:,None],self.pulse.shape))]
+        self.head  = {key: hdu.header[key] for idx in [1,2] for key in [f'CRPIX{idx}',f'CRVAL{idx}',f'CDELT{idx}',f'NAXIS{idx}']}
+
+    def shift(self,xc,yc):
+        dx = (xc-self.head['CRVAL1'])*jp.cos(jp.deg2rad(self.head['CRVAL2']))
+        dy = (yc-self.head['CRVAL2'])
+        uphase = -2.00j*jp.pi*self.freq[0]*(self.head['CRPIX1']-2.50+dx/jp.abs(self.head['CDELT1']))
+        vphase =  2.00j*jp.pi*self.freq[1]*(self.head['CRPIX2']-1.50+dy/jp.abs(self.head['CDELT2']))
+        return uphase, vphase
+
 
 # Image constructor
 # ========================================================
-
+#  Initialize image structure
+#  --------------------------------------------------------
 class Image:
-
-#   Initialize image structure
-#   --------------------------------------------------------
     def __init__(self,img,noise=None,**kwargs):
         self.hdu = _img_loader(img,kwargs.get('img_idx',0))
         self.hdu = _reduce_axes(self.hdu)
 
         self.wcs = WCS(self.hdu.header)
+
+        if self.hdu.header['CRPIX1']!=1.00+0.50*self.hdu.header['NAXIS1'] or \
+           self.hdu.header['CRPIX2']!=1.00+0.50*self.hdu.header['NAXIS2']:
+
+            crpix1 = 1.00+0.50*self.hdu.header['NAXIS1']
+            crpix2 = 1.00+0.50*self.hdu.header['NAXIS2']
+            crval1, crval2 = self.wcs.all_pix2world(crpix1,crpix2,1)
+
+            self.hdu.header['CRPIX1'] = crpix1
+            self.hdu.header['CRPIX2'] = crpix2
+            self.hdu.header['CRVAL1'] = float(crval1)
+            self.hdu.header['CRVAL2'] = float(crval2)
+            
+            self.wcs = WCS(self.hdu.header)
 
         if 'CDELT1' not in self.hdu.header or \
            'CDELT2' not in self.hdu.header:
@@ -87,6 +113,7 @@ class Image:
 
         self.data = jp.array(self.hdu.data)
         self.grid = WCSgrid(self.hdu,self.wcs)
+        self.fft  = FFTspec(self.hdu)
 
         self.mask = jp.ones(self.data.shape,dtype=int)
         self.mask = self.mask.at[jp.isnan(self.data)].set(0)
@@ -145,6 +172,7 @@ class Image:
         self.sigma = jp.array(cutout_sigma.data); del cutout_sigma
 
         self.grid = WCSgrid(self.hdu,self.wcs)
+        self.fft  = FFTspec(self.hdu)
 
 #   Add mask
 #   --------------------------------------------------------
@@ -188,6 +216,14 @@ class Image:
 #   Add PSF
 #   --------------------------------------------------------
     def addpsf(self,img,normalize=True,idx=0):
+        """
+        img : array_like, HDU, or str
+            PSF image to be added to the image.
+        normalize : bool, optional  
+            If True, normalize the PSF image.
+        idx : int, optional 
+            Index of the HDU to be loaded.  
+        """
         if isinstance(img,(np.ndarray,jp.ndarray)):
             kernel = img.copy()
         else:
@@ -207,6 +243,15 @@ class Image:
 #   --------------------------------------------------------
 
     def getsigma(self,noise):
+        """
+        noise : float or dict
+            Noise level to be used in the image.
+            If a float, it is used as the noise level.
+            If a dict, it must have the key 'sigma' or 'sig' for the noise level.
+            If a dict, it can have the key 'var' or 'variance' for the variance.
+            If a dict, it can have the key 'wht', 'wgt', 'weight', 'weights', or 'invvar' for the inverse variance.
+            If None, the Median Absolute Deviation (MAD) method is used to estimate the noise level.
+        """
         if noise is None:
             print('Using MAD for estimating noise level')
             sigma = scipy.stats.median_abs_deviation(self.data[self.data!=0.00],axis=None,scale='normal')
