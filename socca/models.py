@@ -147,6 +147,10 @@ class Point:
         self.xc = kwargs.get('xc',None)
         self.yc = kwargs.get('yc',None)
         self.Ic = kwargs.get('Ic',None)
+
+    @staticmethod
+    def profile(xc,yc,Ic):
+        pass
     
     def getmap(self,img,convolve=False):
         kwarg = {key: eval(f'self.{key}') for key in ['xc','yc','Ic']}
@@ -167,3 +171,4 @@ class Point:
                 mgrid = mgrid*img.psf_fft
             mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
         return mgrid
+    
