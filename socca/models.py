@@ -78,6 +78,9 @@ class Profile:
                 mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
         return mgrid
 
+    def refactor(self):
+        warnings.warn('Nothing to refactor here.')
+        return self.__class__(**self.__dict__)
 
 # Sersic profile
 # --------------------------------------------------------
