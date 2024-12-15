@@ -45,45 +45,36 @@ class fitter:
                 pars[key] = self.mod.priors[key](**kwarg)
                 del kwarg
 
-        def body_foo(carry):
-            nc, mraw, mpts, cpos = carry
-
-            kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
-                     if key.startswith(f'src_{nc:02d}') and \
-                     key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.mod.profile[nc]).parameters.keys())}
-
-            if self.mod.type[nc]=='Point':
-                uphase, vphase = self.img.fft.shift(kwarg['xc'],kwarg['yc'])
-                mone = kwarg['Ic']*self.img.fft.pulse*jp.exp(-(uphase+vphase))
-                
-                if self.mod.positive[nc] and jp.any(mone<0.00): 
-                    cpos = True
-                
-                mpts += mone.copy(); del mone
-            else:
-                rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
-                                        pars[f'src_{nc:02d}_yc'],
-                                        pars[f'src_{nc:02d}_theta'],
-                                        pars[f'src_{nc:02d}_e'])
-
-                mone = self.mod.profile[nc](rgrid,**kwarg)
-                if self.mod.positive[nc] and jp.any(mone<0.00): 
-                    cpos = True
-
-                mraw += mone.copy(); del mone
-
-            return nc+1, mraw, mpts, cpos
-
-        def cond_foo(carry):
-            nc, _, _, cpos = carry
-            return jp.logical_and(nc<self.mod.ncomp, jp.logical_not(cpos))
-
         mraw = jp.zeros_like(self.img.grid.x)
         mpts = jp.fft.rfft2(mraw,s=self.img.shape)
 
         cpos = False
         
-        _, mraw, mpts, cpos = jax.lax.while_loop(cond_foo,body_foo,(0,mraw,mpts,cpos))
+        for nc in range(self.mod.ncomp):
+            if not cpos:
+                kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
+                        if key.startswith(f'src_{nc:02d}') and \
+                        key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.mod.profile[nc]).parameters.keys())}
+
+                if self.mod.type[nc]=='Point':
+                    uphase, vphase = self.img.fft.shift(kwarg['xc'],kwarg['yc'])
+                    mone = kwarg['Ic']*self.img.fft.pulse*jp.exp(-(uphase+vphase))
+                    
+                    if self.mod.positive[nc] and jp.any(mone<0.00): 
+                        cpos = True
+                    
+                    mpts += mone.copy(); del mone
+                else:
+                    rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
+                                            pars[f'src_{nc:02d}_yc'],
+                                            pars[f'src_{nc:02d}_theta'],
+                                            pars[f'src_{nc:02d}_e'])
+
+                    mone = self.mod.profile[nc](rgrid,**kwarg)
+                    if self.mod.positive[nc] and jp.any(mone<0.00): 
+                        cpos = True
+
+                    mraw += mone.copy(); del mone
 
         if not cpos:
             msmo = mraw.copy()
