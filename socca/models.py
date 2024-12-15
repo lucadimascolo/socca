@@ -13,13 +13,14 @@ class Model:
         self.params = []
         self.paridx = []
         self.profile = []
+        self.positive = []
         self.tied = []
         self.type = []
 
-    def addcomponent(self,prof):
+    def addcomponent(self,prof,positive=None):
         self.type.append(prof.__class__.__name__)
-
-        for pi, p in enumerate(prof.__dict__.keys()):
+        self.positive.append(prof.positive if positive is None else positive)
+        for pi, p in enumerate(prof.listpars()):
             par = eval(f'prof.{p}')
             self.params.append( f'src_{self.ncomp:02d}_{p}')
             self.priors.update({f'src_{self.ncomp:02d}_{p}': par})
@@ -43,7 +44,13 @@ class Profile:
         
         self.theta = kwargs.get('theta',None)
         self.e = kwargs.get('e',None)
-    
+
+        self.positive = kwargs.get('positive',True)
+
+    def listpars(self):
+        okeys = ['positive']
+        return [key for key in self.__dict__.keys() if key not in okeys]
+        
     def addpar(self,name,value=None):
         setattr(self,name,value)
 
@@ -125,6 +132,26 @@ class PolyExponential(Exponential):
     def profile(r,Ie,re,c1,c2,c3,c4,rc):
         factor = 1.00+c1*(r/rc)+c2*((r/rc)**2)+c3*((r/rc)**3)+c4*((r/rc)**4)
         return factor*Ie*jp.exp(-r/re)
+
+# PolyExponential
+# Mancera Piña et al., A&A, 689, A344 (2024)
+# --------------------------------------------------------
+class PolyExpoRefact(Exponential):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.I1 = kwargs.get('I1',0.00)
+        self.I2 = kwargs.get('I2',0.00)
+        self.I3 = kwargs.get('I3',0.00)
+        self.I4 = kwargs.get('I4',0.00)
+        self.rc = kwargs.get('rc',1.00/3.60E+03)
+
+    @staticmethod
+    @jax.jit
+    def profile(r,Ie,re,I1,I2,I3,I4,rc):
+        factor = Ie*jp.exp(-r/re)
+        for ci in range(1,5):
+            factor += eval(f'I{ci}')*jp.exp(-r/re)*((r/rc)**ci)
+        return factor
 
 # Modified Exponential
 # Mancera Piña et al., A&A, 689, A344 (2024)
