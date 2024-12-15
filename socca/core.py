@@ -16,7 +16,7 @@ class fitter:
         sigma = self.img.sigma.at[self.mask].get()
 
         if noise=='normal':
-            self.pdfnoise = lambda x: jax.scipy.stats.norm.logpdf(x,loc=data,scale=sigma).sum()
+            self.pdfnoise = lambda x: jax.scipy.stats.norm.logpdf(x,loc=data,scale=sigma)
 
         if not hasattr(self.img,'shape'):
             setattr(self.img,'shape',self.img.data.shape)
@@ -48,6 +48,8 @@ class fitter:
         mraw = jp.zeros_like(self.img.grid.x)
         mpts = jp.fft.rfft2(mraw,s=self.img.shape)
         
+        mneg = jp.zeros_like(self.img.grid.x)
+
         for nc in range(self.mod.ncomp):
             kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
                     if key.startswith(f'src_{nc:02d}') and \
@@ -57,7 +59,7 @@ class fitter:
                 uphase, vphase = self.img.fft.shift(kwarg['xc'],kwarg['yc'])
                 
                 mone = kwarg['Ic']*self.img.fft.pulse*jp.exp(-(uphase+vphase))
-                if self.mod.positive[nc]: mone = jp.where(mone<0.00,-jp.inf,mone)
+                if self.mod.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
                 
                 mpts += mone.copy(); del mone
             else:
@@ -67,7 +69,7 @@ class fitter:
                                             pars[f'src_{nc:02d}_e'])
 
                 mone = self.mod.profile[nc](rgrid,**kwarg)
-                if self.mod.positive[nc]: mone = jp.where(mone<0.00,-jp.inf,mone)
+                if self.mod.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
 
                 mraw += mone.copy(); del mone
         
@@ -81,13 +83,14 @@ class fitter:
         if self.img.psf is None:
             msmo = msmo+mpts
             
-        return mraw+mpts, msmo
+        return mraw+mpts, msmo, mneg
 
     def _log_likelihood(self,pp):
-        _, mod = self._get_model(pp)
+        _, mod, neg = self._get_model(pp)
 
         mod = mod.at[self.mask].get()
-        return self.pdfnoise(mod)
+        pdf = self.pdfnoise(mod)
+        return jp.where(neg.at[self.mask].get()==1,-jp.inf,pdf).sum()
 
     def run(self,nlive=100,dlogz=0.01,method='dynesty'):
         self.method = method
@@ -146,11 +149,11 @@ class fitter:
     def getmodel(self,usebest=True):
         if usebest:
             p = np.array([np.quantile(samp,0.50) for samp in self.samples.T])
-            mraw, msmo = self._get_model(p)
+            mraw, msmo, _ = self._get_model(p)
         else:
             mraw, msmo = [], []
             for sample in self.samples:
-                mraw_, msmo_ = self._get_model(sample)
+                mraw_, msmo_, _ = self._get_model(sample)
                 mraw.append(mraw_); del mraw_
                 msmo.append(msmo_); del msmo_
 
