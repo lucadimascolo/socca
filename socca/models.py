@@ -102,6 +102,7 @@ class Sersic(Profile):
         se = jp.power(r/re,1.00/ns)-1.00
         return Ie*jp.exp(-bn*se)
     
+
 # Exponential profile
 # --------------------------------------------------------
 class Exponential(Profile):
@@ -114,6 +115,7 @@ class Exponential(Profile):
     @jax.jit
     def profile(r,Ie,re):
         return Ie*jp.exp(-r/re)
+
 
 # PolyExponential
 # Mancera Piña et al., A&A, 689, A344 (2024)
@@ -132,6 +134,7 @@ class PolyExponential(Exponential):
     def profile(r,Ie,re,c1,c2,c3,c4,rc):
         factor = 1.00+c1*(r/rc)+c2*((r/rc)**2)+c3*((r/rc)**3)+c4*((r/rc)**4)
         return factor*Ie*jp.exp(-r/re)
+
 
 # PolyExponential
 # Mancera Piña et al., A&A, 689, A344 (2024)
@@ -152,6 +155,13 @@ class PolyExpoRefact(Exponential):
         for ci in range(1,5):
             factor += eval(f'I{ci}')*jp.exp(-r/re)*((r/rc)**ci)
         return factor
+    
+    def refactor(self):
+        kwargs = {key: eval(f'self.{key}') for key in ['xc','yc','theta','e','Ie','re','rc']}
+        for ci in range(1,5): kwargs.update({f'c{ci}': eval(f'I{ci}')/kwargs['Ie']})
+
+        return PolyExponential(**kwargs)
+
 
 # Modified Exponential
 # Mancera Piña et al., A&A, 689, A344 (2024)
