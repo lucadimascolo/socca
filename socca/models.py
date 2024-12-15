@@ -188,6 +188,12 @@ class Point:
         self.yc = kwargs.get('yc',None)
         self.Ic = kwargs.get('Ic',None)
 
+        self.positive = kwargs.get('positive',False)
+
+    def listpars(self):
+        okeys = ['positive']
+        return [key for key in self.__dict__.keys() if key not in okeys]
+     
     @staticmethod
     def profile(xc,yc,Ic):
         pass

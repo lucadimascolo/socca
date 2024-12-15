@@ -47,56 +47,47 @@ class fitter:
 
         mraw = jp.zeros_like(self.img.grid.x)
         mpts = jp.fft.rfft2(mraw,s=self.img.shape)
-
-        cpos = False
         
         for nc in range(self.mod.ncomp):
-            if not cpos:
-                kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
-                        if key.startswith(f'src_{nc:02d}') and \
-                        key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.mod.profile[nc]).parameters.keys())}
+            kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
+                    if key.startswith(f'src_{nc:02d}') and \
+                    key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.mod.profile[nc]).parameters.keys())}
 
-                if self.mod.type[nc]=='Point':
-                    uphase, vphase = self.img.fft.shift(kwarg['xc'],kwarg['yc'])
-                    mone = kwarg['Ic']*self.img.fft.pulse*jp.exp(-(uphase+vphase))
-                    
-                    if self.mod.positive[nc] and jp.any(mone<0.00): 
-                        cpos = True
-                    
-                    mpts += mone.copy(); del mone
-                else:
-                    rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
+            if self.mod.type[nc]=='Point':
+                uphase, vphase = self.img.fft.shift(kwarg['xc'],kwarg['yc'])
+                
+                mone = kwarg['Ic']*self.img.fft.pulse*jp.exp(-(uphase+vphase))
+                if self.mod.positive[nc]: mone = jp.where(mone<0.00,-jp.inf,mone)
+                
+                mpts += mone.copy(); del mone
+            else:
+                rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
                                             pars[f'src_{nc:02d}_yc'],
                                             pars[f'src_{nc:02d}_theta'],
                                             pars[f'src_{nc:02d}_e'])
 
-                    mone = self.mod.profile[nc](rgrid,**kwarg)
-                    if self.mod.positive[nc] and jp.any(mone<0.00): 
-                        cpos = True
+                mone = self.mod.profile[nc](rgrid,**kwarg)
+                if self.mod.positive[nc]: mone = jp.where(mone<0.00,-jp.inf,mone)
 
-                    mraw += mone.copy(); del mone
-
-        if not cpos:
-            msmo = mraw.copy()
-            if self.img.psf is not None:
-                msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=self.img.shape))*self.img.psf_fft
-                msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=self.img.shape)).real
+                mraw += mone.copy(); del mone
         
-            mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=self.img.shape)).real
+        msmo = mraw.copy()
+        if self.img.psf is not None:
+            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=self.img.shape))*self.img.psf_fft
+            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=self.img.shape)).real
+    
+        mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=self.img.shape)).real
+        
+        if self.img.psf is None:
+            msmo = msmo+mpts
             
-            if self.img.psf is None:
-                msmo = msmo+mpts
-            
-        return mraw+mpts, msmo, cpos
+        return mraw+mpts, msmo
 
     def _log_likelihood(self,pp):
-        _, mod, cpos = self._get_model(pp)
-        
-        if cpos:
-            return -jp.inf
-        else:
-            mod = mod.at[self.mask].get()
-            return self.pdfnoise(mod)
+        _, mod = self._get_model(pp)
+
+        mod = mod.at[self.mask].get()
+        return self.pdfnoise(mod)
 
     def run(self,nlive=100,dlogz=0.01,method='dynesty'):
         self.method = method
@@ -155,11 +146,11 @@ class fitter:
     def getmodel(self,usebest=True):
         if usebest:
             p = np.array([np.quantile(samp,0.50) for samp in self.samples.T])
-            mraw, msmo, _ = self._get_model(p)
+            mraw, msmo = self._get_model(p)
         else:
             mraw, msmo = [], []
             for sample in self.samples:
-                mraw_, msmo_, _ = self._get_model(sample)
+                mraw_, msmo_ = self._get_model(sample)
                 mraw.append(mraw_); del mraw_
                 msmo.append(msmo_); del msmo_
 
