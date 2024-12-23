@@ -51,9 +51,33 @@ def _reduce_axes(hdu):
 # Coordinate grids
 # --------------------------------------------------------
 class WCSgrid:
-    def __init__(self,hdu,wcs=None):
-        headerWCS = hdu.header.copy()
+    def __init__(self,hdu,subgrid=1):
+        multis = (subgrid*subgrid,*hdu.data.shape)
+        multix, multiy = np.zeros(multis), np.zeros(multis)
 
+        header = hdu.header.copy()
+
+        cdelt1 = np.abs(header['CDELT1'])
+        cdelt2 = np.abs(header['CDELT2'])
+
+        header['CRVAL1'] = header['CRVAL1']-(0.50-0.50/float(subgrid))*np.abs(header['CDELT1'])
+        for isp in range(subgrid):
+            header['CRVAL2'] = header['CRVAL2']-(0.50-0.50/float(subgrid))*cdelt2
+            for jsp in range(subgrid):
+                multix[isp*subgrid+jsp], multiy[isp*subgrid+jsp] = self.getmesh(header=header)
+                header['CRVAL2'] = header['CRVAL2']+cdelt2/float(subgrid)
+            header['CRVAL1'] = header['CRVAL1']+cdelt1/float(subgrid)
+            header['CRVAL2'] = header['CRVAL2']-(0.5+0.5/float(subgrid))*cdelt2
+
+        self.x = jp.array(multix)
+        self.y = jp.array(multiy)
+
+    @staticmethod
+    def getmesh(hdu=None,wcs=None,header=None):
+        if   (header is None) and (hdu is not None): headerWCS = hdu.header.copy()
+        elif (header is not None) and (hdu is None): headerWCS = header.copy()
+        else: raise ValueError('Either header or hdu should be defined.')
+        
         if wcs is None: wcs = WCS(headerWCS)
 
         gridmx, gridmy = np.meshgrid(np.arange(headerWCS['NAXIS1']),np.arange(headerWCS['NAXIS2']))
@@ -63,8 +87,9 @@ class WCSgrid:
             gridix = np.where(gridwx>headerWCS['CRVAL1']+headerWCS['CDELT1']*(headerWCS['NAXIS1']-headerWCS['CRPIX1']+1)+3.6e2)
             gridwx[gridix] = gridwx[gridix]-3.6e2
         
-        self.x = jp.array(gridwx)
-        self.y = jp.array(gridwy)
+        return gridwx, gridwy
+    
+
 
 class FFTspec:
     def __init__(self,hdu):
@@ -83,10 +108,12 @@ class FFTspec:
 
 # Image constructor
 # ========================================================
-#  Initialize image structure
-#  --------------------------------------------------------
+# Initialize image structure
+# --------------------------------------------------------
 class Image:
     def __init__(self,img,noise=None,**kwargs):
+        self.subgrid = kwargs.get('subgrid',1)
+
         self.hdu = _img_loader(img,kwargs.get('img_idx',0))
         self.hdu = _reduce_axes(self.hdu)
 
@@ -112,7 +139,7 @@ class Image:
             self.hdu.header['CDELT2'] =  np.hypot(self.hdu.header['CD2_2'],self.hdu.header['CD2_2'])
 
         self.data = jp.array(self.hdu.data)
-        self.grid = WCSgrid(self.hdu,self.wcs)
+        self.grid = WCSgrid(self.hdu,subgrid=self.subgrid)
         self.fft  = FFTspec(self.hdu)
 
         self.mask = jp.ones(self.data.shape,dtype=int)
@@ -147,12 +174,10 @@ class Image:
     
 #   Get cutout
 #   --------------------------------------------------------
-    def cutout(self,center,csize,getwcs=False):
+    def cutout(self,center,csize):
         """
         center : tuple or SkyCoord
         csize  : int, array_like, or Quantity
-        getwcs : bool, optional
-            If True, return the WCS object of the cutout.
         """
         cutout_data  = Cutout2D(self.data,center,csize,wcs=self.wcs)
         cutout_mask  = Cutout2D(self.mask,center,csize,wcs=self.wcs)
@@ -171,7 +196,7 @@ class Image:
         self.mask  = jp.array(cutout_mask.data);  del cutout_mask
         self.sigma = jp.array(cutout_sigma.data); del cutout_sigma
 
-        self.grid = WCSgrid(self.hdu,self.wcs)
+        self.grid = WCSgrid(self.hdu,subgrid=self.subgrid)
         self.fft  = FFTspec(self.hdu)
 
 #   Add mask

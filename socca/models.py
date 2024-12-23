@@ -3,7 +3,6 @@ import types
 
 # Models
 # ========================================================
-
 # General model structure
 # --------------------------------------------------------
 class Model:
@@ -218,3 +217,37 @@ class Point:
             mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
         return mgrid
     
+
+# Bakcground
+# ---------------------------------------------------
+class Background:
+    def __init__(self,**kwargs):
+        self.positive = kwargs.get('positive',False)
+        self.rc = kwargs.get('rc',1.00/60.00/60.00)
+        self.a0 = kwargs.get('a0',None)
+        self.a1 = kwargs.get('a1',None)
+        self.a2 = kwargs.get('a2',None)
+        self.a3 = kwargs.get('a3',None)
+        self.a4 = kwargs.get('a4',None)
+        self.a5 = kwargs.get('a5',None)
+
+    def listpars(self):
+        okeys = ['positive']
+        return [key for key in self.__dict__.keys() if key not in okeys]
+
+    @staticmethod
+    def profile(x,y,a0,a1,a2,a3,a4,a5,rc):
+        xc, yc = x/rc, y/rc
+        return a0 + a1*xc + a2*yc + a3*xc*yc + a4*xc**2 + a5*yc**2
+
+    def getmap(self,img):
+        xgrid, ygrid = img.getgrid()
+        kwarg = {key: eval(f'self.{key}') for key in ['a0','a1','a2','a3','a4','a5','rc']}
+        
+        for key in kwarg.keys():
+            if isinstance(kwarg[key], scipy.stats._distn_infrastructure.rv_continuous_frozen):
+                raise ValueError('Priors must be fixed values, not distributions.')
+            if kwarg[key] is None:
+                raise ValueError(f'keyword {key} is set to None. Please provide a valid value.')
+        
+        return self.profile(xgrid,ygrid,**kwarg)
