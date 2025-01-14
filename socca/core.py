@@ -86,7 +86,8 @@ class fitter:
                 rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
                                          pars[f'src_{nc:02d}_yc'],
                                          pars[f'src_{nc:02d}_theta'],
-                                         pars[f'src_{nc:02d}_e'])
+                                         pars[f'src_{nc:02d}_e'],
+                                         pars[f'src_{nc:02d}_c0'])
 
                 mone = self.mod.profile[nc](rgrid,**kwarg)
                 mone = jp.mean(mone,axis=0)

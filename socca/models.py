@@ -44,6 +44,8 @@ class Profile:
         self.theta = kwargs.get('theta',None)
         self.e = kwargs.get('e',None)
 
+        self.c0 = kwargs.get('c0',None)
+
         self.positive = kwargs.get('positive',False)
 
     def listpars(self):
