@@ -232,15 +232,23 @@ class Background:
         self.a3 = kwargs.get('a3',None)
         self.a4 = kwargs.get('a4',None)
         self.a5 = kwargs.get('a5',None)
+        self.a6 = kwargs.get('a6',None)
+        self.a7 = kwargs.get('a7',None)
+        self.a8 = kwargs.get('a8',None)
+        self.a9 = kwargs.get('a9',None)
 
     def listpars(self):
         okeys = ['positive']
         return [key for key in self.__dict__.keys() if key not in okeys]
 
     @staticmethod
-    def profile(x,y,a0,a1,a2,a3,a4,a5,rc):
+    def profile(x,y,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,rc):
         xc, yc = x/rc, y/rc
-        return a0 + a1*xc + a2*yc + a3*xc*yc + a4*xc**2 + a5*yc**2
+        factor  = a0
+        factor += a1*xc + a2*yc 
+        factor += a3*xc*yc + a4*xc**2 + a5*yc**2 
+        factor += a6*xc**3 + a7*yc**3 + a8*xc**2*yc + a9*xc*yc**2
+        return factor
 
     def getmap(self,img):
         xgrid, ygrid = img.getgrid()
