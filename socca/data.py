@@ -163,16 +163,16 @@ class Image:
 
 #   Build elliptical distance grid
 #   --------------------------------------------------------
-    def getgrid(self,xc,yc,theta=0.00,e=0.00,c0=0.00):
+    def getgrid(self,xc,yc,theta=0.00,e=0.00,cbox=0.00):
         sint = jp.sin(theta)
         cost = jp.cos(theta)
 
         xgrid = (-(self.grid.x-xc)*jp.cos(jp.deg2rad(yc))*sint-(self.grid.y-yc)*cost)
         ygrid = ( (self.grid.x-xc)*jp.cos(jp.deg2rad(yc))*cost-(self.grid.y-yc)*sint)
         
-        xgrid = jp.abs(xgrid)**(c0+2)
-        ygrid = jp.abs(ygrid/(1.00-e))**(c0+2)
-        return jp.power(xgrid+ygrid,1.00/(c0+2))
+        xgrid = jp.abs(xgrid)**(cbox+2.00)
+        ygrid = jp.abs(ygrid/(1.00-e))**(cbox+2.00)
+        return jp.power(xgrid+ygrid,1.00/(cbox+2.00))
     
 #   Get cutout
 #   --------------------------------------------------------

@@ -82,12 +82,14 @@ class fitter:
                 if self.mod.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
                 
                 mpts += mone.copy(); del mone
+            elif 'Thick' in self.mod.type[nc]:
+                pass
             else:
                 rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
                                          pars[f'src_{nc:02d}_yc'],
                                          pars[f'src_{nc:02d}_theta'],
                                          pars[f'src_{nc:02d}_e'],
-                                         pars[f'src_{nc:02d}_c0'])
+                                         pars[f'src_{nc:02d}_cbox'])
 
                 mone = self.mod.profile[nc](rgrid,**kwarg)
                 mone = jp.mean(mone,axis=0)
@@ -162,7 +164,7 @@ class fitter:
             print(f'Elapsed time: {dt}')
 
             self.samples, log_w, _ = sampler.posterior()
-
+            self.logz = sampler.evidence()
             self.samples = dynesty.utils.resample_equal(self.samples,np.exp(log_w))
         
         self.labels = [self.mod.params[idx] for idx in self.mod.paridx]

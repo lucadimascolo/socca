@@ -42,9 +42,8 @@ class Profile:
         self.yc = kwargs.get('yc',None)
         
         self.theta = kwargs.get('theta',None)
-        self.e = kwargs.get('e',None)
-
-        self.c0 = kwargs.get('c0',None)
+        self.e     = kwargs.get('e',    None)
+        self.cbox  = kwargs.get('cbox', None)
 
         self.positive = kwargs.get('positive',False)
 
@@ -180,6 +179,11 @@ class ModExponential(Exponential):
     def profile(r,Ie,re,rm,alpha):
         return Ie*jp.exp(-r/re)*(1.00+r/rm)**alpha
 
+# Thick disk model
+# --------------------------------------------------------
+class ThickDisk:
+    def __init__(self,**kwargs):
+        pass
 
 # Point source
 # --------------------------------------------------------
@@ -252,7 +256,7 @@ class Background:
 
     def getmap(self,img):
         xgrid, ygrid = img.getgrid()
-        kwarg = {key: eval(f'self.{key}') for key in ['a0','a1','a2','a3','a4','a5','rc']}
+        kwarg = {key: eval(f'self.{key}') for key in ['a0','a1','a2','a3','a4','a5','a6','a7','a8','a9','rc']}
         
         for key in kwarg.keys():
             if isinstance(kwarg[key], scipy.stats._distn_infrastructure.rv_continuous_frozen):
