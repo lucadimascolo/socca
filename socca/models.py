@@ -181,9 +181,11 @@ class ModExponential(Exponential):
 
 # Thick disk model
 # --------------------------------------------------------
-class ThickDisk:
+class ThickDisk(Profile):
     def __init__(self,**kwargs):
-        pass
+        super().__init__(**kwargs)
+        delattr(self,'cbox')
+        delattr(self,'e')
 
 # Point source
 # --------------------------------------------------------
