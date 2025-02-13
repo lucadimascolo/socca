@@ -18,24 +18,14 @@ To install `socca`, it should be enough to run
 python -m pip install git+https://github.com/lucadimascolo/socca.git
 ```
 
-This will download and install the latest version of `socca` as well as all the required dependencies. Once the installation is completed, you should be ready get `socca` to crunch your data.
+This will download and install the latest version of `socca` as well as all the required dependencies. Once the installation is completed, you should be ready to get `socca` to crunch your data.
 
 
-Notes
------
-...
-
-Example
--------
-This is a basic example of how to use `socca` for modelling an input image using a Sérsic profile.
-
-```python
-import socca
-```
 
 To do list
 ---------------------------------------------------
-- [ ] noise model
+- [ ] improved noise model
 - [ ] checkpointing and integration of `h5py` I/O framework
-- [ ] extended models
-- [ ] prior initialization
+- [ ] prior/parameter initialization
+- [ ] improve PSF handling
+- [ ] documentation!
