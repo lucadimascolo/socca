@@ -28,4 +28,5 @@ To do list
 - [ ] checkpointing and integration of `h5py` I/O framework
 - [ ] prior/parameter initialization
 - [ ] improve PSF handling
+- [ ] print out parameter units
 - [ ] documentation!
