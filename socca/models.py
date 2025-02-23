@@ -1,12 +1,26 @@
 from .utils import *
 import types
 
+# Support utilities
+# ========================================================
+# Print available models
+# --------------------------------------------------------
+def zoo():
+    models = ['Sersic',
+              'Exponential',
+              'PolyExponential','PolyExpoRefact',
+              'ModExponential',
+              'Point','Background']
+    for mi, m in enumerate(models):
+        print(m)
+
+
 # Models
 # ========================================================
 # General model structure
 # --------------------------------------------------------
 class Model:
-    def __init__(self):
+    def __init__(self,prof=None,positive=None):
         self.ncomp  = 0
         self.priors = {}
         self.params = []
@@ -16,10 +30,13 @@ class Model:
         self.tied = []
         self.type = []
 
-    def addcomponent(self,prof,positive=None):
+        if prof is not None:
+            self.add_component(prof,positive)
+
+    def add_component(self,prof,positive=None):
         self.type.append(prof.__class__.__name__)
         self.positive.append(prof.positive if positive is None else positive)
-        for pi, p in enumerate(prof.listpars()):
+        for pi, p in enumerate(prof.parlist()):
             par = eval(f'prof.{p}')
             self.params.append( f'src_{self.ncomp:02d}_{p}')
             self.priors.update({f'src_{self.ncomp:02d}_{p}': par})
@@ -33,11 +50,37 @@ class Model:
         self.profile.append(prof.profile)
         self.ncomp += 1
         
+        
+# General composable term
+# --------------------------------------------------------
+class Component:
+    def __init__(self):
+        self.okeys = ['positive','units']
+        
+    def print_params(self):
+        keyout =[]
+        for key in self.__dict__.keys():
+            if key not in self.okeys and key!='okeys':
+                keyout.append(key)
+
+        maxlen = np.max(np.array([len(f'{key} [{self.units[key]}]') for key in keyout]))
+    
+        for key in keyout:
+            keylen = maxlen-len(f' [{self.units[key]}]')
+            print(f'{key:<{keylen}} [{self.units[key]}] : {self.__dict__[key]}')
+            
+    def parlist(self):
+        return [key for key in self.__dict__.keys() if key not in self.okeys]
+        
+    def addpar(self,name,value=None):
+        setattr(self,name,value)
+
 
 # General profile class
 # --------------------------------------------------------
-class Profile:
+class Profile(Component):
     def __init__(self,**kwargs):
+        super().__init__()
         self.xc = kwargs.get('xc',None)
         self.yc = kwargs.get('yc',None)
         
@@ -46,13 +89,7 @@ class Profile:
         self.cbox  = kwargs.get('cbox', None)
 
         self.positive = kwargs.get('positive',False)
-
-    def listpars(self):
-        okeys = ['positive']
-        return [key for key in self.__dict__.keys() if key not in okeys]
-        
-    def addpar(self,name,value=None):
-        setattr(self,name,value)
+        self.units = dict(xc='deg',yc='deg',theta='rad',e='',cbox='')
 
     @abstractmethod
     def profile(self,r):
@@ -95,8 +132,10 @@ class Sersic(Profile):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.re = kwargs.get('re', None)
-        self.ns = kwargs.get('ns', None)
         self.Ie = kwargs.get('Ie', None)
+        self.ns = kwargs.get('ns', None)
+
+        self.units.update(dict(re='deg',Ie='image',ns=''))
 
     @staticmethod
     @jax.jit
@@ -114,6 +153,8 @@ class Exponential(Profile):
         self.re = kwargs.get('re', None)
         self.Ie = kwargs.get('Ie', None)
 
+        self.units.update(dict(re='deg',Ie='image'))
+                                
     @staticmethod
     @jax.jit
     def profile(r,Ie,re):
@@ -131,6 +172,9 @@ class PolyExponential(Exponential):
         self.c3 = kwargs.get('c3',0.00)
         self.c4 = kwargs.get('c4',0.00)
         self.rc = kwargs.get('rc',1.00/3.60E+03)
+
+        self.units.update(dict(rc='deg'))
+        self.units.update({f'c{ci}':'' for ci in range(1,5)})
 
     @staticmethod
     @jax.jit
@@ -150,6 +194,9 @@ class PolyExpoRefact(Exponential):
         self.I3 = kwargs.get('I3',0.00)
         self.I4 = kwargs.get('I4',0.00)
         self.rc = kwargs.get('rc',1.00/3.60E+03)
+
+        self.units.update(dict(rc='deg'))
+        self.units.update({f'I{ci}':'image' for ci in range(1,5)})
 
     @staticmethod
     @jax.jit
@@ -172,7 +219,10 @@ class PolyExpoRefact(Exponential):
 class ModExponential(Exponential):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
+        self.rm = kwargs.get('rm', None)
         self.alpha = kwargs.get('alpha', None)
+
+        self.units.update(dict(rm='deg',alpha=''))
 
     @staticmethod
     @jax.jit
@@ -189,18 +239,15 @@ class ThickDisk(Profile):
 
 # Point source
 # --------------------------------------------------------
-class Point:
+class Point(Component):
     def __init__(self,**kwargs):
         self.xc = kwargs.get('xc',None)
         self.yc = kwargs.get('yc',None)
         self.Ic = kwargs.get('Ic',None)
 
         self.positive = kwargs.get('positive',False)
+        self.units = dict(xc='deg',yc='deg',Ic='image')
 
-    def listpars(self):
-        okeys = ['positive']
-        return [key for key in self.__dict__.keys() if key not in okeys]
-     
     @staticmethod
     def profile(xc,yc,Ic):
         pass
@@ -228,7 +275,7 @@ class Point:
 
 # Bakcground
 # ---------------------------------------------------
-class Background:
+class Background(Component):
     def __init__(self,**kwargs):
         self.positive = kwargs.get('positive',False)
         self.rc = kwargs.get('rc',1.00/60.00/60.00)
@@ -243,9 +290,8 @@ class Background:
         self.a8 = kwargs.get('a8',None)
         self.a9 = kwargs.get('a9',None)
 
-    def listpars(self):
-        okeys = ['positive']
-        return [key for key in self.__dict__.keys() if key not in okeys]
+        self.units = dict(rc='deg')
+        self.units.update({f'a{ci}':'' for ci in range(10)})
 
     @staticmethod
     def profile(x,y,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,rc):
