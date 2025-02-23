@@ -31,5 +31,7 @@ exclude_patterns = []
 
 html_theme = 'sphinx_book_theme'
 html_static_path = ['_static']
+html_css_files = ["custom.css"]
 
 html_logo = 'socca.png'
+html_favicon = 'socca.png'

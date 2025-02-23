@@ -1,7 +1,4 @@
 
-socca
-===================
-
 .. include:: intro.md
    :parser: myst_parser.sphinx_
 
@@ -11,5 +8,9 @@ socca
    :caption: Contents:
    
    ./installation.md
-   ./gettingstarted.md
-   ./citing.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Tutorials
+
+   ./quickstart.md

@@ -1,0 +1,39 @@
+:root {
+    --yellow: #C89852; 
+    --brown: #8B4424;
+    --green: #7DAC8A;
+}
+
+
+code {
+    background: none;
+    color: var(--yellow);
+    font-weight: bold;
+}
+
+a.reference.external,
+a.reference.external code {
+    border-bottom: 1px dotted;
+    text-decoration: none;
+    color: var(--yellow);
+}
+
+a.reference.external:hover,
+a.reference.external:hover code {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    color: var(--green);
+}
+
+a.reference.internal,
+a.reference.internal code {
+    text-decoration: none;
+    color: var(--green);
+}
+
+a.reference.internal:hover,
+a.reference.internal:hover code {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    color: var(--green);
+}
