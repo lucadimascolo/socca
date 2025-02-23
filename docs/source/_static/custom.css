@@ -26,14 +26,16 @@ a.reference.external:hover code {
 }
 
 a.reference.internal,
+a.reference.internal li,
 a.reference.internal code {
     text-decoration: none;
     color: var(--green);
 }
 
 a.reference.internal:hover,
+a.reference.internal:hover li,
 a.reference.internal:hover code {
     text-decoration: underline;
     text-decoration-thickness: 2px;
-    color: var(--green);
+    color: var(--yellow);
 }

@@ -11,6 +11,8 @@ This code is broadly inspired by the excellent [<code>pysersic</code>](https://g
 [![stability-alpha](https://img.shields.io/badge/stability-alpha-f4d03f.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#alpha)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 
+## Contribute
+<code>socca</code> is being actively developed and any contributions from the community are welcome. If you have any suggestions, feature requests, or bug reports, please open an issue via the [GitHub issue tracker](https://github.com/lucadimascolo/socca/issues)
 
 ## License and attribution
 Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contributors](https://github.com/lucadimascolo/socca/graphs/contributors).
@@ -18,4 +20,4 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 <code>socca</code> is an open-source library released under the MIT License. The full license terms can be found in the [LICENSE](https://github.com/lucadimascolo/socca/blob/main/LICENSE) file in the main repository.
 
 
-If you are going to include in a publication any results obtained using <code>socca</code>, please consider adding an hyperlink to the main repository: [https://github.com/lucadimascolo/socca](https://github.com/lucadimascolo/socca).
+If you are going to include in a publication any results obtained using <code>socca</code>, please consider adding an hyperlink to the GitHub repository: [https://github.com/lucadimascolo/socca](https://github.com/lucadimascolo/socca).

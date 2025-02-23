@@ -33,5 +33,9 @@ html_theme = 'sphinx_book_theme'
 html_static_path = ['_static']
 html_css_files = ["custom.css"]
 
+html_theme_options = {
+  "show_toc_level": 3
+}
+
 html_logo = 'socca.png'
 html_favicon = 'socca.png'
