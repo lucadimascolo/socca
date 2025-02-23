@@ -8,6 +8,7 @@
    :caption: Contents:
    
    ./installation.md
+   ./changelog.md
 
 .. toctree::
    :maxdepth: 1
