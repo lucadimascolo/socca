@@ -294,6 +294,7 @@ class Image:
             if key in ['var','variance']:
                 sigma = np.sqrt(sigma)
             elif key in ['wht','wgt','weight','weights','invvar']:
+                self.mask.at[sigma==0.00].set(0)
                 sigma = 1.00/np.sqrt(sigma)
             elif key not in ['sigma','sig','std','rms','stddev']:
                 raise ValueError('unrecognized noise identifier]')
