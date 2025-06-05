@@ -41,73 +41,7 @@ class fitter:
 #   Compute total model
 #   --------------------------------------------------------
     def _get_model(self,pp):
-        pars = {}
-        for ki, key in enumerate(self.mod.params):
-            if isinstance(self.mod.priors[key],float):
-                pars[key] = self.mod.priors[key]
-            elif isinstance(self.mod.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
-                pars[key], pp = pp[0], pp[1:]
-        
-        for ki, key in enumerate(self.mod.params):
-            if self.mod.tied[ki]:
-                kwarg = list(inspect.signature(self.mod.priors[key]).parameters.keys())
-                kwarg = {k: pars[k] for k in kwarg}
-                pars[key] = self.mod.priors[key](**kwarg)
-                del kwarg
-
-        mbkg = jp.zeros(self.img.shape)
-        mraw = jp.zeros(self.img.shape)
-        mpts = jp.fft.rfft2(mraw,s=self.img.shape)
-
-        mneg = jp.zeros(self.img.shape)
-
-        for nc in range(self.mod.ncomp):
-            kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.mod.params \
-                  if key.startswith(f'src_{nc:02d}') and \
-                     key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.mod.profile[nc]).parameters.keys())}
-
-            if self.mod.type[nc]=='Background':
-                yr = jp.mean(self.img.grid.y,axis=0)-self.img.hdu.header['CRVAL2']
-                xr = jp.mean(self.img.grid.x,axis=0)-self.img.hdu.header['CRVAL1']
-                xr = xr*jp.cos(jp.deg2rad(self.img.hdu.header['CRVAL2']))
-
-                mone = self.mod.profile[nc](xr,yr,**kwarg)
-                if self.mod.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
-
-                mbkg += mone.copy(); del mone
-            elif self.mod.type[nc]=='Point':
-                uphase, vphase = self.img.fft.shift(kwarg['xc'],kwarg['yc'])
-                
-                mone = kwarg['Ic']*self.img.fft.pulse*jp.exp(-(uphase+vphase))
-                if self.mod.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
-                
-                mpts += mone.copy(); del mone
-            elif 'Thick' in self.mod.type[nc]:
-                pass
-            else:
-                rgrid = self.img.getgrid(pars[f'src_{nc:02d}_xc'],
-                                         pars[f'src_{nc:02d}_yc'],
-                                         pars[f'src_{nc:02d}_theta'],
-                                         pars[f'src_{nc:02d}_e'],
-                                         pars[f'src_{nc:02d}_cbox'])
-
-                mone = self.mod.profile[nc](rgrid,**kwarg)
-                mone = jp.mean(mone,axis=0)
-                if self.mod.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
-
-                mraw += mone.copy(); del mone
-        
-        msmo = mraw.copy()
-        if self.img.psf is not None:
-            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=self.img.shape))*self.img.psf_fft
-            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=self.img.shape)).real
-    
-        mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=self.img.shape)).real
-        
-        if self.img.psf is None:
-            msmo = msmo+mpts
-
-        return mraw+mpts, msmo+mbkg, mbkg, mneg
+        return self.mod.getmap(self.img,pp)
 
 #   Compute log-likelihood
 #   --------------------------------------------------------

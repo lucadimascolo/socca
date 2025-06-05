@@ -14,7 +14,6 @@ def zoo():
     for mi, m in enumerate(models):
         print(m)
 
-
 # Models
 # ========================================================
 # General model structure
@@ -31,9 +30,11 @@ class Model:
         self.type = []
 
         if prof is not None:
-            self.add_component(prof,positive)
+            self.addcomp(prof,positive)
 
-    def add_component(self,prof,positive=None):
+# Add a new component to the model
+# --------------------------------------------------------
+    def addcomponent(self,prof,positive=None):
         self.type.append(prof.__class__.__name__)
         self.positive.append(prof.positive if positive is None else positive)
         for pi, p in enumerate(prof.parlist()):
@@ -49,8 +50,79 @@ class Model:
                 self.tied.append(False)
         self.profile.append(prof.profile)
         self.ncomp += 1
+
+# Get the model map
+# --------------------------------------------------------
+    def getmap(self,img,pp):
+        pars = {}
+        for ki, key in enumerate(self.params):
+            if isinstance(self.priors[key],float):
+                pars[key] = self.priors[key]
+            elif isinstance(self.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+                pars[key], pp = pp[0], pp[1:]
         
+        for ki, key in enumerate(self.params):
+            if self.tied[ki]:
+                kwarg = list(inspect.signature(self.priors[key]).parameters.keys())
+                kwarg = {k: pars[k] for k in kwarg}
+                pars[key] = self.priors[key](**kwarg)
+                del kwarg
+
+        mbkg = jp.zeros(img.shape)
+        mraw = jp.zeros(img.shape)
+        mpts = jp.fft.rfft2(mraw,s=img.shape)
+
+        mneg = jp.zeros(img.shape)
+
+        for nc in range(self.ncomp):
+            kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.params \
+                  if key.startswith(f'src_{nc:02d}') and \
+                     key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.profile[nc]).parameters.keys())}
+
+            if self.type[nc]=='Background':
+                yr = jp.mean(img.grid.y,axis=0)-img.hdu.header['CRVAL2']
+                xr = jp.mean(img.grid.x,axis=0)-img.hdu.header['CRVAL1']
+                xr = xr*jp.cos(jp.deg2rad(img.hdu.header['CRVAL2']))
+
+                mone = self.profile[nc](xr,yr,**kwarg)
+                if self.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
+
+                mbkg += mone.copy(); del mone
+            elif self.type[nc]=='Point':
+                uphase, vphase = img.fft.shift(kwarg['xc'],kwarg['yc'])
+                
+                mone = kwarg['Ic']*img.fft.pulse*jp.exp(-(uphase+vphase))
+                if self.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
+                
+                mpts += mone.copy(); del mone
+            elif 'Thick' in self.type[nc]:
+                pass
+            else:
+                rgrid = img.getgrid(pars[f'src_{nc:02d}_xc'],
+                                    pars[f'src_{nc:02d}_yc'],
+                                    pars[f'src_{nc:02d}_theta'],
+                                    pars[f'src_{nc:02d}_e'],
+                                    pars[f'src_{nc:02d}_cbox'])
+
+                mone = self.profile[nc](rgrid,**kwarg)
+                mone = jp.mean(mone,axis=0)
+                if self.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
+
+                mraw += mone.copy(); del mone
         
+        msmo = mraw.copy()
+        if img.psf is not None:
+            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=img.shape))*img.psf_fft
+            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=img.shape)).real
+    
+        mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=img.shape)).real
+        
+        if img.psf is None:
+            msmo = msmo+mpts
+
+        return mraw+mpts, msmo+mbkg, mbkg, mneg
+
+
 # General composable term
 # --------------------------------------------------------
 class Component:
