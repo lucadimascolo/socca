@@ -97,7 +97,7 @@ class Profile(Component):
 
     def getmap(self,img,convolve=False):
         rgrid = img.getgrid(self.xc,self.yc,self.theta,self.e)
-        kwarg = {key: eval(f'self.{key}') for key in list(inspect.signature(self.profile).parameters.keys()) if key!='r'}
+        kwarg = {key: getattr(self,key) for key in list(inspect.signature(self.profile).parameters.keys()) if key!='r'}
         
         for key in kwarg.keys():
             if isinstance(kwarg[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
@@ -207,7 +207,7 @@ class PolyExpoRefact(Exponential):
         return factor
     
     def refactor(self):
-        kwargs = {key: eval(f'self.{key}') for key in ['xc','yc','theta','e','Ie','re','rc']}
+        kwargs = {key: getattr(self,key) for key in ['xc','yc','theta','e','Ie','re','rc']}
         for ci in range(1,5): kwargs.update({f'c{ci}': eval(f'I{ci}')/kwargs['Ie']})
 
         return PolyExponential(**kwargs)
@@ -253,7 +253,7 @@ class Point(Component):
         pass
     
     def getmap(self,img,convolve=False):
-        kwarg = {key: eval(f'self.{key}') for key in ['xc','yc','Ic']}
+        kwarg = {key: getattr(self,key) for key in ['xc','yc','Ic']}
         
         for key in kwarg.keys():
             if isinstance(kwarg[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
@@ -304,7 +304,7 @@ class Background(Component):
 
     def getmap(self,img):
         xgrid, ygrid = img.getgrid()
-        kwarg = {key: eval(f'self.{key}') for key in ['a0','a1','a2','a3','a4','a5','a6','a7','a8','a9','rc']}
+        kwarg = {key: getattr(self,key) for key in ['a0','a1','a2','a3','a4','a5','a6','a7','a8','a9','rc']}
         
         for key in kwarg.keys():
             if isinstance(kwarg[key], scipy.stats._distn_infrastructure.rv_continuous_frozen):

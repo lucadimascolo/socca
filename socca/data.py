@@ -260,6 +260,17 @@ class Image:
         if normalize:
             kernel = kernel/np.sum(kernel)
 
+        kx, ky = kernel.shape
+        dx, dy = self.data.shape
+
+        if kx>dx:
+            cx = (kx-dx)//2
+            kernel = kernel[cx:cx+dx,:]
+
+        if ky>dy:
+            cy = (ky-dy)//2
+            kernel = kernel[:,cy:cy+dy]
+            
         self.psf = kernel
 
         pad_width = [(0,max(0,s-k)) for s, k in zip(self.data.shape,kernel.shape)]
