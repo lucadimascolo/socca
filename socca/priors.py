@@ -40,3 +40,12 @@ class splitnorm_gen(scipy.stats.rv_continuous):
         return np.where(loppf<0.00,loppf,hippf)
 
 splitnorm = splitnorm_gen(name='splitnorm')
+
+# parameter bound to another component's parameter
+# --------------------------------------------------------
+def boundto(comp,var):
+    if isinstance(comp,str):
+        comp = eval(comp)
+
+    x = f'{comp.id}_{var}'
+    return eval(f'lambda {x}: {x}')
