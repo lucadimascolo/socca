@@ -5,7 +5,7 @@ import nautilus
 
 import time
 import dill
-
+import os
 
 # Fitter constructor
 # ========================================================
@@ -28,6 +28,8 @@ class fitter:
             setattr(self.img,'shape',self.img.data.shape)
         else:
             self.img.shape = self.img.data.shape
+
+        self.labels = [self.mod.params[idx] for idx in self.mod.paridx]
 
 #   Transform prior hypercube
 #   --------------------------------------------------------
@@ -54,7 +56,7 @@ class fitter:
 
 #   Main sampler function
 #   --------------------------------------------------------
-    def run(self,nlive=100,dlogz=0.01,method='dynesty'):
+    def run(self,nlive=100,dlogz=0.01,method='dynesty',checkpoint=None,resume=True):
         self.method = method
 
         @jax.jit
@@ -67,16 +69,27 @@ class fitter:
         if self.method=='dynesty':
 
             ndims = len(self.mod.paridx)
-            sampler = dynesty.NestedSampler(log_likelihood,prior_transform,
-                                            ndim = ndims,
-                                           nlive = nlive,
-                                           bound = 'multi')
-            sampler.run_nested(dlogz=dlogz)
-        
+
+            if checkpoint is None:
+                resume = False
+
+            if ~resume or not os.path.exists(checkpoint):
+                sampler = dynesty.NestedSampler(log_likelihood,prior_transform,
+                                                ndim = ndims,
+                                               nlive = nlive,
+                                               bound = 'multi')
+                sampler.run_nested(dlogz=dlogz,checkpoint_file=checkpoint)
+            else:
+                sampler = dynesty.NestedSampler.restore(checkpoint)
+                sampler.run_nested(resume=True)
+
+            self.sampler = sampler
+
             results = sampler.results
 
-            self.samples = dynesty.utils.resample_equal(results['samples'],
-                                                        results.importance_weights())
+            self.samples = results['samples'].copy()
+            self.weights = results.importance_weights().copy()
+            self.logz = results['logz'][-1]
             
         elif self.method=='nautilus':
             prior = nautilus.Prior()
@@ -88,21 +101,20 @@ class fitter:
                 pars = np.array([theta[self.mod.params[idx]] for idx in self.mod.paridx])
                 return log_likelihood(pars)
             
-            sampler = nautilus.Sampler(prior,dict_likelihood,n_live=nlive)
+            self.sampler = nautilus.Sampler(prior,dict_likelihood,n_live=nlive,filepath=checkpoint,resume=resume)
+            
             toc = time.time()
-            sampler.run(f_live=dlogz,verbose=True)
+            self.sampler.run(f_live=dlogz,verbose=True)
             tic = time.time()
 
             dt = tic-toc
             dt = '{0:.2f} s'.format(dt) if dt<60.00 else '{0:.2f} m'.format(dt/60.00)
             print(f'Elapsed time: {dt}')
 
-            self.samples, log_w, _ = sampler.posterior()
-            self.logz = sampler.evidence()
-            self.samples = dynesty.utils.resample_equal(self.samples,np.exp(log_w))
-        
-        self.labels = [self.mod.params[idx] for idx in self.mod.paridx]
-
+            self.samples, logw, _ = self.sampler.posterior()
+            self.weights = np.exp(logw).copy()
+            self.logz = self.sampler.evidence()
+    
 #   Dump results
 #   --------------------------------------------------------
     def dump(self,filename):
