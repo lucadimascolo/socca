@@ -56,7 +56,7 @@ class Model:
     def getmap(self,img,pp):
         pars = {}
         for ki, key in enumerate(self.params):
-            if isinstance(self.priors[key],float):
+            if isinstance(self.priors[key],(float,int)):
                 pars[key] = self.priors[key]
             elif isinstance(self.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
                 pars[key], pp = pp[0], pp[1:]
@@ -68,11 +68,11 @@ class Model:
                 pars[key] = self.priors[key](**kwarg)
                 del kwarg
 
-        mbkg = jp.zeros(img.shape)
-        mraw = jp.zeros(img.shape)
-        mpts = jp.fft.rfft2(mraw,s=img.shape)
+        mbkg = jp.zeros(img.data.shape)
+        mraw = jp.zeros(img.data.shape)
+        mpts = jp.fft.rfft2(mraw,s=img.data.shape)
 
-        mneg = jp.zeros(img.shape)
+        mneg = jp.zeros(img.data.shape)
 
         for nc in range(self.ncomp):
             kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.params \
@@ -112,10 +112,10 @@ class Model:
         
         msmo = mraw.copy()
         if img.psf is not None:
-            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=img.shape))*img.psf_fft
-            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=img.shape)).real
+            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=img.data.shape))*img.psf_fft
+            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=img.data.shape)).real
     
-        mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=img.shape)).real
+        mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=img.data.shape)).real
         
         if img.psf is None:
             msmo = msmo+mpts
@@ -126,9 +126,13 @@ class Model:
 # General composable term
 # --------------------------------------------------------
 class Component:
+    idcls = 0
     def __init__(self):
+        self.id = f'src_{type(self).idcls:02d}'
+        type(self).idcls += 1
+
         self.okeys = ['positive','units']
-        
+
     def print_params(self):
         keyout =[]
         for key in self.__dict__.keys():
