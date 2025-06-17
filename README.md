@@ -25,8 +25,8 @@ This will download and install the latest version of `socca` as well as all the 
 To do list
 ---------------------------------------------------
 - [ ] improved noise model
-- [ ] checkpointing and integration of `h5py` I/O framework
+- [x] checkpointing and integration of `h5py` I/O framework
 - [ ] prior/parameter initialization
-- [ ] improve PSF handling
+- [x] improve PSF handling
 - [ ] print out parameter units
 - [ ] documentation!

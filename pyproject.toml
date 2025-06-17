@@ -19,7 +19,8 @@ dependencies = [
     "dynesty",
     "nautilus-sampler",
     "corner",
-    "dill"
+    "dill",
+    "h5py"
 ]
 
 [tool.setuptools.packages.find]
