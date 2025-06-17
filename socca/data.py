@@ -6,8 +6,6 @@ from astropy.nddata import Cutout2D
 import pyregion
 import reproject
 
-import matplotlib.pyplot as plt
-
 # Support functions
 # ========================================================
 # Get mask from input HDU
@@ -297,7 +295,7 @@ class Image:
             print(f'- noise level: {sigma:.2E}')
         elif isinstance(noise,dict):
             key = list(noise.keys())[0]
-            if isinstance(noise[key],float):
+            if isinstance(noise[key],(float,int)):
                 sigma = noise[key]
             else:
                 sigma = _img_loader(noise[key],noise.get('idx',0)).data.copy()
@@ -312,8 +310,8 @@ class Image:
         else:
             raise ValueError('noise must be a float or a dictionary')
 
-        if isinstance(sigma,float):
-            sigma = np.full(self.data.shape,sigma)
+        if isinstance(sigma,(float,int)):
+            sigma = np.full(self.data.shape,sigma).astype(float)
 
         sigma[np.isinf(sigma)] = 0.00
         sigma[np.isnan(sigma)] = 0.00
