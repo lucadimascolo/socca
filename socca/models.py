@@ -317,6 +317,8 @@ class ThickDisk(Profile):
 # --------------------------------------------------------
 class Point(Component):
     def __init__(self,**kwargs):
+        super().__init__()
+
         self.xc = kwargs.get('xc',None)
         self.yc = kwargs.get('yc',None)
         self.Ic = kwargs.get('Ic',None)
@@ -353,6 +355,8 @@ class Point(Component):
 # ---------------------------------------------------
 class Background(Component):
     def __init__(self,**kwargs):
+        super().__init__()
+
         self.positive = kwargs.get('positive',False)
         self.rc = kwargs.get('rc',1.00/60.00/60.00)
         self.a0 = kwargs.get('a0',None)
