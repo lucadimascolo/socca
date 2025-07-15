@@ -56,7 +56,7 @@ class fitter:
 
 #   Main sampler function
 #   --------------------------------------------------------
-    def run(self,nlive=100,dlogz=0.01,method='dynesty',checkpoint=None,resume=True):
+    def run(self,nlive=100,dlogz=0.01,method='dynesty',checkpoint=None,resume=True,**kwargs):
         self.method = method
 
         @jax.jit
@@ -104,7 +104,7 @@ class fitter:
             self.sampler = nautilus.Sampler(prior,dict_likelihood,n_live=nlive,filepath=checkpoint,resume=resume)
             
             toc = time.time()
-            self.sampler.run(f_live=dlogz,verbose=True)
+            self.sampler.run(f_live=dlogz,verbose=True,**kwargs)
             tic = time.time()
 
             dt = tic-toc
