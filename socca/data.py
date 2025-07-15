@@ -183,10 +183,6 @@ class Image:
         cutout_mask  = Cutout2D(self.mask,center,csize,wcs=self.wcs)
         cutout_sigma = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
 
-        if self.psf is not None:
-            cutout_psf = Cutout2D(self.psf,center,csize,wcs=self.wcs)
-            self.addpsf(cutout_psf.data,normalize=False)
-
         cuthdu = fits.ImageHDU(data=cutout_data.data,header=cutout_data.wcs.to_header())
         
         self.hdu  = cuthdu 
@@ -198,6 +194,10 @@ class Image:
 
         self.grid = WCSgrid(self.hdu,subgrid=self.subgrid)
         self.fft  = FFTspec(self.hdu)
+
+        if self.psf is not None:
+            cutout_psf = Cutout2D(self.psf,center,csize,wcs=self.wcs)
+            self.addpsf(cutout_psf.data,normalize=False)
 
 #   Add mask
 #   --------------------------------------------------------
