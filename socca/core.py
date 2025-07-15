@@ -132,15 +132,17 @@ class fitter:
 
 #   Generate best-fit/median model
 #   --------------------------------------------------------
-    def getmodel(self,usebest=True):
+    def getmodel(self,usebest=True,img=None):
+        gm = self._get_model if img is None else lambda pp: self.mod.getmap(img,pp)
+
         if usebest:
             p = np.array([np.quantile(samp,0.50) for samp in self.samples.T])
-            mraw, msmo, mbkg, _ = self._get_model(p)
+            mraw, msmo, mbkg, _ = gm(p)
             msmo = msmo-mbkg
         else:
             mraw, msmo = [], []
             for sample in self.samples:
-                mraw_, msmo_, mbkg_, _ = self._get_model(sample)
+                mraw_, msmo_, mbkg_, _ = gm(sample)
                 msmo_ = msmo_-mbkg_
                 mraw.append(mraw_); del mraw_
                 msmo.append(msmo_); del msmo_
