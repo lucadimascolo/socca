@@ -182,22 +182,32 @@ class Image:
         cutout_data  = Cutout2D(self.data,center,csize,wcs=self.wcs)
         cutout_mask  = Cutout2D(self.mask,center,csize,wcs=self.wcs)
         cutout_sigma = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
-
-        cuthdu = fits.ImageHDU(data=cutout_data.data,header=cutout_data.wcs.to_header())
         
-        self.hdu  = cuthdu 
-        self.wcs  = cutout_data.wcs
-
-        self.data  = jp.array(cutout_data.data);  del cutout_data
+        self.data  = jp.array(cutout_data.data)
         self.mask  = jp.array(cutout_mask.data);  del cutout_mask
         self.sigma = jp.array(cutout_sigma.data); del cutout_sigma
+
+        if self.psf is not None:
+            center_psf = (self.hdu.header['CRPIX1'],self.hdu.header['CRPIX2'])
+            cutout_psf = Cutout2D(self.psf,center_psf,csize,wcs=self.wcs)
+            self.addpsf(cutout_psf.data,normalize=False)
+
+        cuthdu = fits.ImageHDU(data=cutout_data.data,header=cutout_data.wcs.to_header())
+
+        crval = [center.ra.deg,center.dec.deg]
+        crpix =  cutout_data.wcs.all_world2pix(*crval,1)
+
+        cuthdu.header['CRPIX1'] = float(crpix[0])
+        cuthdu.header['CRPIX2'] = float(crpix[1])
+        cuthdu.header['CRVAL1'] = float(crval[0])
+        cuthdu.header['CRVAL2'] = float(crval[1])
+
+        self.hdu  = cuthdu 
+        self.wcs  = WCS(self.hdu.header)
 
         self.grid = WCSgrid(self.hdu,subgrid=self.subgrid)
         self.fft  = FFTspec(self.hdu)
 
-        if self.psf is not None:
-            cutout_psf = Cutout2D(self.psf,center,csize,wcs=self.wcs)
-            self.addpsf(cutout_psf.data,normalize=False)
 
 #   Add mask
 #   --------------------------------------------------------
@@ -257,7 +267,7 @@ class Image:
 
         if normalize:
             kernel = kernel/np.sum(kernel)
-
+            
         kx, ky = kernel.shape
         dx, dy = self.data.shape
 
@@ -270,9 +280,9 @@ class Image:
             kernel = kernel[:,cy:cy+dy]
             
         self.psf = kernel
-
+    
         pad_width = [(0,max(0,s-k)) for s, k in zip(self.data.shape,kernel.shape)]
-        self.psf_fft = np.pad(kernel,pad_width,mode='constant')
+        self.psf_fft = np.pad(kernel,pad_width,mode='constant').astype(np.float64)
         self.psf_fft = jp.fft.rfft2(jp.fft.fftshift(self.psf_fft),s=self.psf_fft.shape)
         self.psf_fft = jp.abs(self.psf_fft)
 

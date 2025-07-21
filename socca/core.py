@@ -136,7 +136,7 @@ class fitter:
         gm = self._get_model if img is None else lambda pp: self.mod.getmap(img,pp)
 
         if usebest:
-            p = np.array([np.quantile(samp,0.50) for samp in self.samples.T])
+            p = np.array([np.quantile(samp,0.50,method='inverted_cdf',weights=self.weights) for samp in self.samples.T])
             mraw, msmo, mbkg, _ = gm(p)
             msmo = msmo-mbkg
         else:
@@ -148,7 +148,7 @@ class fitter:
                 msmo.append(msmo_); del msmo_
                 mbkg.append(mbkg_); del mbkg_
 
-            mraw = np.quantile(mraw,0.50,axis=0)
-            msmo = np.quantile(msmo,0.50,axis=0)
-            mbkg = np.quantile(mbkg,0.50,axis=0)
+            mraw = np.quantile(mraw,0.50,axis=0,method='inverted_cdf',weights=self.weights)
+            msmo = np.quantile(msmo,0.50,axis=0,method='inverted_cdf',weights=self.weights)
+            mbkg = np.quantile(mbkg,0.50,axis=0,method='inverted_cdf',weights=self.weights)
         return mraw, msmo, mbkg
