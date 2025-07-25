@@ -1,14 +1,8 @@
-from sklearn.covariance import log_likelihood
 from .utils import *
 
 import dynesty
 import nautilus
 import pocomc
-
-import time
-import glob
-import dill
-import os
 
 # Support functions
 # ========================================================
@@ -19,7 +13,7 @@ def get_imp_weights(logw,logz=None):
     if not hasattr(logz,'__len__'): logz = [logz]
 
     wt = logw-logz[-1]
-    wt = wt-np.logsumexp(wt)
+    wt = wt-scipy.special.logsumexp(wt)
     return np.exp(wt)
 
 # Fitter constructor
