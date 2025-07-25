@@ -1,11 +1,26 @@
+from sklearn.covariance import log_likelihood
 from .utils import *
 
 import dynesty
 import nautilus
+import pocomc
 
 import time
+import glob
 import dill
 import os
+
+# Support functions
+# ========================================================
+# Compute importance weights for nested sampling
+# --------------------------------------------------------
+def get_imp_weights(logw,logz=None):
+    if logz is None: logz = [logw.max()]
+    if not hasattr(logz,'__len__'): logz = [logz]
+
+    wt = logw-logz[-1]
+    wt = wt-np.logsumexp(wt)
+    return np.exp(wt)
 
 # Fitter constructor
 # ========================================================
@@ -111,10 +126,37 @@ class fitter:
             dt = '{0:.2f} s'.format(dt) if dt<60.00 else '{0:.2f} m'.format(dt/60.00)
             print(f'Elapsed time: {dt}')
 
-            self.samples, logw, _ = self.sampler.posterior()
-            self.weights = np.exp(logw).copy()
+            self.samples, self.logw, _ = self.sampler.posterior()
             self.logz = self.sampler.evidence()
-    
+
+            self.weights = get_imp_weights(self.logw,self.logz)
+
+        elif self.method=='pocomc':
+            pocodir = '{0}_pocomc_dump'.format(checkpoint.replace('.hdf5','').replace('.h5',''))
+
+            prior = []
+            for ki, key in enumerate(self.mod.params):
+                if isinstance(self.mod.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+                    prior.append(self.mod.priors[key])
+            prior = pocomc.Prior(prior)
+
+            self.sampler = pocomc.Sampler(likelihood = log_likelihood,
+                                          prior = prior,
+                                    n_effective = nlive,
+                                       n_active = nlive//2,
+                                      vectorize = False,
+                                     output_dir = pocodir,
+                                        dynamic = True,
+                                   random_state = 0)
+            
+            states_ = sorted(glob.glob(f'{pocodir}/*.state'))
+            self.sampler.run(save_every=10,resume_state_path=states_[-1] if len(states_) else None,progress=True)
+
+            self.samples, self.logw, _, _ = self.sampler.posterior()
+            self.logz, _ = sampler.evidence()
+
+            self.weights = get_imp_weights(self.logw,self.logz)
+
 #   Dump results
 #   --------------------------------------------------------
     def dump(self,filename):
