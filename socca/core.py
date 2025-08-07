@@ -151,6 +151,10 @@ class fitter:
 
             self.weights = get_imp_weights(self.logw,self.logz)
 
+        self.refz = self.img.data.at[self.mask].get()
+        self.refz = self.pdfnoise(jp.zeros(self.refz.shape)).sum()
+
+
 #   Dump results
 #   --------------------------------------------------------
     def dump(self,filename):
