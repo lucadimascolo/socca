@@ -160,9 +160,9 @@ class Profile(Component):
         self.xc = kwargs.get('xc',None)
         self.yc = kwargs.get('yc',None)
         
-        self.theta = kwargs.get('theta',None)
-        self.e     = kwargs.get('e',    None)
-        self.cbox  = kwargs.get('cbox', None)
+        self.theta = kwargs.get('theta',0.00)
+        self.e     = kwargs.get('e',    0.00)
+        self.cbox  = kwargs.get('cbox', 0.00)
 
         self.positive = kwargs.get('positive',False)
         self.units = dict(xc='deg',yc='deg',theta='rad',e='',cbox='')
@@ -360,31 +360,31 @@ class Background(Component):
         self.positive = kwargs.get('positive',False)
         self.rc = kwargs.get('rc',1.00/60.00/60.00)
         self.a0 = kwargs.get('a0',None)
-        self.a1 = kwargs.get('a1',None)
-        self.a2 = kwargs.get('a2',None)
-        self.a3 = kwargs.get('a3',None)
-        self.a4 = kwargs.get('a4',None)
-        self.a5 = kwargs.get('a5',None)
-        self.a6 = kwargs.get('a6',None)
-        self.a7 = kwargs.get('a7',None)
-        self.a8 = kwargs.get('a8',None)
-        self.a9 = kwargs.get('a9',None)
+        self.a1x = kwargs.get('a1x',0.00)
+        self.a1y = kwargs.get('a1y',0.00)
+        self.a2xx  = kwargs.get('a2xx', 0.00)
+        self.a2xy  = kwargs.get('a2xy', 0.00)
+        self.a2yy  = kwargs.get('a2yy', 0.00)
+        self.a3xxx = kwargs.get('a3xxx',0.00)
+        self.a3xxy = kwargs.get('a3xxy',0.00)
+        self.a3xyy = kwargs.get('a3xyy',0.00)
+        self.a3yyy = kwargs.get('a3yyy',0.00)
 
         self.units = dict(rc='deg')
         self.units.update({f'a{ci}':'' for ci in range(10)})
 
     @staticmethod
-    def profile(x,y,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,rc):
+    def profile(x,y,a0,a1x,a1y,a2xx,a2xy,a2yy,a3xxx,a3xxy,a3xyy,a3yyy,rc):
         xc, yc = x/rc, y/rc
         factor  = a0
-        factor += a1*xc + a2*yc 
-        factor += a3*xc*yc + a4*xc**2 + a5*yc**2 
-        factor += a6*xc**3 + a7*yc**3 + a8*xc**2*yc + a9*xc*yc**2
+        factor += a1x*xc + a1y*yc
+        factor += a2xy*xc*yc + a2xx*xc**2 + a2yy*yc**2
+        factor += a3xxx*xc**3 + a3yyy*yc**3 + a3xxy*xc**2*yc + a3xyy*xc*yc**2
         return factor
 
     def getmap(self,img):
         xgrid, ygrid = img.getgrid()
-        kwarg = {key: getattr(self,key) for key in ['a0','a1','a2','a3','a4','a5','a6','a7','a8','a9','rc']}
+        kwarg = {key: getattr(self,key) for key in ['a0','a1x','a1y','a2xx','a2xy','a2yy','a3xxx','a3xxy','a3xyy','a3yyy','rc']}
         
         for key in kwarg.keys():
             if isinstance(kwarg[key], scipy.stats._distn_infrastructure.rv_continuous_frozen):
