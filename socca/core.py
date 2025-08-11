@@ -75,6 +75,13 @@ class fitter:
         def prior_transform(utheta):
             return self._prior_transform(utheta)
         
+        def prior_probability(theta):
+            prob = 0.00
+            for idx in self.mod.paridx:
+                key = self.mod.params[idx]
+                prob += self.mod.priors[key].logpdf(theta[key])
+            return prob
+        
         if self.method=='dynesty':
 
             ndims = len(self.mod.paridx)
@@ -82,6 +89,7 @@ class fitter:
             if checkpoint is None:
                 resume = False
 
+            print('\n* Running the main sampling step')
             if ~resume or not os.path.exists(checkpoint):
                 sampler = dynesty.NestedSampler(log_likelihood,prior_transform,
                                                 ndim = ndims,
@@ -99,7 +107,15 @@ class fitter:
             self.samples = results['samples'].copy()
             self.weights = results.importance_weights().copy()
             self.logz = results['logz'][-1]
-            
+
+            print('\n* Sampling the prior probability')
+            sampler_prior = dynesty.NestedSampler(prior_probability,prior_transform,
+                                                ndim = ndims,
+                                               nlive = nlive,
+                                               bound = 'multi')
+            sampler_prior.run_nested(dlogz=dlogz)
+            self.logz_prior = sampler.results['logz'][-1]
+
         elif self.method=='nautilus':
             prior = nautilus.Prior()
             for ki, key in enumerate(self.mod.params):
@@ -110,6 +126,7 @@ class fitter:
                 pars = np.array([theta[self.mod.params[idx]] for idx in self.mod.paridx])
                 return log_likelihood(pars)
             
+            print('\n* Running the main sampling step')
             self.sampler = nautilus.Sampler(prior,dict_likelihood,n_live=nlive,filepath=checkpoint,resume=resume)
             
             toc = time.time()
@@ -121,11 +138,18 @@ class fitter:
             print(f'Elapsed time: {dt}')
 
             self.samples, self.logw, _ = self.sampler.posterior()
-            self.logz = self.sampler.evidence()
+            self.logz = self.sampler.log_z
 
             self.weights = get_imp_weights(self.logw,self.logz)
 
+            print('\n* Sampling the prior probability')
+            sampler_prior = nautilus.Sampler(prior,prior_probability,n_live=nlive)
+            sampler_prior.run(f_live=dlogz,verbose=True,**kwargs)
+            self.logz_prior = sampler_prior.log_z
+            
         elif self.method=='pocomc':
+            if checkpoint is None:
+                checkpoint = 'run'
             pocodir = '{0}_pocomc_dump'.format(checkpoint.replace('.hdf5','').replace('.h5',''))
 
             prior = []
@@ -134,26 +158,58 @@ class fitter:
                     prior.append(self.mod.priors[key])
             prior = pocomc.Prior(prior)
 
+            print('\n* Running the main sampling step')
             self.sampler = pocomc.Sampler(likelihood = log_likelihood,
-                                          prior = prior,
-                                    n_effective = nlive,
-                                       n_active = nlive//2,
-                                      vectorize = False,
-                                     output_dir = pocodir,
-                                        dynamic = True,
-                                   random_state = 0)
+                                               prior = prior,
+                                         n_effective = nlive,
+                                            n_active = nlive//2,
+                                           vectorize = False,
+                                          output_dir = pocodir,
+                                             dynamic = True,
+                                        random_state = 0)
             
             states_ = sorted(glob.glob(f'{pocodir}/*.state'))
             self.sampler.run(save_every=10,resume_state_path=states_[-1] if len(states_) else None,progress=True)
 
             self.samples, self.logw, _, _ = self.sampler.posterior()
-            self.logz, _ = sampler.evidence()
+            self.logz, _ = self.sampler.evidence()
 
             self.weights = get_imp_weights(self.logw,self.logz)
 
-        self.refz = self.img.data.at[self.mask].get()
-        self.refz = self.pdfnoise(jp.zeros(self.refz.shape)).sum()
+            print('\n* Sampling the prior probability')
+            sampler_prior = pocomc.Sampler(likelihood = prior_probability,
+                                               prior = prior,
+                                         n_effective = nlive,
+                                            n_active = nlive//2,
+                                           vectorize = False,
+                                             dynamic = True,
+                                        random_state = 0)
+            self.sampler.run(progress=True)
+            self.logz_prior, _ = self.sampler.evidence()
 
+        self.logz_data = self.img.data.at[self.mask].get()
+        self.logz_data = self.pdfnoise(jp.zeros(self.logz_data.shape)).sum()
+
+#  Compute standard Bayesian Model Selection estimators
+#   --------------------------------------------------------
+    def bmc(self,verbose=True):
+        lnBF_raw = self.logz-self.logz_data
+        seff_raw = np.sign(lnBF_raw)*np.sqrt(2.00*np.abs(lnBF_raw))
+
+        lnBF_cor = lnBF_raw-self.logz_prior
+        seff_cor = np.sign(lnBF_cor)*np.sqrt(2.00*np.abs(lnBF_cor))
+
+        if verbose:
+            print('\nnull-model comparison')
+            print('-'*20)
+            print(f'ln(Bayes factor) : {lnBF_raw:10.3E}')
+            print(f'effective sigma  : {seff_raw:10.3E}')
+            print('\nprior deboosted')
+            print('-'*20)
+            print(f'ln(Bayes factor) : {lnBF_cor:10.3E}')
+            print(f'effective sigma  : {seff_cor:10.3E}\n')
+
+        return lnBF_raw, seff_raw, lnBF_cor, seff_cor
 
 #   Dump results
 #   --------------------------------------------------------
