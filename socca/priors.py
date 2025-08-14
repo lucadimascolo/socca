@@ -18,7 +18,7 @@ def loguniform(low,high):
         message = 'The lower limit must be smaller than the upper limit.'
         message = message+f'\nInput values > low={low} high={high}'
         raise ValueError(message) 
-    return scipy.stats.loguniform(a=low,b=high-low)
+    return scipy.stats.loguniform(a=low,b=high)
 
 # Normal
 # --------------------------------------------------------
