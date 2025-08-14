@@ -4,5 +4,6 @@ os.environ['XLA_FLAGS'] = ('--xla_cpu_multi_thread_eigen=false intra_op_parallel
 from . import data
 from . import priors
 from . import models
+from . import noise
 
 from .core import *

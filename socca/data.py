@@ -109,7 +109,7 @@ class FFTspec:
 # Initialize image structure
 # --------------------------------------------------------
 class Image:
-    def __init__(self,img,noise=None,**kwargs):
+    def __init__(self,img,exposure=None,noise=None,**kwargs):
         self.subgrid = kwargs.get('subgrid',1)
 
         self.hdu = _img_loader(img,kwargs.get('img_idx',0))
@@ -143,6 +143,13 @@ class Image:
         self.mask = jp.ones(self.data.shape,dtype=int)
         self.mask = self.mask.at[jp.isnan(self.data)].set(0)
         
+        if exposure is not None:
+            self.exp = _img_loader(exposure,kwargs.get('exp_idx',0))
+            self.exp = _reduce_axes(self.exp)
+            self.exp = self.exp.data()
+        else:
+            self.exp = jp.ones(self.data.shape,dtype=float)
+            
         self.sigma = self.getsigma(noise)
        
         if 'center' in kwargs and 'csize' in kwargs:
@@ -179,13 +186,15 @@ class Image:
         center : tuple or SkyCoord
         csize  : int, array_like, or Quantity
         """
-        cutout_data  = Cutout2D(self.data,center,csize,wcs=self.wcs)
-        cutout_mask  = Cutout2D(self.mask,center,csize,wcs=self.wcs)
+        cutout_data  = Cutout2D(self.data, center,csize,wcs=self.wcs)
+        cutout_mask  = Cutout2D(self.mask, center,csize,wcs=self.wcs)
         cutout_sigma = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
+        cutout_exp   = Cutout2D(self.exp,  center,csize,wcs=self.wcs)
         
         self.data  = jp.array(cutout_data.data)
         self.mask  = jp.array(cutout_mask.data);  del cutout_mask
         self.sigma = jp.array(cutout_sigma.data); del cutout_sigma
+        self.exp   = jp.array(cutout_exp.data); del cutout_exp
 
         if self.psf is not None:
             center_psf = (self.hdu.header['CRPIX1'],self.hdu.header['CRPIX2'])
