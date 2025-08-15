@@ -40,14 +40,16 @@ class fitter:
 #   Compute total model
 #   --------------------------------------------------------
     def _get_model(self,pp):
-        return self.mod.getmap(self.img,pp)
+        doresp = ~np.all(np.array(self.img.resp) == 1.00) #True
+        doexp  = ~np.all(np.array(self.img.exp)  == 1.00) #True
+        return self.mod.getmap(self.img,pp,doresp=doresp,doexp=doexp)
 
 #   Compute log-likelihood
 #   --------------------------------------------------------
     def _log_likelihood(self,pp):
         _, mod, _, neg = self._get_model(pp)
 
-        mod = (self.img.exp*mod).at[self.mask].get()
+        mod = mod.at[self.mask].get()
         pdf = self.pdfnoise(mod)
         return jp.where(neg.at[self.mask].get()==1,-jp.inf,pdf).sum()
 
@@ -255,8 +257,8 @@ class fitter:
 
 #   Generate best-fit/median model
 #   --------------------------------------------------------
-    def getmodel(self,usebest=True,img=None):
-        gm = self._get_model if img is None else lambda pp: self.mod.getmap(img,pp)
+    def getmodel(self,usebest=True,img=None,doresp=False,doexp=False):
+        gm = lambda pp: self.mod.getmap(self.img if img is None else img,pp,doresp,doexp)
 
         if usebest:
             p = np.array([np.quantile(samp,0.50,method='inverted_cdf',weights=self.weights) for samp in self.samples.T])

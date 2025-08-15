@@ -53,7 +53,7 @@ class Model:
 
 # Get the model map
 # --------------------------------------------------------
-    def getmap(self,img,pp):
+    def getmap(self,img,pp,doresp=False,doexp=False):
         pars = {}
         for ki, key in enumerate(self.params):
             if isinstance(self.priors[key],(float,int)):
@@ -79,7 +79,23 @@ class Model:
                   if key.startswith(f'src_{nc:02d}') and \
                      key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.profile[nc]).parameters.keys())}
 
-            if self.type[nc]=='Background':
+            if self.type[nc]=='Point':
+                uphase, vphase = img.fft.shift(kwarg['xc'],kwarg['yc'])
+                
+                mone = kwarg['Ic']*img.fft.pulse*jp.exp(-(uphase+vphase))
+                if self.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
+                
+                if doresp:
+                    xpts = (kwarg['xc']-img.hdu.header['CRVAL1'])/jp.abs(img.hdu.header['CDELT1'])
+                    ypts = (kwarg['yc']-img.hdu.header['CRVAL2'])/jp.abs(img.hdu.header['CDELT2'])
+
+                    xpts = img.hdu.header['CRPIX1']-1+xpts*jp.cos(jp.deg2rad(img.hdu.header['CRVAL2']))
+                    ypts = img.hdu.header['CRPIX2']-1+ypts
+                    mone *= jax.scipy.ndimage.map_coordinates(img.resp,[jp.array([ypts]),jp.array([xpts])],order=1,mode='nearest')[0]
+                
+                mpts += mone.copy(); del mone
+
+            elif self.type[nc]=='Background':
                 yr = jp.mean(img.grid.y,axis=0)-img.hdu.header['CRVAL2']
                 xr = jp.mean(img.grid.x,axis=0)-img.hdu.header['CRVAL1']
                 xr = xr*jp.cos(jp.deg2rad(img.hdu.header['CRVAL2']))
@@ -88,13 +104,7 @@ class Model:
                 if self.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
 
                 mbkg += mone.copy(); del mone
-            elif self.type[nc]=='Point':
-                uphase, vphase = img.fft.shift(kwarg['xc'],kwarg['yc'])
                 
-                mone = kwarg['Ic']*img.fft.pulse*jp.exp(-(uphase+vphase))
-                if self.positive[nc]: mneg = jp.where(mone<0.00,1.00,mneg)
-                
-                mpts += mone.copy(); del mone
             elif 'Thick' in self.type[nc]:
                 pass
             else:
@@ -111,8 +121,10 @@ class Model:
                 mraw += mone.copy(); del mone
         
         msmo = mraw.copy()
+        if doresp: msmo *= img.resp
+
         if img.psf is not None:
-            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(mraw),s=img.data.shape))*img.psf_fft
+            msmo = (mpts+jp.fft.rfft2(jp.fft.fftshift(msmo),s=img.data.shape))*img.psf_fft
             msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo,s=img.data.shape)).real
     
         mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts,s=img.data.shape)).real
@@ -120,7 +132,12 @@ class Model:
         if img.psf is None:
             msmo = msmo+mpts
 
-        return mraw+mpts, msmo+mbkg, mbkg, mneg
+        msmo = msmo+mbkg
+        if doexp: 
+            msmo *= img.exp
+            mbkg *= img.exp
+
+        return mraw+mpts, msmo, mbkg, mneg
 
 
 # General composable term
