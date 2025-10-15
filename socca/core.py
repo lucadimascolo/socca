@@ -74,7 +74,7 @@ class fitter:
     
 #   Main sampler function
 #   --------------------------------------------------------
-    def run(self,nlive=100,dlogz=0.01,method='dynesty',checkpoint=None,resume=True,getzprior=False,**kwargs):
+    def run(self,method='dynesty',checkpoint=None,resume=True,getzprior=False,**kwargs):
         self.method = method
 
         @jax.jit
@@ -95,6 +95,14 @@ class fitter:
         
         self.logz_prior = None
         
+        if self.method in ['dynesty','nautilus','pocomc']:
+            nlive = kwargs.pop('nlive',1000)
+            dlogz = kwargs.pop('dlogz',0.01)
+
+        if self.method in ['optimizer']:
+            midpoint = kwargs.pop('midpoint',True)
+            pinits   = kwargs.pop('pinits',None)
+
         if self.method in sampler_methods:
             sampler_kwargs = list(inspect.signature(sampler_methods[self.method]).parameters.keys())
             sampler_kwargs = [{key: eval(key) for key in sampler_kwargs if key!='kwargs'},eval('kwargs')]
@@ -223,8 +231,45 @@ class fitter:
 
 #   Fitting method - optimizer
 #   --------------------------------------------------------
-    def _run_optimizer(self):
-        pass
+    def _run_optimizer(self,midpoint,pinits,**kwargs):
+        
+        _opt_dist = []
+        
+        for pi, p in enumerate(self.mod.paridx):
+            key = self.mod.params[p]
+            if self.mod.priors[key].dist.name=='uniform':
+                support = self.mod.priors[key].support()
+                loc, scale = support[0], support[1]-support[0]
+                _opt_dist.append(f'jax.scipy.stats.uniform.ppf(p,loc={loc},scale={scale})')
+            elif self.mod.priors[key].dist.name=='loguniform':
+                support = self.mod.priors[key].support()
+                a, b = support[0], support[1]
+                _opt_dist.append(f'10**jax.scipy.stats.uniform.ppf(p,loc=np.log10({a}),scale=np.log10({b})-np.log10({a}))')
+            elif self.mod.priors[key].dist.name=='norm':
+                loc, scale = self.mod.priors[key].mean(), self.mod.priors[key].std()
+                _opt_dist.append(f'jax.scipy.stats.norm.ppf(p,loc={loc},scale={scale})')
+            else:
+                message = f'Unsupported prior distribution for optimization: {self.mod.priors[key].dist.name}'
+                raise ValueError(message)
+
+        def _opt_prior(pp):
+            return jp.array([eval(_opt_dist[pi]) for pi, p in enumerate(pp)])
+
+        def _opt_func(pp):
+            pars = _opt_prior(pp)
+            return -self._log_likelihood(pars)
+        
+        opt_func_jac = jax.jit(jax.value_and_grad(_opt_func))
+
+        if pinits is None:
+            if midpoint:
+                pinits = jp.array([0.50 for _ in self.mod.paridx])
+            else:
+                pinits = jp.array([np.random.rand() for _ in self.mod.paridx])
+                
+        bounds = [(0.00,1.00) for _ in self.mod.paridx]
+    
+        self.results = scipy.optimize.minimize(fun=opt_func_jac,x0=pinits,jac=True,bounds=bounds,method='L-BFGS-B')
 
 #   Compute standard Bayesian Model Selection estimators
 #   --------------------------------------------------------
@@ -267,20 +312,25 @@ class fitter:
     def getmodel(self,usebest=True,img=None,doresp=False,doexp=False):
         gm = lambda pp: self.mod.getmap(self.img if img is None else img,pp,doresp,doexp)
 
-        if usebest:
-            p = np.array([np.quantile(samp,0.50,method='inverted_cdf',weights=self.weights) for samp in self.samples.T])
+        if self.method=='optimizer':
+            p = self._prior_transform(self.results.x)
             mraw, msmo, mbkg, _ = gm(p)
             msmo = msmo-mbkg
         else:
-            mraw, msmo = [], []
-            for sample in self.samples:
-                mraw_, msmo_, mbkg_, _ = gm(sample)
-                msmo_ = msmo_-mbkg_
-                mraw.append(mraw_); del mraw_
-                msmo.append(msmo_); del msmo_
-                mbkg.append(mbkg_); del mbkg_
+            if usebest:
+                p = np.array([np.quantile(samp,0.50,method='inverted_cdf',weights=self.weights) for samp in self.samples.T])
+                mraw, msmo, mbkg, _ = gm(p)
+                msmo = msmo-mbkg
+            else:
+                mraw, msmo = [], []
+                for sample in self.samples:
+                    mraw_, msmo_, mbkg_, _ = gm(sample)
+                    msmo_ = msmo_-mbkg_
+                    mraw.append(mraw_); del mraw_
+                    msmo.append(msmo_); del msmo_
+                    mbkg.append(mbkg_); del mbkg_
 
-            mraw = np.quantile(mraw,0.50,axis=0,method='inverted_cdf',weights=self.weights)
-            msmo = np.quantile(msmo,0.50,axis=0,method='inverted_cdf',weights=self.weights)
-            mbkg = np.quantile(mbkg,0.50,axis=0,method='inverted_cdf',weights=self.weights)
+                mraw = np.quantile(mraw,0.50,axis=0,method='inverted_cdf',weights=self.weights)
+                msmo = np.quantile(msmo,0.50,axis=0,method='inverted_cdf',weights=self.weights)
+                mbkg = np.quantile(mbkg,0.50,axis=0,method='inverted_cdf',weights=self.weights)
         return mraw, msmo, mbkg
