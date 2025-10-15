@@ -212,6 +212,22 @@ class Profile(Component):
         warnings.warn('Nothing to refactor here.')
         return self.__class__(**self.__dict__)
 
+# Beta profile
+# --------------------------------------------------------
+class Beta(Profile):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.rc = kwargs.get('rc', None)
+        self.Ic = kwargs.get('Ic', None)
+        self.beta = kwargs.get('beta', None)
+
+        self.units.update(dict(rc='deg',beta='',Ic='image'))
+
+    @staticmethod
+    @jax.jit
+    def profile(r,Ic,rc,beta):
+        return Ic*jp.power(1.00+(r/rc)**2,-beta)
+
 # Sersic profile
 # --------------------------------------------------------
 from scipy.special import gammaincinv
