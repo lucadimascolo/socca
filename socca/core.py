@@ -27,7 +27,7 @@ class fitter:
         self.img = img
         self.mod = mod
 
-        self.mask = jp.where(self.img.mask==1.00)
+        self.mask = noise.mask
         self.pdfnoise = noise.logpdf
 
         if not hasattr(self.img,'shape'):
@@ -47,10 +47,11 @@ class fitter:
 #   Compute log-likelihood
 #   --------------------------------------------------------
     def _log_likelihood(self,pp):
-        _, mod, _, neg = self._get_model(pp)
+        xr, xs, _, neg = self._get_model(pp)
 
-        mod = mod.at[self.mask].get()
-        pdf = self.pdfnoise(mod)
+        xs = xs.at[self.mask].get()
+        xr = xr.at[self.mask].get()
+        pdf = self.pdfnoise(xr,xs)
         return jp.where(neg.at[self.mask].get()==1,-jp.inf,pdf).sum()
 
 #   Prior probability distribution
@@ -73,7 +74,7 @@ class fitter:
     
 #   Main sampler function
 #   --------------------------------------------------------
-    def run(self,nlive=100,dlogz=0.01,method='dynesty',checkpoint=None,resume=True,**kwargs):
+    def run(self,nlive=100,dlogz=0.01,method='dynesty',checkpoint=None,resume=True,getzprior=False,**kwargs):
         self.method = method
 
         @jax.jit
@@ -92,6 +93,8 @@ class fitter:
                          'optimizer': self._run_optimizer
         }
         
+        self.logz_prior = None
+        
         if self.method in sampler_methods:
             sampler_kwargs = list(inspect.signature(sampler_methods[self.method]).parameters.keys())
             sampler_kwargs = [{key: eval(key) for key in sampler_kwargs if key!='kwargs'},eval('kwargs')]
@@ -100,12 +103,13 @@ class fitter:
             raise ValueError(f"Unknown sampling method: {self.method}")
 
         self.logz_data = self.img.data.at[self.mask].get()
-        self.logz_data = self.pdfnoise(jp.zeros(self.logz_data.shape)).sum()
-
+        self.logz_data = self.pdfnoise(jp.zeros(self.logz_data.shape),
+                                       jp.zeros(self.logz_data.shape)).sum()
+    
 
 #   Fitting method - Dynesty sampler
 #   --------------------------------------------------------
-    def _run_dynesty(self,log_likelihood,log_prior,prior_transform,nlive,dlogz,checkpoint,resume,**kwargs):
+    def _run_dynesty(self,log_likelihood,log_prior,prior_transform,nlive,dlogz,checkpoint,resume,getzprior,**kwargs):
         ndims = len(self.mod.paridx)
 
         if checkpoint is None:
@@ -130,17 +134,18 @@ class fitter:
         self.weights = results.importance_weights().copy()
         self.logz = results['logz'][-1]
 
-        print('\n* Sampling the prior probability')
-        sampler_prior = dynesty.NestedSampler(log_prior,prior_transform,
-                                            ndim = ndims,
-                                           nlive = nlive,
-                                           bound = 'multi')
-        sampler_prior.run_nested(dlogz=dlogz)
-        self.logz_prior = sampler.results['logz'][-1]
+        if getzprior:
+            print('\n* Sampling the prior probability')
+            sampler_prior = dynesty.NestedSampler(log_prior,prior_transform,
+                                                ndim = ndims,
+                                            nlive = nlive,
+                                            bound = 'multi')
+            sampler_prior.run_nested(dlogz=dlogz)
+            self.logz_prior = sampler.results['logz'][-1]
 
 #   Fitting method - Nautilus sampler
 #   --------------------------------------------------------
-    def _run_nautilus(self,log_likelihood,log_prior,nlive,dlogz,checkpoint,resume,**kwargs):
+    def _run_nautilus(self,log_likelihood,log_prior,nlive,dlogz,checkpoint,resume,getzprior,**kwargs):
         prior = nautilus.Prior()
         for ki, key in enumerate(self.mod.params):
             if isinstance(self.mod.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
@@ -166,14 +171,15 @@ class fitter:
 
         self.weights = get_imp_weights(self.logw,self.logz)
 
-        print('\n* Sampling the prior probability')
-        sampler_prior = nautilus.Sampler(prior,log_prior,n_live=nlive)
-        sampler_prior.run(f_live=dlogz,verbose=True,**kwargs)
-        self.logz_prior = sampler_prior.log_z
+        if getzprior:
+            print('\n* Sampling the prior probability')
+            sampler_prior = nautilus.Sampler(prior,log_prior,n_live=nlive)
+            sampler_prior.run(f_live=dlogz,verbose=True,**kwargs)
+            self.logz_prior = sampler_prior.log_z
 
 #   Fitting method - PocoMC sampler
 #   --------------------------------------------------------
-    def _run_pocomc(self,log_likelihood,log_prior,nlive,checkpoint,resume,**kwargs):
+    def _run_pocomc(self,log_likelihood,log_prior,nlive,checkpoint,resume,getzprior,**kwargs):
         if checkpoint is None and resume: checkpoint = 'run'
         pocodir = '{0}_pocomc_dump'.format(checkpoint.replace('.hdf5','').replace('.h5',''))
 
@@ -203,16 +209,17 @@ class fitter:
 
         self.weights = get_imp_weights(self.logw,self.logz)
 
-        print('\n* Sampling the prior probability')
-        sampler_prior = pocomc.Sampler(likelihood = log_prior,
-                                           prior = prior,
-                                     n_effective = nlive,
-                                        n_active = nlive//2,
-                                       vectorize = False,
-                                         dynamic = True,
-                                    random_state = 0)
-        self.sampler.run(progress=True)
-        self.logz_prior, _ = self.sampler.evidence()
+        if getzprior:
+            print('\n* Sampling the prior probability')
+            sampler_prior = pocomc.Sampler(likelihood = log_prior,
+                                            prior = prior,
+                                        n_effective = nlive,
+                                            n_active = nlive//2,
+                                        vectorize = False,
+                                            dynamic = True,
+                                        random_state = 0)
+            self.sampler_prior.run(progress=True)
+            self.logz_prior, _ = self.sampler_prior.evidence()
 
 #   Fitting method - optimizer
 #   --------------------------------------------------------

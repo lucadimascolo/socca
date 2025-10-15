@@ -12,8 +12,7 @@ class Normal(PDF):
     def __init__(self,img):
         super().__init__(img)
         self.sigma = img.sigma.at[self.mask].get()
-
-        self.logpdf = jax.jit(lambda x: self._logpdf(x,self.data,self.sigma))
+        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xs,self.data,self.sigma))
 
     @staticmethod
     def _logpdf(x,data,sigma):
@@ -21,13 +20,24 @@ class Normal(PDF):
     
 # Correlated multi-variate normal noise
 # --------------------------------------------------------
-class NormalCorr(PDF):
-    def __init__(self,img):
+class NormalBeam(PDF):
+    def __init__(self,img,eps=0.00):
         super().__init__(img)
-        self.logpdf = jax.jit(lambda x: self._logpdf(x,self.data))
+
+      # Tikonov/Wiener damping
+        if eps==0.00: 
+            invB = 1.00/img.psf_fft 
+        else:
+            invB = eps*jp.abs(img.psf_fft).max()**2
+            invB = jp.abs(img.psf_fft)**2+invB
+            invB = jp.conj(img.psf_fft)/invB
+        
+        self.norm   = jp.fft.ifft2(jp.fft.fft2(img.data)*invB).real
+        self.norm   = jp.sum(self.norm.at[self.mask].get())
+
+        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xr,xs,self.data,self.norm))
 
     @staticmethod
-    def _logpdf(x,data):
-        chi2 = 0 # jp.matmul(x,x)
-        chi2 = chi2-2.00*jp.matmul(data,x)
+    def _logpdf(xr,xs,data,norm):
+        chi2 = norm+jp.sum(xr*xs)-2.00*jp.sum(data*xr)
         return -0.50*chi2

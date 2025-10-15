@@ -86,9 +86,9 @@ class WCSgrid:
             gridwx[gridix] = gridwx[gridix]-3.6e2
         
         return gridwx, gridwy
-    
 
-
+# FFT planner
+# --------------------------------------------------------
 class FFTspec:
     def __init__(self,hdu):
         self.pulse = jp.fft.rfft2(jp.fft.ifftshift(jp.fft.ifft2(jp.full(hdu.data.shape,1.00+0.00j))).real)
@@ -102,7 +102,7 @@ class FFTspec:
         uphase = -2.00j*jp.pi*self.freq[0]*(self.head['CRPIX1']-2.50+dx/jp.abs(self.head['CDELT1']))
         vphase =  2.00j*jp.pi*self.freq[1]*(self.head['CRPIX2']-1.50+dy/jp.abs(self.head['CDELT2']))
         return uphase, vphase
-
+    
 
 # Image constructor
 # ========================================================
