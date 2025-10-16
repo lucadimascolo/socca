@@ -12,8 +12,9 @@ from astropy.convolution import Gaussian2DKernel
 img = 'input/exp_convoluted.fits'
 img = socca.data.Image(img=img,noise=dict(sigma=0.02))
 
+x_stddev = img.hdu.header['BMAJ']/img.hdu.header['CDELT2']/np.sqrt(8.00*np.log(2.00))
 x,y = np.meshgrid(np.arange(img.data.shape[0]), np.arange(img.data.shape[0]))
-kernel = Gaussian2DKernel(x_stddev=img.hdu.header['BMAJ']/10/(img.hdu.header['CDELT2']*2.355))
+kernel = Gaussian2DKernel(x_stddev=x_stddev)
 kernel = kernel.array
 
 img.addpsf(img=kernel)
