@@ -6,7 +6,8 @@ import types
 # Print available models
 # --------------------------------------------------------
 def zoo():
-    models = ['Sersic',
+    models = ['Beta',
+              'Sersic',
               'Exponential',
               'PolyExponential','PolyExpoRefact',
               'ModExponential',
@@ -416,7 +417,8 @@ class Background(Component):
         return factor
 
     def getmap(self,img):
-        xgrid, ygrid = img.getgrid()
+        xc, yc = self.img.wcs.crval
+        xgrid, ygrid = img.getgrid(xc,yc,0.00,0.00)
         kwarg = {key: getattr(self,key) for key in ['a0','a1x','a1y','a2xx','a2xy','a2yy','a3xxx','a3xxy','a3xyy','a3yyy','rc']}
         
         for key in kwarg.keys():

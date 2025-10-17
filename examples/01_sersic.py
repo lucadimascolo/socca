@@ -46,17 +46,18 @@ plt.show(); plt.close()
 
 # ------------------------------------------------------------------------------------
 
-for key in ['re','Ie']:
-    idx = np.where(np.array(fit.labels)==f'src_00_{key}')[0][0]
-    fit.samples[:,idx] = np.log10(fit.samples[:,idx])
+if fit.method!='optimizer':
+    for key in ['re','Ie']:
+        idx = np.where(np.array(fit.labels)==f'src_00_{key}')[0][0]
+        fit.samples[:,idx] = np.log10(fit.samples[:,idx])
 
-sigma = 10.00
-if sigma is None:
-    edges = None
-else:
-    edges = np.array([corner.quantile(s,[0.16,0.50,0.84],weights=fit.weights) for s in fit.samples.T])
-    edges = np.array([[np.maximum(fit.samples[:,ei].min(),e[1]-sigma*(e[1]-e[0])),
-                       np.minimum(fit.samples[:,ei].max(),e[1]+sigma*(e[2]-e[1]))] for ei, e in enumerate(edges)])
-    
-corner.corner(fit.samples,weights=fit.weights,labels=fit.labels,range=edges)
-plt.savefig('test_corner.pdf',format='pdf',dpi=300); plt.close()
+    sigma = 10.00
+    if sigma is None:
+        edges = None
+    else:
+        edges = np.array([corner.quantile(s,[0.16,0.50,0.84],weights=fit.weights) for s in fit.samples.T])
+        edges = np.array([[np.maximum(fit.samples[:,ei].min(),e[1]-sigma*(e[1]-e[0])),
+                        np.minimum(fit.samples[:,ei].max(),e[1]+sigma*(e[2]-e[1]))] for ei, e in enumerate(edges)])
+        
+    corner.corner(fit.samples,weights=fit.weights,labels=fit.labels,range=edges)
+    plt.savefig('test_corner.pdf',format='pdf',dpi=300); plt.close()

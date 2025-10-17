@@ -146,8 +146,8 @@ class fitter:
             print('\n* Sampling the prior probability')
             sampler_prior = dynesty.NestedSampler(log_prior,prior_transform,
                                                 ndim = ndims,
-                                            nlive = nlive,
-                                            bound = 'multi')
+                                               nlive = nlive,
+                                               bound = 'multi')
             sampler_prior.run_nested(dlogz=dlogz)
             self.logz_prior = sampler.results['logz'][-1]
 
@@ -220,12 +220,12 @@ class fitter:
         if getzprior:
             print('\n* Sampling the prior probability')
             sampler_prior = pocomc.Sampler(likelihood = log_prior,
-                                            prior = prior,
-                                        n_effective = nlive,
-                                            n_active = nlive//2,
-                                        vectorize = False,
-                                            dynamic = True,
-                                        random_state = 0)
+                                                prior = prior,
+                                          n_effective = nlive,
+                                             n_active = nlive//2,
+                                            vectorize = False,
+                                              dynamic = True,
+                                         random_state = 0)
             self.sampler_prior.run(progress=True)
             self.logz_prior, _ = self.sampler_prior.evidence()
 
