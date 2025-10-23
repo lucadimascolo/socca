@@ -23,12 +23,12 @@ def get_imp_weights(logw,logz=None):
 # Initialize fitter structure
 # --------------------------------------------------------
 class fitter:
-    def __init__(self,img,mod,noise):
+    def __init__(self,img,mod):
         self.img = img
         self.mod = mod
 
-        self.mask = noise.mask
-        self.pdfnoise = noise.logpdf
+        self.mask = self.img.noise.mask
+        self.pdfnoise = self.img.noise.logpdf
 
         if not hasattr(self.img,'shape'):
             setattr(self.img,'shape',self.img.data.shape)
@@ -52,7 +52,7 @@ class fitter:
         xs = xs.at[self.mask].get()
         xr = xr.at[self.mask].get()
         pdf = self.pdfnoise(xr,xs)
-        return jp.where(neg.at[self.mask].get()==1,-jp.inf,pdf).sum()
+        return jp.where(jp.any(neg.at[self.mask].get()==1),-jp.inf,pdf)
 
 #   Prior probability distribution
 #   --------------------------------------------------------
@@ -270,6 +270,7 @@ class fitter:
         bounds = [(0.00,1.00) for _ in self.mod.paridx]
     
         self.results = scipy.optimize.minimize(fun=opt_func_jac,x0=pinits,jac=True,bounds=bounds,method='L-BFGS-B')
+        
 
 #   Compute standard Bayesian Model Selection estimators
 #   --------------------------------------------------------
