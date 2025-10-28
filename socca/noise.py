@@ -186,7 +186,7 @@ class NormalStat:
             self.apod = kwargs.get('apod',jp.ones(cube.shape))
             
             fft = jp.fft.rfft2  if ftype in ['real','rfft'] else jp.fft.fft2
-            cov = fft(cube*self.apod,axis=(-2,-1))
+            cov = fft(cube*self.apod,axes=(-2,-1))
             cov = np.mean(np.abs(cov)**2,axis=0)/np.mean(self.apod**2)
 
             smooth = kwargs.get('smooth',3)
@@ -194,8 +194,8 @@ class NormalStat:
                 kernel = kwargs.get('kernel',None)
                 if kernel is None:
                     kernel = np.array([[0.00,1.00,0.00],
-                                        [1.00,1.00,1.00],
-                                        [0.00,1.00,0.00]])/5.00
+                                       [1.00,1.00,1.00],
+                                       [0.00,1.00,0.00]])/5.00
                     kernel = CustomKernel(kernel)
 
                 for _ in range(smooth): 
@@ -226,6 +226,6 @@ class NormalStat:
     def _logpdf(x,data,icov,apod,ftype='real'):
         fft = jp.fft.rfft2 if ftype in ['real','rfft'] else jp.fft.fft2
 
-        chisq = fft((x-data)*apod,axis=(-2,-1))
+        chisq = fft((x-data)*apod,axes=(-2,-1))
         chisq = icov*jp.abs(chisq)**2
         return -0.50*jp.sum(chisq)
