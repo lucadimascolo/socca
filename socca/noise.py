@@ -215,17 +215,20 @@ class NormalStat:
     def __call__(self,data,mask):
         self.mask = mask.copy()
         self.mask = self.mask==1.00
-        self.data = data.at[self.mask].get()
-
+        self.data = data.copy()
+        
         self.norm = 0.00
-        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xs,self.data,self.icov,apod=self.apod,ftype=self.ftype)-0.50*self.norm)
+        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xs,self.data,self.icov,mask=self.mask,apod=self.apod,ftype=self.ftype)-0.50*self.norm)
 
 #   Noise log-pdf/likelihood function
 #   --------------------------------------------------------
     @staticmethod
-    def _logpdf(x,data,icov,apod,ftype='real'):
+    def _logpdf(x,data,icov,mask,apod,ftype='real'):
         fft = jp.fft.rfft2 if ftype in ['real','rfft'] else jp.fft.fft2
 
-        chisq = fft((x-data)*apod,axes=(-2,-1))
+        xmap = jp.zeros(mask.shape)
+        xmap = xmap.at[mask].set(x)
+
+        chisq = fft((xmap-data)*apod,axes=(-2,-1))
         chisq = icov*jp.abs(chisq)**2
         return -0.50*jp.sum(chisq)
