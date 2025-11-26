@@ -9,8 +9,10 @@ import os
 from astropy.coordinates import SkyCoord
 from astropy.convolution import Gaussian2DKernel
 
+noise = socca.noise.Normal()
+
 img = 'input/exp_convoluted.fits'
-img = socca.data.Image(img=img,noise=dict(sigma=0.02))
+img = socca.data.Image(img=img,noise=noise)
 
 x_stddev = img.hdu.header['BMAJ']/img.hdu.header['CDELT2']/np.sqrt(8.00*np.log(2.00))
 x,y = np.meshgrid(np.arange(img.data.shape[0]), np.arange(img.data.shape[0]))
