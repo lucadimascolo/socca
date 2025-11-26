@@ -18,6 +18,7 @@ dependencies = [
     "numpyro",
     "dynesty",
     "nautilus-sampler",
+    "pocomc",
     "corner",
     "dill",
     "h5py"
