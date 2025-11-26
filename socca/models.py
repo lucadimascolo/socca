@@ -229,6 +229,10 @@ class Beta(Profile):
     def profile(r,Ic,rc,beta):
         return Ic*jp.power(1.00+(r/rc)**2,-beta)
 
+# Zernike profile
+# --------------------------------------------------------
+
+
 # Sersic profile
 # --------------------------------------------------------
 from scipy.special import gammaincinv
@@ -339,6 +343,7 @@ class ModExponential(Exponential):
     def profile(r,Ie,re,rm,alpha):
         return Ie*jp.exp(-r/re)*(1.00+r/rm)**alpha
 
+
 # Thick disk model
 # --------------------------------------------------------
 class ThickDisk(Profile):
@@ -346,6 +351,7 @@ class ThickDisk(Profile):
         super().__init__(**kwargs)
         delattr(self,'cbox')
         delattr(self,'e')
+
 
 # Point source
 # --------------------------------------------------------
