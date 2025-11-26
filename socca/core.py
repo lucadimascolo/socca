@@ -1,5 +1,3 @@
-from pprint import pp
-from shapely import bounds
 from .utils import *
 
 import dynesty
