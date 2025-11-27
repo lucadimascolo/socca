@@ -4,6 +4,8 @@ import jax; jax.config.update('jax_enable_x64',True)
 import jax.numpy as jp
 import jax.scipy
 
+import numpyro.distributions
+
 import numpy as np
 import scipy.stats
 import scipy.special

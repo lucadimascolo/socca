@@ -238,20 +238,20 @@ class fitter:
             if self.mod.priors[key].dist.name=='uniform':
                 support = self.mod.priors[key].support()
                 loc, scale = support[0], support[1]-support[0]
-                _opt_dist.append(f'jax.scipy.stats.uniform.ppf(p,loc={loc},scale={scale})')
+                _opt_dist.append(numpyro.distributions.Uniform(loc=loc,scale=scale))
             elif self.mod.priors[key].dist.name=='loguniform':
                 support = self.mod.priors[key].support()
                 a, b = support[0], support[1]
-                _opt_dist.append(f'10**jax.scipy.stats.uniform.ppf(p,loc=np.log10({a}),scale=np.log10({b})-np.log10({a}))')
+                _opt_dist.append(numpyro.distributions.LogUniform(low=a,high=b))
             elif self.mod.priors[key].dist.name=='norm':
                 loc, scale = self.mod.priors[key].mean(), self.mod.priors[key].std()
-                _opt_dist.append(f'jax.scipy.stats.norm.ppf(p,loc={loc},scale={scale})')
+                _opt_dist.append(numpyro.distributions.Normal(loc=loc,scale=scale))
             else:
                 message = f'Unsupported prior distribution for optimization: {self.mod.priors[key].dist.name}'
                 raise ValueError(message)
 
         def _opt_prior(pp):
-            return jp.array([eval(_opt_dist[pi]) for pi, p in enumerate(pp)])
+            return jp.array([_opt_dist[pi].icdf(p) for pi, p in enumerate(pp)])
 
         def _opt_func(pp):
             pars = _opt_prior(pp)
