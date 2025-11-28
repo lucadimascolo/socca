@@ -42,7 +42,7 @@ class Model:
             par = eval(f'prof.{p}')
             self.params.append( f'src_{self.ncomp:02d}_{p}')
             self.priors.update({f'src_{self.ncomp:02d}_{p}': par})
-            if isinstance(par,scipy.stats._distn_infrastructure.rv_continuous_frozen):
+            if isinstance(par,numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params)-1)
             
             if isinstance(par,(types.LambdaType, types.FunctionType)):
@@ -59,7 +59,7 @@ class Model:
         for ki, key in enumerate(self.params):
             if isinstance(self.priors[key],(float,int)):
                 pars[key] = self.priors[key]
-            elif isinstance(self.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+            elif isinstance(self.priors[key],numpyro.distributions.Distribution):
                 pars[key], pp = pp[0], pp[1:]
         
         for ki, key in enumerate(self.params):
@@ -194,7 +194,7 @@ class Profile(Component):
         kwarg = {key: getattr(self,key) for key in list(inspect.signature(self.profile).parameters.keys()) if key!='r'}
         
         for key in kwarg.keys():
-            if isinstance(kwarg[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+            if isinstance(kwarg[key],numpyro.distributions.Distribution):
                 raise ValueError('Priors must be fixed values, not distributions.')
             if kwarg[key] is None:
                 raise ValueError(f'keyword {key} is set to None. Please provide a valid value.')
@@ -228,10 +228,6 @@ class Beta(Profile):
     @jax.jit
     def profile(r,Ic,rc,beta):
         return Ic*jp.power(1.00+(r/rc)**2,-beta)
-
-# Zernike profile
-# --------------------------------------------------------
-
 
 # Sersic profile
 # --------------------------------------------------------
@@ -374,7 +370,7 @@ class Point(Component):
         kwarg = {key: getattr(self,key) for key in ['xc','yc','Ic']}
         
         for key in kwarg.keys():
-            if isinstance(kwarg[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+            if isinstance(kwarg[key],numpyro.distributions.Distribution):
                 raise ValueError('Priors must be fixed values, not distributions.')
             if kwarg[key] is None:
                 raise ValueError(f'keyword {key} is set to None. Please provide a valid value.')
@@ -428,7 +424,7 @@ class Background(Component):
         kwarg = {key: getattr(self,key) for key in ['a0','a1x','a1y','a2xx','a2xy','a2yy','a3xxx','a3xxy','a3xyy','a3yyy','rc']}
         
         for key in kwarg.keys():
-            if isinstance(kwarg[key], scipy.stats._distn_infrastructure.rv_continuous_frozen):
+            if isinstance(kwarg[key], numpyro.distributions.Distribution):
                 raise ValueError('Priors must be fixed values, not distributions.')
             if kwarg[key] is None:
                 raise ValueError(f'keyword {key} is set to None. Please provide a valid value.')
