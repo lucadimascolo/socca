@@ -148,9 +148,7 @@ class Normal(BaseNormal):
 class NormalCorrelated:
     def __init__(self,cov=None,cube=None,**kwargs):
 
-        if cube is not None and cov is None:
-            self.apod = kwargs.get('apod',jp.ones(cube.shape))
-            
+        if cube is not None and cov is None:            
             cov = np.cov(cube.reshape(cube.shape[0],-1),rowvar=True)
 
             smooth = kwargs.get('smooth',3)
@@ -193,7 +191,7 @@ class NormalCorrelated:
 
 # Fourier-space independente noise
 # ========================================================
-class NormalFFT:
+class NormalFourier:
     def __init__(self,cov=None,cube=None,ftype='real',**kwargs):
         if ftype not in ['real','rfft','full','fft']:
             raise ValueError("ftype must be either 'real'/'rfft' or 'full'/'fft'.")
