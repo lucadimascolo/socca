@@ -13,7 +13,8 @@ def zoo():
               'Exponential',
               'PolyExponential','PolyExpoRefact',
               'ModExponential',
-              'Point','Background']
+              'Point','Background',
+              'Disk']
     for mi, m in enumerate(models):
         print(m)
 
@@ -580,11 +581,11 @@ class Disk(Component):
         return mgrid
 
     @staticmethod
-    @partial(jax.jit,static_argnames=['grid'])
+    @partial(jax.jit,static_argnames=['grid','zsize'])
     def getgrid(grid,xc,yc,zext,zsize=200,theta=0.00,inc=0.00):
-        ssize, ysize, xsize = np.shape(grid.x)
+        ssize, ysize, xsize = grid.x.shape
 
-        zt = np.linspace(-zext,zext,zsize)
+        zt = jp.linspace(-zext,zext,zsize)
 
         sint = jp.sin(theta)
         cost = jp.cos(theta)
@@ -599,15 +600,13 @@ class Disk(Component):
         yt = jp.broadcast_to(yt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
         zt = jp.broadcast_to(zt[None,   :,None,None],(ssize,zsize,ysize,xsize)).copy()
 
-        sini = jp.sin(inc-0.5*jp.pi)
-        cosi = jp.cos(inc-0.5*jp.pi)
+        sini = jp.sin(inc-0.50*jp.pi)
+        cosi = jp.cos(inc-0.50*jp.pi)
 
         zt, yt = yt*cosi-zt*sini, \
                  yt*sini+zt*cosi
         
-        rt = jp.sqrt(xt**2+yt**2)     
-        
-        return rt, zt
+        return  jp.sqrt(xt**2+yt**2), zt
  
     def parameters(self):
         keyout =[]
