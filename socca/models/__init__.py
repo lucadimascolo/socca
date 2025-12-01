@@ -27,8 +27,9 @@ class Model:
         self.priors = {}
         self.params = []
         self.paridx = []
-        self.profile = []
         self.positive = []
+        self.profile = []
+        self.gridder = []
         self.tied = []
         self.type = []
 
@@ -57,6 +58,7 @@ class Model:
             else:
                 self.tied.append(False)
         self.profile.append(prof.profile)
+        self.gridder.append(prof.getgrid)
         self.ncomp += 1
 
 # Get the model map
@@ -91,12 +93,13 @@ class Model:
                              if key.startswith(f'src_{nc:02d}') and \
                                 key.replace(f'src_{nc:02d}_vertical.','z_') in list(inspect.signature(self.profile[nc]).parameters.keys())})
             
-                rcube, zcube, _, _ = img.getcube(pars[f'src_{nc:02d}_radial.xc'],
-                                                 pars[f'src_{nc:02d}_radial.yc'],
-                                                 pars[f'src_{nc:02d}_vertical.zext'],
-                                                 pars[f'src_{nc:02d}_vertical.zsize'],
-                                                 pars[f'src_{nc:02d}_radial.theta'],
-                                                 pars[f'src_{nc:02d}_vertical.inc'])
+                rcube, zcube = self.gridder[nc](img.grid,
+                                                pars[f'src_{nc:02d}_radial.xc'],
+                                                pars[f'src_{nc:02d}_radial.yc'],
+                                                pars[f'src_{nc:02d}_vertical.zext'],
+                                                pars[f'src_{nc:02d}_vertical.zsize'],
+                                                pars[f'src_{nc:02d}_radial.theta'],
+                                                pars[f'src_{nc:02d}_vertical.inc'])
 
                 dx = 2.00*pars[f'src_{nc:02d}_vertical.zext']/(pars[f'src_{nc:02d}_vertical.zsize']-1)
                 mone = self.profile[nc](rcube,zcube,**kwarg)
@@ -135,11 +138,12 @@ class Model:
                     mbkg += mone.copy(); del mone
         
                 else:
-                    rgrid = img.getgrid(pars[f'src_{nc:02d}_xc'],
-                                        pars[f'src_{nc:02d}_yc'],
-                                        pars[f'src_{nc:02d}_theta'],
-                                        pars[f'src_{nc:02d}_e'],
-                                        pars[f'src_{nc:02d}_cbox'])
+                    rgrid = self.gridder[nc](img.grid,
+                                             pars[f'src_{nc:02d}_xc'],
+                                             pars[f'src_{nc:02d}_yc'],
+                                             pars[f'src_{nc:02d}_theta'],
+                                             pars[f'src_{nc:02d}_e'],
+                                             pars[f'src_{nc:02d}_cbox'])
 
                     mone = self.profile[nc](rgrid,**kwarg)
                     mone = jp.mean(mone,axis=0)
@@ -178,8 +182,10 @@ class Component:
         self.positive = kwargs.get('positive',config.Component.positive)
         self.okeys = ['id','positive','units']
         self.units = {}
-        
-    def print_params(self):
+
+#   Print model parameters  
+#   --------------------------------------------------------
+    def parameters(self):
         keyout =[]
         for key in self.__dict__.keys():
             if key not in self.okeys and key!='okeys':
@@ -222,7 +228,7 @@ class Profile(Component):
     def getmap(self,img,convolve=False):
         kwarg = {key: getattr(self,key) for key in list(inspect.signature(self.profile).parameters.keys()) if key!='r'}
 
-        rgrid = img.getgrid(self.xc,self.yc,self.theta,self.e)
+        rgrid = self.getgrid(img.grid,self.xc,self.yc,self.theta,self.e)
 
         for key in kwarg.keys():
             if isinstance(kwarg[key],numpyro.distributions.Distribution):
@@ -241,6 +247,19 @@ class Profile(Component):
                 mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
         return mgrid
 
+    @staticmethod
+    @partial(jax.jit,static_argnames=['grid'])
+    def getgrid(grid,xc,yc,theta=0.00,e=0.00,cbox=0.00):
+        sint = jp.sin(theta)
+        cost = jp.cos(theta)
+
+        xgrid = (-(grid.x-xc)*jp.cos(jp.deg2rad(yc))*sint-(grid.y-yc)*cost)
+        ygrid = ( (grid.x-xc)*jp.cos(jp.deg2rad(yc))*cost-(grid.y-yc)*sint)
+        
+        xgrid = jp.abs(xgrid)**(cbox+2.00)
+        ygrid = jp.abs(ygrid/(1.00-e))**(cbox+2.00)
+        return jp.power(xgrid+ygrid,1.00/(cbox+2.00))
+    
     def refactor(self):
         warnings.warn('Nothing to refactor here.')
         return self.__class__(**self.__dict__)
@@ -388,6 +407,10 @@ class Point(Component):
     @staticmethod
     def profile(xc,yc,Ic):
         pass
+
+    @staticmethod
+    def getgrid():
+        pass
     
     def getmap(self,img,convolve=False):
         kwarg = {key: getattr(self,key) for key in ['xc','yc','Ic']}
@@ -431,6 +454,7 @@ class Background(Component):
         self.units.update({f'a{ci}':'' for ci in range(10)})
 
     @staticmethod
+    @jax.jit
     def profile(x,y,a0,a1x,a1y,a2xx,a2xy,a2yy,a3xxx,a3xxy,a3xyy,a3yyy,rc):
         xc, yc = x/rc, y/rc
         factor  = a0
@@ -438,10 +462,15 @@ class Background(Component):
         factor += a2xy*xc*yc + a2xx*xc**2 + a2yy*yc**2
         factor += a3xxx*xc**3 + a3yyy*yc**3 + a3xxy*xc**2*yc + a3xyy*xc*yc**2
         return factor
+    
+    @staticmethod
+    @partial(jax.jit,static_argnames=['grid'])
+    def getgrid(grid,xc,yc):
+        return (grid.x-xc)*jp.cos(jp.deg2rad(yc)), grid.y-yc
 
     def getmap(self,img):
         xc, yc = self.img.wcs.crval
-        xgrid, ygrid = img.getgrid(xc,yc,0.00,0.00)
+        xgrid, ygrid = self.getgrid(img.grid,xc,yc)
         kwarg = {key: getattr(self,key) for key in ['a0','a1x','a1y','a2xx','a2xy','a2yy','a3xxx','a3xxy','a3xyy','a3yyy','rc']}
         
         for key in kwarg.keys():
@@ -528,12 +557,13 @@ class Disk(Component):
             if kwarg[key] is None:
                 raise ValueError(f'keyword {key} is set to None. Please provide a valid value.')
 
-        rcube, zcube, _, _ = img.getcube(self.radial.xc,
-                                         self.radial.yc,
-                                         self.vertical.zext,
-                                         self.vertical.zsize,
-                                         self.radial.theta,
-                                         self.vertical.inc)
+        rcube, zcube = self.getgrid(img.grid,
+                                    self.radial.xc,
+                                    self.radial.yc,
+                                    self.vertical.zext,
+                                    self.vertical.zsize,
+                                    self.radial.theta,
+                                    self.vertical.inc)
 
         dx = 2.00*self.vertical.zext/(self.vertical.zsize-1)
 
@@ -549,7 +579,37 @@ class Disk(Component):
                 mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
         return mgrid
 
-    def print_params(self):
+    @staticmethod
+    @partial(jax.jit,static_argnames=['grid'])
+    def getgrid(grid,xc,yc,zext,zsize=200,theta=0.00,inc=0.00):
+        ssize, ysize, xsize = np.shape(grid.x)
+
+        zt = np.linspace(-zext,zext,zsize)
+
+        sint = jp.sin(theta)
+        cost = jp.cos(theta)
+        
+        xt = (grid.x-xc)*jp.cos(jp.deg2rad(yc))
+        yt = (grid.y-yc)
+
+        xt, yt = -xt*sint-yt*cost,\
+                  xt*cost-yt*sint
+
+        xt = jp.broadcast_to(xt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
+        yt = jp.broadcast_to(yt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
+        zt = jp.broadcast_to(zt[None,   :,None,None],(ssize,zsize,ysize,xsize)).copy()
+
+        sini = jp.sin(inc-0.5*jp.pi)
+        cosi = jp.cos(inc-0.5*jp.pi)
+
+        zt, yt = yt*cosi-zt*sini, \
+                 yt*sini+zt*cosi
+        
+        rt = jp.sqrt(xt**2+yt**2)     
+        
+        return rt, zt
+ 
+    def parameters(self):
         keyout =[]
         for key in self.radial.__dict__.keys():
             if key not in self.okeys and key!='okeys':

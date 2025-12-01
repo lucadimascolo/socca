@@ -172,49 +172,6 @@ class Image:
         self.noise(**noise_kwargs)
         self.mask = self.noise.mask.copy()
 
-#   Build elliptical distance grid
-#   --------------------------------------------------------
-    def getgrid(self,xc,yc,theta=0.00,e=0.00,cbox=0.00):
-        sint = jp.sin(theta)
-        cost = jp.cos(theta)
-
-        xgrid = (-(self.grid.x-xc)*jp.cos(jp.deg2rad(yc))*sint-(self.grid.y-yc)*cost)
-        ygrid = ( (self.grid.x-xc)*jp.cos(jp.deg2rad(yc))*cost-(self.grid.y-yc)*sint)
-        
-        xgrid = jp.abs(xgrid)**(cbox+2.00)
-        ygrid = jp.abs(ygrid/(1.00-e))**(cbox+2.00)
-        return jp.power(xgrid+ygrid,1.00/(cbox+2.00))
-
-#   Build three-dimanesional distance grid
-#   --------------------------------------------------------
-    def getcube(self,xc,yc,zext,zsize=200,theta=0.00,inc=0.00):
-        ssize, ysize, xsize = np.shape(self.grid.x)
-
-        zt = np.linspace(-zext,zext,zsize)
-
-        sint = jp.sin(theta)
-        cost = jp.cos(theta)
-        
-        xt = (self.grid.x-xc)*jp.cos(jp.deg2rad(yc))
-        yt = (self.grid.y-yc)
-
-        xt, yt = -xt*sint-yt*cost,\
-                  xt*cost-yt*sint
-
-        xt = jp.broadcast_to(xt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
-        yt = jp.broadcast_to(yt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
-        zt = jp.broadcast_to(zt[None,   :,None,None],(ssize,zsize,ysize,xsize)).copy()
-
-        sini = jp.sin(inc-0.5*jp.pi)
-        cosi = jp.cos(inc-0.5*jp.pi)
-
-        zt, yt = yt*cosi-zt*sini, \
-                 yt*sini+zt*cosi
-        
-        rt = jp.sqrt(xt**2+yt**2)     
-        
-        return rt, zt, xt, yt
-
 #   Get cutout
 #   --------------------------------------------------------
     def cutout(self,center,csize):
