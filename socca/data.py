@@ -1,5 +1,7 @@
 from .utils import *
-from astropy.io import fits
+from .utils import _img_loader
+from . import noise as noisepdf
+
 from astropy.wcs import WCS
 from astropy.nddata import Cutout2D
 
@@ -14,19 +16,6 @@ def _hdu_mask(mask,hdu):
     data, _ = reproject.reproject_interp(mask,hdu.header)
     data[np.isnan(data)] = 0.00
     return np.where(data<1.00,0.00,1.00)
-
-# Load image
-# --------------------------------------------------------
-def _img_loader(img,idx=0):
-    if   isinstance(img,(fits.ImageHDU,fits.PrimaryHDU)):
-        return img
-    elif isinstance(img,fits.hdu.hdulist.HDUList):
-        return img[idx]
-    elif isinstance(img,str):
-        img = fits.open(img)
-        return img[idx]
-    else:
-        raise ValueError('img must be an ImageHDU or a string')
 
 def _reduce_axes(hdu):
     head = hdu.header.copy()
@@ -156,8 +145,6 @@ class Image:
             self.resp = self.resp.data.copy()
         else:
             self.resp = jp.ones(self.data.shape,dtype=float)
-
-        self.sigma = self.getsigma(noise)
        
         if 'center' in kwargs and 'csize' in kwargs:
             self.cutout(center=kwargs['center'],csize=kwargs['csize'])
@@ -173,6 +160,18 @@ class Image:
                   normalize = kwargs['addpsf'].get('normalize',True),
                         idx = kwargs['addpsf'].get('idx',0))
 
+        if noise is None:
+            self.noise = noisepdf.Normal()
+        else: self.noise = noise
+
+        if self.psf is None and self.noise.__class__.__name__=='NormalALMA':
+            raise ValueError('PSF must be defined for images with NormalALMA noise.')
+        
+        noise_kwargs = list(inspect.signature(self.noise).parameters.keys())
+        noise_kwargs = {k: eval(f'self.{k}') for k in noise_kwargs}
+        self.noise(**noise_kwargs)
+        self.mask = self.noise.mask.copy()
+
 #   Build elliptical distance grid
 #   --------------------------------------------------------
     def getgrid(self,xc,yc,theta=0.00,e=0.00,cbox=0.00):
@@ -185,7 +184,37 @@ class Image:
         xgrid = jp.abs(xgrid)**(cbox+2.00)
         ygrid = jp.abs(ygrid/(1.00-e))**(cbox+2.00)
         return jp.power(xgrid+ygrid,1.00/(cbox+2.00))
-    
+
+#   Build three-dimanesional distance grid
+#   --------------------------------------------------------
+    def getcube(self,xc,yc,zext,zsize=200,theta=0.00,inc=0.00):
+        ssize, ysize, xsize = np.shape(self.grid.x)
+
+        zt = np.linspace(-zext,zext,zsize)
+
+        sint = jp.sin(theta)
+        cost = jp.cos(theta)
+        
+        xt = (self.grid.x-xc)*jp.cos(jp.deg2rad(yc))
+        yt = (self.grid.y-yc)
+
+        xt, yt = -xt*sint-yt*cost,\
+                  xt*cost-yt*sint
+
+        xt = jp.broadcast_to(xt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
+        yt = jp.broadcast_to(yt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
+        zt = jp.broadcast_to(zt[None,   :,None,None],(ssize,zsize,ysize,xsize)).copy()
+
+        sini = jp.sin(inc-0.5*jp.pi)
+        cosi = jp.cos(inc-0.5*jp.pi)
+
+        zt, yt = yt*cosi-zt*sini, \
+                 yt*sini+zt*cosi
+        
+        rt = jp.sqrt(xt**2+yt**2)     
+        
+        return rt, zt, xt, yt
+
 #   Get cutout
 #   --------------------------------------------------------
     def cutout(self,center,csize):
@@ -195,13 +224,11 @@ class Image:
         """
         cutout_data  = Cutout2D(self.data, center,csize,wcs=self.wcs)
         cutout_mask  = Cutout2D(self.mask, center,csize,wcs=self.wcs)
-        cutout_sigma = Cutout2D(self.sigma,center,csize,wcs=self.wcs)
         cutout_exp   = Cutout2D(self.exp,  center,csize,wcs=self.wcs)
         cutout_resp  = Cutout2D(self.resp, center,csize,wcs=self.wcs)
         
         self.data  = jp.array(cutout_data.data )
         self.mask  = jp.array(cutout_mask.data ); del cutout_mask
-        self.sigma = jp.array(cutout_sigma.data); del cutout_sigma
         self.exp   = jp.array(cutout_exp.data  ); del cutout_exp
         self.resp  = jp.array(cutout_resp.data ); del cutout_resp
 
@@ -210,7 +237,7 @@ class Image:
             cutout_psf = Cutout2D(self.psf,center_psf,csize,wcs=self.wcs)
             self.addpsf(cutout_psf.data,normalize=False)
 
-        cuthdu = fits.ImageHDU(data=cutout_data.data,header=cutout_data.wcs.to_header())
+        cuthdu = fits.PrimaryHDU(data=cutout_data.data,header=cutout_data.wcs.to_header())
 
         crval = [center.ra.deg,center.dec.deg]
         crpix =  cutout_data.wcs.all_world2pix(*crval,1)
@@ -226,6 +253,10 @@ class Image:
         self.grid = WCSgrid(self.hdu,subgrid=self.subgrid)
         self.fft  = FFTspec(self.hdu)
 
+        if self.noise.__class__.__name__=='Normal':
+            self.noise(self.data,self.mask)
+        else:
+            raise NotImplementedError('Cutout is only implemented for images with uncorrelated noise [Normal].')
 
 #   Add mask
 #   --------------------------------------------------------
@@ -304,45 +335,3 @@ class Image:
         self.psf_fft = jp.fft.rfft2(jp.fft.fftshift(self.psf_fft),s=self.psf_fft.shape)
         self.psf_fft = jp.abs(self.psf_fft)
 
-#   --------------------------------------------------------
-
-    def getsigma(self,noise):
-        """
-        noise : float or dict
-            Noise level to be used in the image.
-            If a float, it is used as the noise level.
-            If a dict, it must have the key 'sigma' or 'sig' for the noise level.
-            If a dict, it can have the key 'var' or 'variance' for the variance.
-            If a dict, it can have the key 'wht', 'wgt', 'weight', 'weights', or 'invvar' for the inverse variance.
-            If None, the Median Absolute Deviation (MAD) method is used to estimate the noise level.
-        """
-        if noise is None:
-            print('Using MAD for estimating noise level')
-            sigma = scipy.stats.median_abs_deviation(self.data[self.data!=0.00],axis=None,scale='normal',nan_policy='omit')
-            sigma = float(sigma)
-            print(f'- noise level: {sigma:.2E}')
-        elif isinstance(noise,dict):
-            key = list(noise.keys())[0]
-            if isinstance(noise[key],(float,int)):
-                sigma = noise[key]
-            else:
-                sigma = _img_loader(noise[key],noise.get('idx',0)).data.copy()
-
-            if key in ['var','variance']:
-                sigma = np.sqrt(sigma)
-            elif key in ['wht','wgt','weight','weights','invvar']:
-                self.mask.at[sigma==0.00].set(0)
-                sigma = 1.00/np.sqrt(sigma)
-            elif key not in ['sigma','sig','std','rms','stddev']:
-                raise ValueError('unrecognized noise identifier]')
-        else:
-            raise ValueError('noise must be a float or a dictionary')
-
-        if isinstance(sigma,(float,int)):
-            sigma = np.full(self.data.shape,sigma).astype(float)
-
-        sigma[np.isinf(sigma)] = 0.00
-        sigma[np.isnan(sigma)] = 0.00
-        self.mask.at[sigma==0.00].set(0)
-        
-        return jp.array(sigma)

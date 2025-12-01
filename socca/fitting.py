@@ -1,6 +1,5 @@
-from pprint import pp
-from shapely import bounds
 from .utils import *
+from .priors import pocomcPrior
 
 import dynesty
 import nautilus
@@ -23,12 +22,12 @@ def get_imp_weights(logw,logz=None):
 # Initialize fitter structure
 # --------------------------------------------------------
 class fitter:
-    def __init__(self,img,mod,noise):
+    def __init__(self,img,mod):
         self.img = img
         self.mod = mod
 
-        self.mask = noise.mask
-        self.pdfnoise = noise.logpdf
+        self.mask = self.img.noise.mask
+        self.pdfnoise = self.img.noise.logpdf
 
         if not hasattr(self.img,'shape'):
             setattr(self.img,'shape',self.img.data.shape)
@@ -52,7 +51,7 @@ class fitter:
         xs = xs.at[self.mask].get()
         xr = xr.at[self.mask].get()
         pdf = self.pdfnoise(xr,xs)
-        return jp.where(neg.at[self.mask].get()==1,-jp.inf,pdf).sum()
+        return jp.where(jp.any(neg.at[self.mask].get()==1),-jp.inf,pdf)
 
 #   Prior probability distribution
 #   --------------------------------------------------------
@@ -60,7 +59,7 @@ class fitter:
         prob = 0.00
         for idx in self.mod.paridx:
             key = self.mod.params[idx]
-            prob += self.mod.priors[key].logpdf(theta[key])
+            prob += self.mod.priors[key].log_prob(theta[key])
         return prob
 
 #   Transform prior hypercube
@@ -69,27 +68,30 @@ class fitter:
         prior = []
         for pi, p in enumerate(pp):
             key = self.mod.params[self.mod.paridx[pi]]
-            prior.append(self.mod.priors[key].ppf(p))
-        return prior
+            prior.append(self.mod.priors[key].icdf(p))
+        return jp.array(prior)
     
 #   Main sampler function
 #   --------------------------------------------------------
-    def run(self,method='dynesty',checkpoint=None,resume=True,getzprior=False,**kwargs):
+    def run(self,method='nautilus',checkpoint=None,resume=True,getzprior=False,**kwargs):
         self.method = method
 
         @jax.jit
         def log_likelihood(theta):
             return self._log_likelihood(theta)
         
+        @jax.jit
         def log_prior(theta):
             return self._log_prior(theta)
 
+        @jax.jit
         def prior_transform(utheta):
             return self._prior_transform(utheta)
         
         sampler_methods = {'dynesty': self._run_dynesty,
                           'nautilus': self._run_nautilus,
                             'pocomc': self._run_pocomc,
+                           'numpyro': self._run_numpyro,
                          'optimizer': self._run_optimizer
         }
         
@@ -98,6 +100,10 @@ class fitter:
         if self.method in ['dynesty','nautilus','pocomc']:
             nlive = kwargs.pop('nlive',1000)
             dlogz = kwargs.pop('dlogz',0.01)
+
+        if self.method in ['numpyro']:
+            nwarmup  = kwargs.pop('nwarmup', 1000)
+            nsamples = kwargs.pop('nsamples',1000)
 
         if self.method in ['optimizer']:
             midpoint = kwargs.pop('midpoint',True)
@@ -120,12 +126,12 @@ class fitter:
     def _run_dynesty(self,log_likelihood,log_prior,prior_transform,nlive,dlogz,checkpoint,resume,getzprior,**kwargs):
         ndims = len(self.mod.paridx)
 
-        if checkpoint is None:
-            resume = False
+        if checkpoint is None: resume = False
 
         print('\n* Running the main sampling step')
         if ~resume or not os.path.exists(checkpoint):
-            sampler = dynesty.NestedSampler(log_likelihood,prior_transform,
+            sampler = dynesty.NestedSampler(log_likelihood,
+                                          prior_transform,
                                             ndim = ndims,
                                            nlive = nlive,
                                            bound = 'multi')
@@ -153,18 +159,16 @@ class fitter:
 
 #   Fitting method - Nautilus sampler
 #   --------------------------------------------------------
-    def _run_nautilus(self,log_likelihood,log_prior,nlive,dlogz,checkpoint,resume,getzprior,**kwargs):
-        prior = nautilus.Prior()
-        for ki, key in enumerate(self.mod.params):
-            if isinstance(self.mod.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
-                prior.add_parameter(key,dist=self.mod.priors[key])
+    def _run_nautilus(self,log_likelihood,log_prior,prior_transform,nlive,dlogz,checkpoint,resume,getzprior,**kwargs):
+        ndims = len(self.mod.paridx)
 
-        def dict_likelihood(theta):
-            pars = np.array([theta[self.mod.params[idx]] for idx in self.mod.paridx])
-            return log_likelihood(pars)
-        
         print('\n* Running the main sampling step')
-        self.sampler = nautilus.Sampler(prior,dict_likelihood,n_live=nlive,filepath=checkpoint,resume=resume)
+        self.sampler = nautilus.Sampler(prior = prior_transform,
+                                   likelihood = log_likelihood,
+                                        n_dim = ndims,
+                                       n_live = nlive,
+                                     filepath = checkpoint,
+                                       resume = resume)
         
         toc = time.time()
         self.sampler.run(f_live=dlogz,verbose=True,**kwargs)
@@ -181,7 +185,7 @@ class fitter:
 
         if getzprior:
             print('\n* Sampling the prior probability')
-            sampler_prior = nautilus.Sampler(prior,log_prior,n_live=nlive)
+            sampler_prior = nautilus.Sampler(prior_transform,log_prior,n_live=nlive,n_dim=ndims)
             sampler_prior.run(f_live=dlogz,verbose=True,**kwargs)
             self.logz_prior = sampler_prior.log_z
 
@@ -192,10 +196,10 @@ class fitter:
         pocodir = '{0}_pocomc_dump'.format(checkpoint.replace('.hdf5','').replace('.h5',''))
 
         prior = []
-        for ki, key in enumerate(self.mod.params):
-            if isinstance(self.mod.priors[key],scipy.stats._distn_infrastructure.rv_continuous_frozen):
+        for key in self.mod.params:
+            if isinstance(self.mod.priors[key],numpyro.distributions.Distribution):
                 prior.append(self.mod.priors[key])
-        prior = pocomc.Prior(prior)
+        prior = pocomcPrior(prior,seed=kwargs.get('seed',0))
 
         print('\n* Running the main sampling step')
         self.sampler = pocomc.Sampler(likelihood = log_likelihood,
@@ -229,32 +233,36 @@ class fitter:
             self.sampler_prior.run(progress=True)
             self.logz_prior, _ = self.sampler_prior.evidence()
 
+#   Fitting method - Numpyro NUTS
+#   --------------------------------------------------------
+    def _run_numpyro(self,log_likelihood,nwarmup,nsamples,**kwargs):
+        def model():
+            pp = []
+            for pi, p in enumerate(self.mod.paridx):
+                key = self.mod.params[self.mod.paridx[pi]]
+                pp.append(numpyro.sample(key,self.mod.priors[key]))
+
+            numpyro.factor('post',log_likelihood(pp))
+
+        rkey = jax.random.PRNGKey(kwargs.get('seed',0)) 
+        rkey, seed = jax.random.split(rkey)
+
+        nuts = numpyro.infer.NUTS(model)
+        mcmc = numpyro.infer.MCMC(nuts,num_warmup=nwarmup,num_samples=nsamples)
+        mcmc.run(seed)
+
+        samp = mcmc.get_samples()
+
+        self.samples = np.array([samp[self.mod.params[p]] for p in self.mod.paridx]).T
+        self.weights = np.ones(self.samples.shape[0])
+
 #   Fitting method - optimizer
 #   --------------------------------------------------------
     def _run_optimizer(self,midpoint,pinits,**kwargs):
-        
-        _opt_dist = []
-        
-        for pi, p in enumerate(self.mod.paridx):
-            key = self.mod.params[p]
-            if self.mod.priors[key].dist.name=='uniform':
-                support = self.mod.priors[key].support()
-                loc, scale = support[0], support[1]-support[0]
-                _opt_dist.append(f'jax.scipy.stats.uniform.ppf(p,loc={loc},scale={scale})')
-            elif self.mod.priors[key].dist.name=='loguniform':
-                support = self.mod.priors[key].support()
-                a, b = support[0], support[1]
-                _opt_dist.append(f'10**jax.scipy.stats.uniform.ppf(p,loc=np.log10({a}),scale=np.log10({b})-np.log10({a}))')
-            elif self.mod.priors[key].dist.name=='norm':
-                loc, scale = self.mod.priors[key].mean(), self.mod.priors[key].std()
-                _opt_dist.append(f'jax.scipy.stats.norm.ppf(p,loc={loc},scale={scale})')
-            else:
-                message = f'Unsupported prior distribution for optimization: {self.mod.priors[key].dist.name}'
-                raise ValueError(message)
 
         def _opt_prior(pp):
-            return jp.array([eval(_opt_dist[pi]) for pi, p in enumerate(pp)])
-
+            return jp.array(self._prior_transform(pp))
+        
         def _opt_func(pp):
             pars = _opt_prior(pp)
             return -self._log_likelihood(pars)
