@@ -1,5 +1,5 @@
 # Source Characterization using a Composable Analysis
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3127/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
@@ -9,7 +9,7 @@
 Installation
 ---------------------------------------------------
 > [!WARNING]
-> `socca` was built using `python=3.12` and the installation is currently bound to this specific version. Although higher releases could work fine, it is recommended to use the same version to avoid any compatibility issues.
+> `socca` was built using `python=3.12`. Although the installation is not bound to this specific version and different releases could work fine, it is recommended to use the same version to avoid any compatibility issues.
 
 To install `socca`, it should be enough to run
 
