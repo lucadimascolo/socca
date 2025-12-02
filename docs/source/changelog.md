@@ -1,2 +1,0 @@
-# Changelog
-```{include} ../../HISTORY.md
