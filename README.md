@@ -1,9 +1,8 @@
 # Source Characterization using a Composable Analysis
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3127/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![stability-alpha](https://img.shields.io/badge/stability-alpha-f4d03f.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#alpha)
+[![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
-[![Documentation Status](https://readthedocs.org/projects/socca/badge/?version=latest)](https://socca.readthedocs.io/en/latest/?badge=latest)
 
 `socca` is a minimal library for efficiently modelling image-space astronomical data. It is intended to be fast and flexible, taking advantage of the [`JAX`](https://github.com/google/jax) framework for performing just-in-time compilation and of state-of-the-art nested sampling algorithms ([`dynesty`](https://github.com/joshspeagle/dynesty), [`nautilus`](https://nautilus-sampler.readthedocs.io/en/latest/)) for the posterior exploration.
 
@@ -21,12 +20,3 @@ python -m pip install git+https://github.com/lucadimascolo/socca.git
 This will download and install the latest version of `socca` as well as all the required dependencies. Once the installation is completed, you should be ready to get `socca` to crunch your data.
 
 
-
-To do list
----------------------------------------------------
-- [ ] improved noise model
-- [x] checkpointing and integration of `h5py` I/O framework
-- [ ] prior/parameter initialization
-- [x] improve PSF handling
-- [ ] print out parameter units
-- [ ] documentation!
