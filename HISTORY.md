@@ -1,2 +1,2 @@
-## v0.0.1 (2025-01-28)
-First stable release.
+**v0.1.0 (2025-12-02)**
+First major update to pre-release version.
