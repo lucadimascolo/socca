@@ -45,6 +45,7 @@ class fitter:
 
 #   Compute log-likelihood
 #   --------------------------------------------------------
+    @partial(jax.jit,static_argnames=['self'])
     def _log_likelihood(self,pp):
         xr, xs, _, neg = self._get_model(pp)
 
@@ -55,6 +56,7 @@ class fitter:
 
 #   Prior probability distribution
 #   --------------------------------------------------------
+    @partial(jax.jit,static_argnames=['self'])
     def _log_prior(self,theta):
         prob = 0.00
         for idx in self.mod.paridx:
@@ -64,6 +66,7 @@ class fitter:
 
 #   Transform prior hypercube
 #   --------------------------------------------------------
+    @partial(jax.jit,static_argnames=['self'])
     def _prior_transform(self,pp):
         prior = []
         for pi, p in enumerate(pp):
@@ -76,15 +79,12 @@ class fitter:
     def run(self,method='nautilus',checkpoint=None,resume=True,getzprior=False,**kwargs):
         self.method = method
 
-        @jax.jit
         def log_likelihood(theta):
             return self._log_likelihood(theta)
         
-        @jax.jit
         def log_prior(theta):
             return self._log_prior(theta)
 
-        @jax.jit
         def prior_transform(utheta):
             return self._prior_transform(utheta)
         
