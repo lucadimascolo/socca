@@ -4,11 +4,11 @@ from .utils import _img_loader
 import scipy.linalg
 from astropy.convolution import convolve, CustomKernel
 
-# Base PDF class
+# Multi-variate normal noise (no correlation)
 # ========================================================
-class BaseNormal:
+class Normal:
     """
-    Base class for normal noise models.
+    Multi-variate normal noise model with no correlation between pixels.
     
     Attributes
     ----------
@@ -34,7 +34,7 @@ class BaseNormal:
         ----------
         kwargs : dict
         Keyword arguments for specifying the noise model.
-        Accepted keys (with aliases):
+        Accepted keywordss (with aliases):
             - sigma: float or str, optional
                 Standard deviation of the noise. Default is None, in which case the
                 noise level is estimated using the median absolute deviation.
@@ -110,17 +110,6 @@ class BaseNormal:
         self.mask.at[sigma==0.00].set(0)
         
         return jp.array(sigma)
-    
-
-# Multi-variate normal noise (no correlation)
-# ========================================================
-class Normal(BaseNormal):
-    """
-    Multi-variate normal noise model with no correlation between pixels.
-    Inherits from BaseNormal.
-    """
-    def __init__(self,**kwargs):
-        super().__init__(**kwargs)
 
 #   Set up noise model
 #   --------------------------------------------------------
@@ -134,11 +123,12 @@ class Normal(BaseNormal):
         self.data  = self.data.at[self.mask].get()
         self.sigma = self.sigma.at[self.mask].get()
 
-        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xs,self.data,self.sigma))
+        self.logpdf = lambda xs: self._logpdf(xs,self.data,self.sigma)
 
 #   Noise log-pdf/likelihood function   
 #   --------------------------------------------------------
     @staticmethod
+    @jax.jit
     def _logpdf(x,data,sigma):
         return jax.scipy.stats.norm.logpdf(x,loc=data,scale=sigma).sum()
 
@@ -146,7 +136,38 @@ class Normal(BaseNormal):
 # Correlated multi-variate normal noise
 # ========================================================
 class NormalCorrelated:
+    """
+    Noise model with correlated multi-variate normal distribution.
+    
+    Attributes
+    ----------
+    cov : jax.numpy.ndarray
+        Covariance matrix of the noise.
+    icov : jax.numpy.ndarray
+        Inverse of the covariance matrix.
+    norm : float
+        Normalization factor for the log-likelihood.
+    data : jax.numpy.ndarray
+        Image data array.
+    mask : jax.numpy.ndarray
+        Boolean mask array.
+    """
     def __init__(self,cov=None,cube=None,**kwargs):
+        """
+        Parameters
+        ----------
+        cov : array_like, optional
+            Covariance matrix. If not provided, computed from cube.
+        cube : array_like, optional
+            3D array of noise realizations. First dimension is the number
+            of realizations. Used to compute covariance if cov is None.
+        **kwargs : dict
+            Additional keyword arguments:
+            - smooth : int, optional
+                Number of smoothing iterations for covariance matrix. Default is 3.
+            - kernel : array_like, optional
+                Custom smoothing kernel. If None, uses a 5-point stencil.
+        """
 
         if cube is not None and cov is None:            
             cov = np.cov(cube.reshape(cube.shape[0],-1),rowvar=True)
@@ -179,11 +200,12 @@ class NormalCorrelated:
         self.data = data.at[self.mask].get()
 
         self.norm = float(jp.linalg.slogdet(2.00*jp.pi*self.cov)[1])
-        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xs,self.data,self.icov)-0.50*self.norm)
+        self.logpdf = lambda xs: self._logpdf(xs,self.data,self.icov)-0.50*self.norm
 
 #   Noise log-pdf/likelihood function
 #   --------------------------------------------------------
     @staticmethod
+    @jax.jit
     def _logpdf(x,data,icov):
         res = x-data
         return -0.50*jp.einsum('i,ij,j->',res,icov,res)
@@ -192,7 +214,45 @@ class NormalCorrelated:
 # Fourier-space independente noise
 # ========================================================
 class NormalFourier:
+    """
+    Noise model with independent noise in Fourier space.
+    The noise covariance is defined in Fourier space.
+    
+    Attributes
+    ----------
+    fmask : jax.numpy.ndarray
+        Boolean mask indicating which Fourier modes have non-zero noise.
+    ftype : str
+        Type of Fourier transform to use. Options are:
+        - 'real' or 'rfft': real-to-complex FFT (for real input data)
+        - 'full' or 'fft': complex-to-complex FFT (for complex input data)
+    apod : jax.numpy.ndarray
+        Apodization map applied to the data before Fourier transforming.
+    cov : jax.numpy.ndarray
+        Noise covariance in Fourier space.
+    icov : jax.numpy.ndarray
+        Inverse noise covariance in Fourier space.
+    norm : float
+        Normalization constant for the log-pdf.
+    data : jax.numpy.ndarray
+        Image data array. This is set when the model is called.
+    mask : jax.numpy.ndarray
+        Image mask array. This is set when the model is called.
+    """
     def __init__(self,cov=None,cube=None,ftype='real',**kwargs):
+        """
+        Parameters
+        ----------
+        cov : array_like, optional
+            Noise covariance in Fourier space. If not provided, computed from cube.
+        cube : array_like, optional
+            3D array of noise realizations. First dimension is the number
+            of realizations. Used to compute covariance if cov is None.
+        ftype : str, optional, default 'real'
+            Type of Fourier transform to use. Options are:
+            - 'real' or 'rfft': real-to-complex FFT (for real input data)
+            - 'full' or 'fft': complex-to-complex FFT (for complex input data)
+        """
         if ftype not in ['real','rfft','full','fft']:
             raise ValueError("ftype must be either 'real'/'rfft' or 'full'/'fft'.")
         self.ftype = ftype
@@ -225,6 +285,10 @@ class NormalFourier:
         self.cov  = jp.asarray(cov.astype(float))
         self.icov = 1.00/self.cov
 
+        mask_icov = jp.logical_or(self.icov == jp.inf, jp.isnan(self.icov))
+        self.icov = self.icov.at[mask_icov].set(0.00)
+        del mask_icov
+
 #   Set up noise model
 #   --------------------------------------------------------
     def __call__(self,data,mask):
@@ -232,13 +296,16 @@ class NormalFourier:
         self.mask = self.mask==1.00
         self.data = data.copy()
         
-        self.norm = 0.00
-        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xs,self.data,self.icov,mask=self.mask,apod=self.apod,ftype=self.ftype)-0.50*self.norm)
+        self.fmask = self.icov!=0.00
+
+        self.norm = jp.log(2.00*jp.pi*self.cov.at[self.fmask].get()).sum()
+        self.logpdf = lambda xs: self._logpdf(xs,self.data,self.icov,self.mask,self.apod,self.fmask,self.ftype)-0.50*self.norm
 
 #   Noise log-pdf/likelihood function
 #   --------------------------------------------------------
     @staticmethod
-    def _logpdf(x,data,icov,mask,apod,ftype='real'):
+    @jax.jit
+    def _logpdf(x,data,icov,mask,apod,fmask,ftype='real'):
         fft = jp.fft.rfft2 if ftype in ['real','rfft'] else jp.fft.fft2
 
         xmap = jp.zeros(mask.shape)
@@ -246,65 +313,5 @@ class NormalFourier:
 
         chisq = fft((xmap-data)*apod,axes=(-2,-1))
         chisq = icov*jp.abs(chisq)**2
-        return -0.50*jp.sum(chisq)
+        return -0.50*jp.sum(chisq.at[fmask].get())
 
-
-# ALMA-like correlated normal noise
-# ========================================================
-class NormalRI(BaseNormal):
-    """
-    Noise model with radiointerferometric-like correlated noise.
-    Inherits from BaseNormal.
-
-    Attributes
-    ----------
-    donorm : bool
-        Whether to compute the data-dependent likelihood normalization term.
-    
-    Methods
-    -------
-    getnorm(psf_fft)
-        Compute the likelihood normalization term given the PSF FFT.
-    """
-    def __init__(self,donorm=True,**kwargs):
-        super().__init__(**kwargs)
-        self.donorm = donorm
-
-        if not isinstance(self.kwargs[self.select],(float,int)):
-            raise ValueError('NormalRI supports only float/int inputs for the noise model.')
-        
-#   Set up noise model
-#   --------------------------------------------------------
-    def __call__(self,data,mask,psf_fft):
-        self.mask = mask.astype(int).copy()
-        self.data = data.copy()
-
-        self.sigma = self.getsigma().mean()
-        
-        self.mask  = self.mask==1.00
-        self.data  = self.data.at[self.mask].get()
-
-        self.norm  = self.getnorm(psf_fft) if self.donorm else 0.00
-
-        self.logpdf = jax.jit(lambda xr, xs: self._logpdf(xr,xs,self.data,self.sigma,self.norm))
-    
-#   Noise log-pdf/likelihood function
-#   --------------------------------------------------------
-    @staticmethod
-    def _logpdf(xr,xs,data,sigma,norm=0.00):
-        factor = xr*(xs-2.00*data)
-        factor = jp.sum(factor)+norm
-        return -0.50*factor/sigma**2
-    
-#   Likelihood normalization
-#   --------------------------------------------------------
-    def getnorm(self,psf_fft):
-        refB = jp.fft.irfft2(psf_fft,s=self.mask.shape)
-        covB = scipy.linalg.circulant(refB.ravel())
-        covB = jp.array(covB)
-
-        invB = jp.linalg.inv(covB)
-
-        factor1 = jp.einsum('i,ij,j->',self.data,invB,self.data)/self.sigma**2
-        factor2 = jp.linalg.slogdet(2.00*jp.pi*(self.sigma**2)*covB)[1]
-        return factor1+factor2
