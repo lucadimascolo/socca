@@ -28,7 +28,8 @@ class fitter:
 
         self.mask = self.img.noise.mask
         self.pdfnoise = self.img.noise.logpdf
-
+        self.pdfkwarg = [key for key in inspect.signature(self.pdfnoise).parameters.keys()]
+            
         if not hasattr(self.img,'shape'):
             setattr(self.img,'shape',self.img.data.shape)
         else:
@@ -51,7 +52,7 @@ class fitter:
 
         xs = xs.at[self.mask].get()
         xr = xr.at[self.mask].get()
-        pdf = self.pdfnoise(xr,xs)
+        pdf = self.pdfnoise(**{key: eval(key) for key in self.pdfkwarg})
         return jp.where(jp.any(neg.at[self.mask].get()==1),-jp.inf,pdf)
 
 #   Prior probability distribution
@@ -117,8 +118,8 @@ class fitter:
             raise ValueError(f"Unknown sampling method: {self.method}")
 
         self.logz_data = self.img.data.at[self.mask].get()
-        self.logz_data = self.pdfnoise(jp.zeros(self.logz_data.shape),
-                                       jp.zeros(self.logz_data.shape)).sum()
+        self.logz_data = self.pdfnoise(**{key: jp.zeros(self.logz_data.shape) for key in self.pdfkwarg})
+        self.logz_data = self.logz_data.sum()
     
 
 #   Fitting method - Dynesty sampler
