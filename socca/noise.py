@@ -220,7 +220,7 @@ class NormalFourier:
     
     Attributes
     ----------
-    fmask : jax.numpy.ndarray
+    cmask : jax.numpy.ndarray
         Boolean mask indicating which Fourier modes have non-zero noise.
     ftype : str
         Type of Fourier transform to use. Options are:
@@ -258,11 +258,13 @@ class NormalFourier:
         self.ftype = ftype
 
         if cube is not None and cov is None:
-            self.apod = kwargs.get('apod',jp.ones(cube.shape))
+            cube = jp.array(cube)
+
+            self.apod = kwargs.get('apod',jp.ones((cube.shape[-2],cube.shape[-1])))
             
             fft = jp.fft.rfft2  if ftype in ['real','rfft'] else jp.fft.fft2
-            cov = fft(cube*self.apod,axes=(-2,-1))
-            cov = np.mean(np.abs(cov)**2,axis=0)/np.mean(self.apod**2)
+            cov = fft(cube*self.apod[None,...],axes=(-2,-1))
+            cov = jp.mean(jp.abs(cov)**2,axis=0)/jp.mean(self.apod**2)
 
             smooth = kwargs.get('smooth',3)
             if smooth>0:
@@ -275,7 +277,6 @@ class NormalFourier:
 
                 for _ in range(smooth): 
                     cov = jp.array(convolve(cov,kernel,boundary='wrap'))
-
         elif cov is not None and cube is not None:
             warnings.warn('Both covariance matrix and noise cube provided. \
                            Using covariance matrix.')
@@ -285,33 +286,42 @@ class NormalFourier:
         self.cov  = jp.asarray(cov.astype(float))
         self.icov = 1.00/self.cov
 
-        mask_icov = jp.logical_or(self.icov == jp.inf, jp.isnan(self.icov))
+        mask_icov = jp.logical_or(self.icov==jp.inf,jp.isnan(self.icov))
         self.icov = self.icov.at[mask_icov].set(0.00)
         del mask_icov
 
 #   Set up noise model
 #   --------------------------------------------------------
     def __call__(self,data,mask):
-        self.mask = mask.copy()
-        self.mask = self.mask==1.00
+        self.dmask = mask.copy()
+        self.dmask = self.dmask==1.00
         self.data = data.copy()
         
-        self.fmask = self.icov!=0.00
+        self.cmask = self.icov!=0.00
 
-        self.norm = jp.log(2.00*jp.pi*self.cov.at[self.fmask].get()).sum()
-        self.logpdf = lambda xs: self._logpdf(xs,self.data,self.icov,self.mask,self.apod,self.fmask,self.ftype)-0.50*self.norm
+        self.norm = jp.log(2.00*jp.pi*self.cov.at[self.cmask].get()).sum()
+        
+        def _logpdf(xs):
+            factor = self._logpdf(xs,self.data,
+                                     self.icov,
+                                     self.dmask,
+                                     self.cmask,
+                                     self.apod,
+                                     self.ftype)
+            return factor-0.50*self.norm
+        
+        self.logpdf = jax.jit(_logpdf)
 
 #   Noise log-pdf/likelihood function
 #   --------------------------------------------------------
     @staticmethod
-    @jax.jit
-    def _logpdf(x,data,icov,mask,apod,fmask,ftype='real'):
+    def _logpdf(x,data,icov,dmask,cmask,apod,ftype='real'):
         fft = jp.fft.rfft2 if ftype in ['real','rfft'] else jp.fft.fft2
 
-        xmap = jp.zeros(mask.shape)
-        xmap = xmap.at[mask].set(x)
+        xmap = jp.zeros(dmask.shape)
+        xmap = xmap.at[dmask].set(x)
 
         chisq = fft((xmap-data)*apod,axes=(-2,-1))
         chisq = icov*jp.abs(chisq)**2
-        return -0.50*jp.sum(chisq.at[fmask].get())
+        return -0.50*jp.sum(chisq.at[cmask].get())
 
