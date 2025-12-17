@@ -38,6 +38,24 @@ def _reduce_axes(hdu):
 # Coordinate grids
 # --------------------------------------------------------
 class WCSgrid:
+    """
+    WCS coordinate grid for image
+    
+    Parameters
+    ----------
+    hdu : fits.PrimaryHDU
+        FITS HDU object containing image data and header.
+    subgrid : int, optional
+        Subgrid factor for sub-pixel sampling (default is 1).
+
+    Attributes
+    ----------
+    x : jax.numpy.ndarray
+        x-coordinate array in world coordinates.
+    y : jax.numpy.ndarray
+        y-coordinate array in world coordinates.
+    """
+
     def __init__(self,hdu,subgrid=1):
         multis = (subgrid*subgrid,*hdu.data.shape)
         multix, multiy = np.zeros(multis), np.zeros(multis)
@@ -76,9 +94,27 @@ class WCSgrid:
         
         return gridwx, gridwy
 
+
 # FFT planner
 # --------------------------------------------------------
 class FFTspec:
+    """
+    FFT specification for image
+
+    Parameters
+    ----------
+    hdu : fits.PrimaryHDU
+        FITS HDU object containing image data and header.
+
+    Attributes
+    ----------
+    pulse : jax.numpy.ndarray
+        FFT of a unit pulse in image space.
+    freq : list of jax.numpy.ndarray
+        Frequency grids in u and v directions.
+    head : dict
+        Dictionary containing relevant header keywords.
+    """
     def __init__(self,hdu):
         self.pulse = jp.fft.rfft2(jp.fft.ifftshift(jp.fft.ifft2(jp.full(hdu.data.shape,1.00+0.00j))).real)
         self.freq  = [jp.array(np.broadcast_to(np.fft.rfftfreq(hdu.data.shape[1])[None,:],self.pulse.shape)),
@@ -98,6 +134,93 @@ class FFTspec:
 # Initialize image structure
 # --------------------------------------------------------
 class Image:
+    """
+    A class for handling astronomical images with support for WCS, PSF, masking, and noise modeling.
+    
+    This class provides a comprehensive framework for working with astronomical images,
+    including coordinate transformations, PSF convolution, exposure and response maps,
+    region masking, and various noise models. It supports FFT-based operations and
+    sub-pixel sampling through a configurable subgrid parameter.
+    
+    Parameters
+    ----------
+    img : str, HDU, or array_like
+        Input image data. Can be a filename, FITS HDU object, or array.
+    response : str, HDU, or array_like, optional
+        Response map for the image. If None, uniform response is assumed.
+    exposure : str, HDU, or array_like, optional
+        Exposure map for the image. If None, uniform exposure is assumed.
+    noise : noise object, optional
+        Noise model instance (e.g., Normal, NormalALMA). Defaults to Normal().
+    **kwargs : dict, optional
+        Additional keyword arguments:
+        
+        - subgrid : int, optional
+            Subgrid factor for sub-pixel sampling (default: 1).
+        - img_idx : int, optional
+            HDU index to load from the image file (default: 0).
+        - exp_idx : int, optional
+            HDU index to load from the exposure file (default: 0).
+        - resp_idx : int, optional
+            HDU index to load from the response file (default: 0).
+        - center : tuple or SkyCoord, optional
+            Center coordinates for cutout operation.
+        - csize : int, array_like, or Quantity, optional
+            Size for cutout operation.
+        - addmask : dict, optional
+            Dictionary with 'regions', 'combine', and 'mask' keys for masking.
+        - addpsf : dict, optional
+            Dictionary with 'img', 'normalize', and 'idx' keys for PSF.
+    
+    Attributes
+    ----------
+    hdu : fits.PrimaryHDU
+        FITS HDU object containing image data and header.
+    wcs : astropy.wcs.WCS
+        World Coordinate System object for coordinate transformations.
+    data : jax.numpy.ndarray
+        Image data array.
+    mask : jax.numpy.ndarray
+        Binary mask array (1 for valid pixels, 0 for masked).
+    grid : WCSgrid
+        Coordinate grid object with x and y coordinate arrays.
+    fft : FFTspec
+        FFT specification object for Fourier space operations.
+    exp : jax.numpy.ndarray
+        Exposure map array (applied after the beam convolution).
+    resp : jax.numpy.ndarray
+        Response map array (applied prior to the beam convolution).
+    psf : ndarray or None
+        Point spread function kernel.
+    psf_fft : jax.numpy.ndarray or None
+        FFT of the PSF kernel.
+    noise : noise object
+        Noise model instance.
+    subgrid : int
+        Subgrid sampling factor.
+    
+    Methods
+    -------
+    cutout(center, csize)
+        Extract a cutout region from the image.
+    addmask(regions, mask=None, combine=True)
+        Add or update masking regions.
+    addpsf(img, normalize=True, idx=0)
+        Add a point spread function to the image.
+    
+    
+    Notes
+    -----
+    - Missing CDELT keywords are computed from CD matrix elements.
+    - NaN values in the input image are automatically masked.
+    
+    Examples
+    --------
+    >>> from socca.data import Image
+    >>> img = Image('observation.fits', exposure='exposure.fits')
+    >>> img.addpsf('psf.fits', normalize=True)
+    >>> img.addmask(regions=['mask.reg'], combine=True)
+    """
     def __init__(self,img,response=None,exposure=None,noise=None,**kwargs):
         self.subgrid = kwargs.get('subgrid',1)
 
