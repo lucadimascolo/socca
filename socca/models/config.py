@@ -20,6 +20,13 @@ class Beta:
     Ic   : float = None
     beta : float = 0.70*1.50-0.50
 
+@dataclass(frozen=True)
+class gNFW:
+    rc    : float = None
+    Ic    : float = None
+    alpha : float = 1.0510E+00
+    beta  : float = 5.4905E+00
+    gamma : float = 3.0810E-01
 
 @dataclass(frozen=True)
 class Sersic:
