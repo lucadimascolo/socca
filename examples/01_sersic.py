@@ -35,7 +35,7 @@ prof0.positive = True
 mod = socca.models.Model()
 mod.addcomponent(prof0)
 
-fit = socca.fitter(mod=mod,img=img,noise=socca.noise.Normal(img))
+fit = socca.fitter(mod=mod,img=img)
 fit.run(method='nautilus',dlogz=0.10,nlive=400,n_like_max=10000)
 _, msmo, _ = fit.getmodel()
 
