@@ -293,8 +293,8 @@ class NormalFourier:
 #   Set up noise model
 #   --------------------------------------------------------
     def __call__(self,data,mask):
-        self.dmask = mask.copy()
-        self.dmask = self.dmask==1.00
+        self.mask = mask.copy()
+        self.mask = self.mask==1.00
         self.data = data.copy()
         
         self.cmask = self.icov!=0.00
@@ -304,7 +304,7 @@ class NormalFourier:
         def _logpdf(xs):
             factor = self._logpdf(xs,self.data,
                                      self.icov,
-                                     self.dmask,
+                                     self.mask,
                                      self.cmask,
                                      self.apod,
                                      self.ftype)
