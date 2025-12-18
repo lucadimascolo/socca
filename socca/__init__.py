@@ -6,4 +6,6 @@ from . import priors
 from . import noise
 from . import models
 
-from .fitting import *
+from .fitting import fitter
+
+__all__ = ['data','priors','noise','models','fitter']
