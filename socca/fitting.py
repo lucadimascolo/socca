@@ -5,6 +5,9 @@ import dynesty
 import nautilus
 import pocomc
 
+import scipy.special
+import scipy.optimize
+
 # Support functions
 # ========================================================
 # Compute importance weights for nested sampling

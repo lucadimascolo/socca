@@ -8,9 +8,6 @@ import jax.scipy
 import numpyro.distributions
 
 import numpy as np
-import scipy.stats
-import scipy.special
-import scipy.optimize
 
 import inspect
 import warnings

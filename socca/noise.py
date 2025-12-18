@@ -1,8 +1,8 @@
 from .utils import *
 from .utils import _img_loader
 
-import scipy.linalg
 from astropy.convolution import convolve, CustomKernel
+from scipy.stats import median_abs_deviation
 
 # Multi-variate normal noise (no correlation)
 # ========================================================
@@ -81,10 +81,10 @@ class Normal:
         """
         if self.select is None:
             print('Using MAD for estimating noise level')
-            sigma = scipy.stats.median_abs_deviation(x = self.data.at[self.mask].get(),
-                                                 scale = 'normal',
-                                            nan_policy = 'omit',
-                                                  axis = None)
+            sigma = median_abs_deviation(x = self.data.at[self.mask].get(),
+                                     scale = 'normal',
+                                nan_policy = 'omit',
+                                      axis = None)
             sigma = float(sigma)
             print(f'- noise level: {sigma:.2E}')
         elif isinstance(self.select,str):
