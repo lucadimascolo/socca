@@ -15,6 +15,7 @@ dependencies = [
     "reproject",
     "jax",
     "jaxlib",
+    "quadax",
     "numpyro",
     "dynesty",
     "nautilus-sampler",

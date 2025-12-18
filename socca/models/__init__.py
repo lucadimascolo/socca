@@ -1,7 +1,10 @@
+from xxlimited import foo
 from ..utils import *
 import types
 
 from . import config
+
+from quadax import quadgk
 
 # Support utilities
 # ========================================================
@@ -9,6 +12,7 @@ from . import config
 # --------------------------------------------------------
 def zoo():
     models = ['Beta',
+              'gNFW',
               'Sersic',
               'Exponential',
               'PolyExponential','PolyExpoRefact',
@@ -281,6 +285,46 @@ class Beta(Profile):
     @jax.jit
     def profile(r,Ic,rc,beta):
         return Ic*jp.power(1.00+(r/rc)**2,-beta)
+
+
+# gNFW profile
+# --------------------------------------------------------
+class gNFW(Profile):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.rc = kwargs.get('rc', config.gNFW.rc)
+        self.Ic = kwargs.get('Ic', config.gNFW.Ic)
+        self.alpha = kwargs.get('alpha', config.gNFW.alpha)
+        self.beta  = kwargs.get('beta',  config.gNFW.beta)
+        self.gamma = kwargs.get('gamma', config.gNFW.gamma)
+
+        self.rz  = kwargs.get('rz',jp.logspace(-7,2,1000))
+        self.eps = kwargs.get('eps',1.00E-08)
+
+        self.units.update(dict(rc='deg',rz='rc',alpha='',beta='',gamma='',Ic='image'))
+
+        def _profile(r,Ic,rc,alpha,beta,gamma):
+            return gNFW._profile(r,Ic,rc,alpha,beta,gamma,self.rz,self.eps)
+        
+        self.profile = jax.jit(_profile)
+
+    @staticmethod
+    def _profile(r,Ic,rc,alpha,beta,gamma,rz,eps=1.00E-08):
+
+        def radial(u,alpha,beta,gamma):
+            factor = 1.00+u**alpha
+            factor = factor**((gamma-beta)/alpha)
+            return factor/u**gamma  
+              
+        def integrand(u,uz):
+            factor = radial(u,alpha,beta,gamma)
+            return 2.00*factor*u/jp.sqrt(u**2-uz**2)
+
+        def integrate(rzj):
+            return quadgk(integrand,[rzj,jp.inf],args=(rzj,),epsabs=eps,epsrel=eps)[0]
+        
+        mz = Ic*jax.vmap(integrate)(rz)
+        return jp.interp(r/rc,rz,mz)
 
 
 # Sersic profile
