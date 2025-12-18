@@ -25,7 +25,7 @@ def normal(loc,scale):
    
 # Split-normal
 # --------------------------------------------------------
-class SplitNormal(Distribution):
+class SplitNormal(numpyro.distributions.Distribution):
     """
     Split Normal (two-piece normal) distribution centered at 0.
 
