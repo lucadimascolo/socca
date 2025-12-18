@@ -7,7 +7,6 @@ def uniform(low,high):
         message = 'The lower limit must be smaller than the upper limit.'
         message = message+f'\nInput values > low={low} high={high}'
         raise ValueError(message) 
-   #return scipy.stats.uniform(loc=low,scale=high-low)
     return numpyro.distributions.Uniform(low,high)
 
 # Log-uniform
@@ -17,30 +16,51 @@ def loguniform(low,high):
         message = 'The lower limit must be smaller than the upper limit.'
         message = message+f'\nInput values > low={low} high={high}'
         raise ValueError(message) 
-   #return scipy.stats.loguniform(a=low,b=high)
     return numpyro.distributions.LogUniform(low,high)
 
 # Normal
 # --------------------------------------------------------
 def normal(loc,scale):
-   #return scipy.stats.norm(loc=loc,scale=scale)
     return numpyro.distributions.Normal(loc,scale)
    
 # Split-normal
 # --------------------------------------------------------
-class splitnorm_gen(scipy.stats.rv_continuous):
-    'splitnorm'
-    def _pdf(self,x,losig,hisig):
-        sig = hisig*np.heaviside(x,1.00)+losig*np.heaviside(-x,1.00)
-        pdf = np.exp(-(x/sig)**2.00/2.00)
-        return pdf*np.sqrt(2.00/np.pi)/(losig+hisig)
+class SplitNormal(Distribution):
+    """
+    Split Normal (two-piece normal) distribution centered at 0.
 
-    def _ppf(self,q,losig,hisig):
-        loppf =  losig*scipy.special.ndtri(q*(losig+hisig)/losig/2.00)
-        hippf = -hisig*scipy.special.ndtri((1.00-q)*(losig+hisig)/hisig/2.00)
-        return np.where(loppf<0.00,loppf,hippf)
+    Parameters
+    ----------
+    losig : scale for x < 0
+    hisig : scale for x >= 0
+    """
+    arg_constraints = {"losig": numpyro.distributions.constraints.positive,
+                       "hisig": numpyro.distributions.constraints.positive,}
+    support = numpyro.distributions.constraints.real
+    reparametrized_params = ["losig", "hisig"]
 
-splitnorm = splitnorm_gen(name='splitnorm')
+    def __init__(self, losig, hisig, validate_args=None):
+        self.losig, self.hisig = numpyro.distributions.util.promote_shapes(losig,hisig)
+        batch_shape = jp.broadcast_shapes(jp.shape(self.losig),
+                                          jp.shape(self.hisig),)
+        super().__init__(batch_shape=batch_shape,
+                         event_shape=(),
+                         validate_args=validate_args)
+
+    def log_prob(self, x):
+        losig = self.losig
+        hisig = self.hisig
+
+        sig_prob = jp.where(x>=0.0,hisig,losig)
+        log_norm = jp.log(jp.sqrt(2.0/jp.pi))-jp.log(losig+hisig)
+        return log_norm-0.5*(x/sig_prob)**2
+
+def splitnormal(loc,losig,hisig):
+    return numpyro.distributions.TransformedDistribution(
+        base_distribution = SplitNormal(losig,hisig),
+               transforms = [numpyro.distributions.transforms.AffineTransform(loc,1.0)]
+    )
+
 
 # Parameter bound to another component's parameter
 # --------------------------------------------------------
