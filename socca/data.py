@@ -307,10 +307,10 @@ class Image:
         cutout_exp   = Cutout2D(self.exp,  center,csize,wcs=self.wcs)
         cutout_resp  = Cutout2D(self.resp, center,csize,wcs=self.wcs)
         
-        self.data  = jp.array(cutout_data.data )
-        self.mask  = jp.array(cutout_mask.data ); del cutout_mask
-        self.exp   = jp.array(cutout_exp.data  ); del cutout_exp
-        self.resp  = jp.array(cutout_resp.data ); del cutout_resp
+        self.data  = jp.array(cutout_data.data)
+        self.mask  = jp.array(cutout_mask.data); del cutout_mask
+        self.exp   = jp.array(cutout_exp.data ); del cutout_exp
+        self.resp  = jp.array(cutout_resp.data); del cutout_resp
 
         if self.psf is not None:
             center_psf = (self.hdu.header['CRPIX1'],self.hdu.header['CRPIX2'])
@@ -371,7 +371,7 @@ class Image:
                 hdu.data[idx] = 0.00
             elif isinstance(r,np.ndarray):
                 hdu.data = hdu.data*(r==1.00).astype(float)
-            elif isinstance(r,fits.ImageHDU,fits.PrimaryHDU):
+            elif isinstance(r,(fits.ImageHDU,fits.PrimaryHDU)):
                 data = _hdu_mask(mask,self.hdu)
                 hdu.data = hdu.data*data    
         
