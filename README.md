@@ -9,7 +9,7 @@
 Installation
 ---------------------------------------------------
 > [!WARNING]
-> `socca` was built using `python=3.12`. Although the installation is not bound to this specific version and different releases could work fine, it is recommended to use the same version to avoid any compatibility issues.
+> `socca` has been built using `python=3.12`. Although the installation is not bound to this specific version and different releases could work fine, it is recommended to use the same version to avoid any compatibility issues.
 
 To install `socca`, it should be enough to run
 
