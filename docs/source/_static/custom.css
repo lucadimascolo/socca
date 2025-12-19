@@ -1,0 +1,68 @@
+
+section {
+    text-align: justify;
+}
+
+/* remove underline from badge links */
+
+.yue a:has(> img) {
+  border-bottom: none !important;
+}
+
+.yue a:has(> img)::after {
+  display: none !important;
+}
+
+
+/* Custom Admonition Icons*/
+
+.admonition::before,
+.admonition::after,
+.admonition-title::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  border: none !important;
+  mask: none !important;
+  -webkit-mask: none !important;
+}
+
+.admonition > .admonition-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.admonition > .admonition-title::before {
+  content: "";
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}
+
+.admonition.note > .admonition-title::before{
+  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25z"/></svg>');}
+
+.admonition.tip > .admonition-title::before {
+  mask-image: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h-2V7h2m0 10h-2v-6h2m-1-9A10 10 0 002 12a10 10 0 0010 10 10 10 0 0010-10A10 10 0 0012 2z"/></svg>');}
+
+.admonition.warning > .admonition-title::before {
+  mask-image: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 14h-2v-4h2m0 8h-2v-2h2M1 21h22L12 2 1 21z"/></svg>');}
+
+
+/* search shortcut keycap ("/" next to input) */
+
+.light .searchbox kbd,
+.dark .searchbox kbd {
+  color: var(--yue-c-code-text);
+  background: none;
+  box-shadow: none;
+  border: 1px solid var(--yue-c-code-text);
+}

@@ -23,13 +23,48 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
+ISSUE_URL = ("https://github.com/lucadimascolo/socca/issues/new"
+          + "?assignees=&labels=&projects=&template={}.md&title="
+)
+
+#html_theme = "sphinxawesome_theme"
 html_theme = "shibuya"
-html_theme_options = {
-  "accent_color": "orange",
-     "dark_code": True,
-}
 
 html_static_path = ['_static']
+html_css_files = ['custom.css']
+
+'''
+html_theme_options = {
+    "nav_links_align": "right",
+    "nav_links": [
+        {
+            "title": "Wanna help?",
+            "url": "wannahelp",
+            "children": [
+                {
+                    "title": "Report an issue",
+                    "url": ISSUE_URL.format("bug_report"),
+                    "summary": "Found a bug? Let us know!",
+                    "external": True,
+                },
+                {
+                    "title": "Request a feature",
+                    "url": ISSUE_URL.format("feature_request"),
+                    "summary": "Would you like to see a new feature?",
+                    "external": True,
+                },
+                {
+                    "title": "Contribute",
+                    "url": "https://github.com/lucadimascolo/socca/pulls",
+                    "summary": "Submit a pull request",
+                    "external": True,
+                },
+
+            ],
+        },
+    ]
+}
+'''
 
 extensions = [
     "myst_parser",
@@ -50,3 +85,13 @@ source_suffix = {
     ".rst": "restructuredtext",
     ".md": "markdown",
 }
+
+import subprocess
+from pathlib import Path
+
+def run_citation_generator(app):
+    script = Path(__file__).parent / "_scripts" / "generate_citation.py"
+    subprocess.check_call(["python", str(script)])
+
+def setup(app):
+    app.connect("builder-inited", run_citation_generator)
