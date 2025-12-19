@@ -124,7 +124,7 @@ class FFTspec:
     def shift(self,xc,yc):
         dx = (xc-self.head['CRVAL1'])*jp.cos(jp.deg2rad(self.head['CRVAL2']))
         dy = (yc-self.head['CRVAL2'])
-        uphase = -2.00j*jp.pi*self.freq[0]*(self.head['CRPIX1']-2.50+dx/jp.abs(self.head['CDELT1']))
+        uphase = -2.00j*jp.pi*self.freq[0]*(self.head['CRPIX1']-1.50+dx/jp.abs(self.head['CDELT1']))
         vphase =  2.00j*jp.pi*self.freq[1]*(self.head['CRPIX2']-1.50+dy/jp.abs(self.head['CDELT2']))
         return uphase, vphase
     
