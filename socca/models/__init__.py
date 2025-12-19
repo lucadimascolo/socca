@@ -185,8 +185,10 @@ class Component:
         type(self).idcls += 1
 
         self.positive = kwargs.get('positive',config.Component.positive)
-        self.okeys = ['id','positive','units']
+        self.okeys = ['id','positive','units','description']
         self.units = {}
+
+        self.description = {}
 
 #   Print model parameters  
 #   --------------------------------------------------------
@@ -201,7 +203,8 @@ class Component:
         
             for key in keyout:
                 keylen = maxlen-len(f' [{self.units[key]}]')
-                print(f'{key:<{keylen}} [{self.units[key]}] : {self.__dict__[key]}')
+                keyval = None if self.__dict__[key] is None else f'{self.__dict__[key]:.4E}'
+                print(f'{key:<{keylen}} [{self.units[key]}] : '+f'{keyval}'.ljust(10) + f' | {self.description[key]}')
         else:
             print('No parameters defined.')
 
@@ -225,6 +228,12 @@ class Profile(Component):
         self.cbox  = kwargs.get('cbox', config.Profile.cbox)
 
         self.units.update(dict(xc='deg',yc='deg',theta='rad',e='',cbox=''))
+
+        self.description.update(dict(xc = 'Right ascensio of centroid',
+                                     yc = 'Declination of centroid',
+                                  theta = 'Position angle (east from north)',
+                                      e = 'Projected axis ratio',
+                                   cbox = 'Projected boxiness'))
 
     @abstractmethod
     def profile(self,r):
@@ -281,6 +290,9 @@ class Beta(Profile):
 
         self.units.update(dict(rc='deg',beta='',Ic='image'))
 
+        self.description.update(dict(rc = 'Core radius',
+                                     Ic = 'Central surface brightness',
+                                   beta = 'Slope parameter'))
     @staticmethod
     @jax.jit
     def profile(r,Ic,rc,beta):
@@ -301,7 +313,18 @@ class gNFW(Profile):
         self.rz  = kwargs.get('rz',jp.logspace(-7,2,1000))
         self.eps = kwargs.get('eps',1.00E-08)
 
-        self.units.update(dict(rc='deg',rz='rc',alpha='',beta='',gamma='',Ic='image'))
+        self.okeys.append('rz')
+        self.okeys.append('eps')
+        self.okeys.append('profile')
+
+        self.units.update(dict(rc='deg',alpha='',beta='',gamma='',Ic='image'))
+
+        self.description.update(dict(rc = 'Scale radius',
+                                     Ic = 'Characteristic surface brightness',
+                                  alpha = 'Intermediate slope',
+                                   beta = 'Outer slope',
+                                  gamma = 'Inner slope'))
+
 
         def _profile(r,Ic,rc,alpha,beta,gamma):
             return gNFW._profile(r,Ic,rc,alpha,beta,gamma,self.rz,self.eps)
@@ -345,6 +368,10 @@ class Sersic(Profile):
 
         self.units.update(dict(re='deg',Ie='image',ns=''))
 
+        self.description.update(dict(re = 'Effective radius',
+                                     Ie = 'Surface brightness at re',
+                                     ns = 'Sersic index'))
+        
     @staticmethod
     @jax.jit
     def profile(r,Ie,re,ns):
@@ -362,7 +389,9 @@ class Exponential(Profile):
         self.Ie = kwargs.get('Ie', config.Exponential.Ie)
 
         self.units.update(dict(re='deg',Ie='image'))
-                                
+        self.description.update(dict(re = 'Scale radius',
+                                     Ie = 'Surface brightness at re'))
+                
     @staticmethod
     @jax.jit
     def profile(r,Ie,re):
@@ -384,6 +413,12 @@ class PolyExponential(Exponential):
         self.units.update(dict(rc='deg'))
         self.units.update({f'c{ci}':'' for ci in range(1,5)})
 
+        self.description.update(dict(c1 = 'Polynomial coefficient 1',
+                                     c2 = 'Polynomial coefficient 2',
+                                     c3 = 'Polynomial coefficient 3',
+                                     c4 = 'Polynomial coefficient 4',
+                                     rc = 'Reference radius for polynomial terms'))
+        
     @staticmethod
     @jax.jit
     def profile(r,Ie,re,c1,c2,c3,c4,rc):
@@ -406,6 +441,11 @@ class PolyExpoRefact(Exponential):
         self.units.update(dict(rc='deg'))
         self.units.update({f'I{ci}':'image' for ci in range(1,5)})
 
+        self.description.update(dict(I1 = 'Polynomial intensity coefficient 1',
+                                     I2 = 'Polynomial intensity coefficient 2',
+                                     I3 = 'Polynomial intensity coefficient 3',
+                                     I4 = 'Polynomial intensity coefficient 4',
+                                     rc = 'Reference radius for polynomial terms'))
     @staticmethod
     @jax.jit
     def profile(r,Ie,re,I1,I2,I3,I4,rc):
@@ -432,6 +472,9 @@ class ModExponential(Exponential):
 
         self.units.update(dict(rm='deg',alpha=''))
 
+        self.description.update(dict(rm = 'Modification radius',
+                                  alpha = 'Modification exponent'))
+        
     @staticmethod
     @jax.jit
     def profile(r,Ie,re,rm,alpha):
@@ -449,6 +492,10 @@ class Point(Component):
 
         self.units.update(dict(xc='deg',yc='deg',Ic='image'))
 
+        self.description.update(dict(xc='Right ascension',
+                                     yc='Declination',
+                                     Ic='Peak surface brightness'))
+        
     @staticmethod
     def profile(xc,yc,Ic):
         pass
@@ -474,7 +521,7 @@ class Point(Component):
                  warnings.warn('No PSF defined, so no convolution will be performed.')
             else:
                 mgrid = mgrid*img.psf_fft
-            mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
+        mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid,s=img.data.shape)).real
         return mgrid
     
 
@@ -496,7 +543,19 @@ class Background(Component):
         self.a3yyy = kwargs.get('a3yyy',config.Background.a3yyy)
 
         self.units = dict(rc='deg')
-        self.units.update({f'a{ci}':'' for ci in range(10)})
+        self.units.update({key: '' for key in self.__dict__.keys() if key not in self.okeys and key[0]=='a'})
+        
+        self.description.update(dict(rc    = 'Reference radius for polynomial terms',
+                                     a0    = 'Polynomial coefficient 0',
+                                     a1x   = 'Polynomial coefficient 1 in x',
+                                     a1y   = 'Polynomial coefficient 1 in y',
+                                     a2xx  = 'Polynomial coefficient 2 in x*x',
+                                     a2xy  = 'Polynomial coefficient 2 in x*y',
+                                     a2yy  = 'Polynomial coefficient 2 in y*y',
+                                     a3xxx = 'Polynomial coefficient 3 in x*x*x',
+                                     a3xxy = 'Polynomial coefficient 3 in x*x*y',
+                                     a3xyy = 'Polynomial coefficient 3 in x*y*y',
+                                     a3yyy = 'Polynomial coefficient 3 in y*y*y'))
 
     @staticmethod
     @jax.jit
@@ -516,7 +575,8 @@ class Background(Component):
     def getmap(self,img):
         xc, yc = self.img.wcs.crval
         xgrid, ygrid = self.getgrid(img.grid,xc,yc)
-        kwarg = {key: getattr(self,key) for key in ['a0','a1x','a1y','a2xx','a2xy','a2yy','a3xxx','a3xxy','a3xyy','a3yyy','rc']}
+        klist = [key for key in self.__dict__.keys() if key not in self.okeys and key[0]=='a']+['rc']
+        kwarg = {key: getattr(self,key) for key in klist}
         
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
@@ -538,8 +598,12 @@ class Height:
         
         self.zext = kwargs.get('zext',config.Height.zext)
         self.zsize = kwargs.get('zsize',config.Height.zsize)
-        self.units.update(dict(zext='deg', zsize=''))
+        self.units.update(dict(zext='deg', zsize='',inc='rad'))
 
+        self.description = dict(zext = 'Half vertical extent for integration',
+                               zsize = 'Number of vertical samples for integration',
+                                 inc = 'Inclination angle (0=face-on)')
+        
     @abstractmethod
     def profile(z):
         pass
@@ -551,7 +615,8 @@ class HyperCos(Height):
         super().__init__(**kwargs)
         self.zs = kwargs.get('zs',config.HyperCos.zs)
         self.units.update(dict(zs='deg'))
-        
+        self.description.update(dict(zs = 'Scale height'))
+
     @staticmethod
     @jax.jit
     def profile(z,zs):
@@ -586,6 +651,14 @@ class Disk(Component):
         profile_ = 'lambda rfoo,zfoo,r,z,{0},{1}: {2}'.format(','.join(rkw),','.join(zkw),profile_)
 
         self.profile = jax.jit(partial(eval(profile_),self.radial,self.vertical))
+
+        print(self.vertical.units)
+
+        self.units.update({f'radial.{key}': self.radial.units[key] for key in self.radial.units.keys()})
+        self.units.update({f'vertical.{key}': self.vertical.units[key] for key in self.vertical.units.keys()})
+
+        self.description.update({f'radial.{key}': self.radial.description[key] for key in self.radial.description.keys()})
+        self.description.update({f'vertical.{key}': self.vertical.description[key] for key in self.vertical.description.keys()})
 
     def getmap(self,img,convolve=False):
         kwarg = {}
@@ -668,7 +741,8 @@ class Disk(Component):
                 keylen = maxlen-len(f' [{self.units[key]}]')
                 kvalue = self.radial.__dict__[key.replace('radial.','')] if 'radial' in key else \
                          self.vertical.__dict__[key.replace('vertical.','')]
-                print(f'{key:<{keylen}} [{self.units[key]}] : {kvalue}')
+                kvalue = None if kvalue is None else f'{kvalue:.4E}'
+                print(f'{key:<{keylen}} [{self.units[key]}] : '+f'{kvalue}'.ljust(10) + f' | {self.description[key]}')
         else:
             print('No parameters defined.')
 
