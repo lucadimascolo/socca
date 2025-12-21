@@ -86,7 +86,7 @@ class Normal:
                                 nan_policy = 'omit',
                                       axis = None)
             sigma = float(sigma)
-            print(f'- noise level: {sigma:.2E}')
+            print(f'- noise level: {sigma:.2E} [image units]')
         elif isinstance(self.select,str):
             if isinstance(self.kwargs[self.select],(float,int)):
                 sigma = self.kwargs[self.select]
