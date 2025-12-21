@@ -57,7 +57,7 @@ if field_info:
     bibtex = "\n".join(lines)
 
 OUT_FILE.write_text(
-    "# Citation\n\n"
+    "# Citing socca\n\n"
     "If you are going to include in a publication any results obtained using **``socca``**, "
     "please consider adding an hyperlink to the [GitHub repository](https://github.com/lucadimascolo/socca) "
     "or citing it as follows:\n\n"

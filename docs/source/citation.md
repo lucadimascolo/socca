@@ -1,4 +1,4 @@
-# Citation
+# Citing socca
 
 If you are going to include in a publication any results obtained using **``socca``**, please consider adding an hyperlink to the [GitHub repository](https://github.com/lucadimascolo/socca) or citing it as follows:
 
