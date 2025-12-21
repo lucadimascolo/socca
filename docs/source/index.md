@@ -1,4 +1,4 @@
-# **``socca``**
+# socca
 
 **``socca``** is a minimal library for efficiently modelling image-space astronomical data. It is intended to be fast and flexible, taking advantage of the [`JAX`](https://github.com/google/jax) framework for performing just-in-time compilation and of state-of-the-art sampling algorithms ([`dynesty`](https://github.com/joshspeagle/dynesty), [`nautilus`](https://nautilus-sampler.readthedocs.io/en/latest/), [`pocomc`](https://github.com/minaskar/pocomc)) for the posterior exploration.
 
@@ -11,7 +11,7 @@ This code is broadly inspired by the excellent [`pysersic`](https://github.com/p
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 
-## License and attribution
+## Author and license
 Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contributors](https://github.com/lucadimascolo/socca/graphs/contributors).
 
 **``socca``** is an open-source library released under the MIT License. The full license terms can be found in the [LICENSE](https://github.com/lucadimascolo/socca/blob/main/LICENSE) file in the main repository.
@@ -29,6 +29,14 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 :hidden:
 :maxdepth: 2
 :caption: Using socca
-./quickstart.md
-./priors.md
+./tutorial_quickstart.md
+./tutorial_noise.md
+./tutorial_priors.md
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 2
+:caption: Discussions
+./faq.md
 ```

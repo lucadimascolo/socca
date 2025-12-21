@@ -1,10 +1,23 @@
 
+/* Justify text
+/* ------------------------------------------------------------------------------------- */
 section {
     text-align: justify;
 }
 
-/* remove underline from badge links */
+/* Reduce line height for better readability
+/* ------------------------------------------------------------------------------------- */
 
+.yue {
+  line-height: 1.55;
+}
+
+.globaltoc li {
+  margin: 0 0 !important;
+}
+
+/* remove underline from badge links 
+/* ------------------------------------------------------------------------------------- */
 .yue a:has(> img) {
   border-bottom: none !important;
 }
@@ -14,8 +27,8 @@ section {
 }
 
 
-/* Custom Admonition Icons*/
-
+/* Custom Admonition Icons 
+/* ------------------------------------------------------------------------------------- */
 .admonition::before,
 .admonition::after,
 .admonition-title::after {
@@ -57,8 +70,8 @@ section {
   mask-image: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 14h-2v-4h2m0 8h-2v-2h2M1 21h22L12 2 1 21z"/></svg>');}
 
 
-/* search shortcut keycap ("/" next to input) */
-
+/* search shortcut keycap ("/" next to input)
+/* ------------------------------------------------------------------------------------- */
 .light .searchbox kbd,
 .dark .searchbox kbd {
   color: var(--yue-c-code-text);
