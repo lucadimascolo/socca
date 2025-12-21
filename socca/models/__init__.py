@@ -229,7 +229,7 @@ class Profile(Component):
 
         self.units.update(dict(xc='deg',yc='deg',theta='rad',e='',cbox=''))
 
-        self.description.update(dict(xc = 'Right ascensio of centroid',
+        self.description.update(dict(xc = 'Right ascension of centroid',
                                      yc = 'Declination of centroid',
                                   theta = 'Position angle (east from north)',
                                       e = 'Projected axis ratio',
