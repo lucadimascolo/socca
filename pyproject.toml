@@ -27,7 +27,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 include = ["socca*"]
-exclude = ["input*"]
+exclude = ["data*","examples*"]
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]
