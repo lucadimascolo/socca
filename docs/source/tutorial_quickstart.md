@@ -2,7 +2,13 @@
 
 This quickstart will walk you through a minimal end-to-end example of how to use **``socca``** to model an astronomical image. In this specific example, we will model a simulated toy image of a disk-like galaxy using a model comprising a Sérsic component and a point source.
 
-You can access all the files you need to run this tutorial here:
+```{image} _static/figures/tutorial_mock.png
+:alt: Image of a mock galaxy, comprising a Sérsic component and a point source.
+:width: 70%
+:align: center
+```
+
+You can access all the files you need to run this tutorial [here](https://github.com/lucadimascolo/socca/tree/doc/data/tutorial).
 
 Before getting into the nuts and bolts of using **``socca``** to model your favourite image, we first need to load **``socca``**:
 
@@ -58,11 +64,11 @@ As shown above, the `Point` model is described by a total of three parameters. T
 
 ```python
 >>> radius = 3.00E-03  # degrees
->>> point.xc = socca.priors.uniform(low = img.hdu.header['CRVAL1'] - radius,
-                                   high = img.hdu.header['CRVAL1'] + radius)
->>> point.yc = socca.priors.uniform(low = img.hdu.header['CRVAL2'] - radius,
-                                   high = img.hdu.header['CRVAL2'] + radius)
->>> point.Ic = socca.priors.loguniform(low = 1.00E-08, high = 1.00E-02)
+>>> point.xc = socca.priors.uniform(low=img.hdu.header['CRVAL1'] - radius, \
+>>>                                high=img.hdu.header['CRVAL1'] + radius)
+>>> point.yc = socca.priors.uniform(low=img.hdu.header['CRVAL2'] - radius, \
+>>>                                high=img.hdu.header['CRVAL2'] + radius)
+>>> point.Ic = socca.priors.loguniform(low = 1.00E-02, high = 1.00E+02)
 ```
 
 Here we assign uniform priors to the centroid coordinates, centred for convenience on the reference coordinates of the input image. The intensity parameter is instead assigned a log-uniform prior, allowing the sampler to efficiently explore several orders of magnitude. For a more extensive overview of the available prior distributions, see the ["Priors and constraints"](./tutorial_priors.md) documentation page.
@@ -102,13 +108,18 @@ In some cases, it is convenient to fix parameters to specific values rather than
 We then define priors for the remaining free parameters:
 
 ```python
->>> sersic.theta = socca.priors.uniform(low = 0.00, high = np.pi)
->>> sersic.e     = socca.priors.uniform(low = 0.00, high = 1.00)
->>> sersic.re    = socca.priors.loguniform(low = 1.00E-08, high = 1.00E-02)
->>> sersic.Ie    = socca.priors.loguniform(low = 1.00E-08, high = 1.00E-02)
+>>> sersic.theta = socca.priors.uniform(low=0.00, high=np.pi)
+>>> sersic.e     = socca.priors.uniform(low=0.00, high=1.00)
+>>> sersic.re    = socca.priors.loguniform(low=1.00E-08, high=1.00E-02)
+>>> sersic.Ie    = socca.priors.loguniform(low=1.00E-02, high=1.00E+02)
 ```
 
 Since no prior or value is assigned to `cbox`, it remains fixed at its default value (`sersic.cbox = 0`).
+
+
+```{seealso}
+Many other components are available in the `socca.models` module. Please refer to the ["Available components"](./tutorial_models.md) documentation page for a complete overview of all the implemented models. The collection is continuously growing to accomodate all the potential use cases, and new components will be added in future releases of **``socca``**.
+```
 
 ### Building a composite model
 
@@ -134,4 +145,68 @@ Finished  | 74     | 1        | 4        | 91200    | N/A    | 11106 | +174309.5
 Elapsed time: 3.28 m
 ```
 
-By default, **``socca``** uses the `Nautilus` nested sampling library. Additional options are available and fully integrated, including `dynesty`, `pocomc`, and optimisers from `scipy` (see the documentation for details).
+By default, **``socca``** uses the [`nautilus`](https://github.com/johannesulf/nautilus) nested sampling library. Additional options are available and fully integrated, including [`dynesty`](https://github.com/joshspeagle/dynesty) and [`pocomc`](https://github.com/minaskar/pocomc).
+
+```{seealso}
+In addition to the samplers mentioned above, **``socca``** also includes the optimizer from `scipy`. At the moment, the only algorithm available is `L-BFGS-B`. In this way, all the parameters can be bound to vary on the uniform range `[0,1]`, and to be transformed onto the model parameter space using the inverse cumulative distribution function of the corresponding prior distributions (as done in nested sampling). This option is particularly useful for obtaining a fast maximum-a-posteriori estimate of the parameters, while accounting for generic prior probability distributions.
+```
+```{caution}
+In principle, it is possible to use the No-U-Turn sampler from `numpyro`. This option still needs to be fully tested, as it has shown a significant degradation of the modelling performance (mostly in terms of convergence and runtime) when compared to any of the other sampling options. For this reason, it is not recommended to use `numpyro` for inference in **``socca``** at this stage. It is however still included as an option for completeness and testing purposes.
+```
+
+### Checkpointing
+All the sampling algorithms in **``socca``** support saving the sampler state synchronously while running the inference (in the case of `nautilus`) or at regular intervals (`dynesty`,`pocomc`). This allows resuming the sampling from the last saved state in case of interruptions. To enable checkpointing, simply pass the `checkpoint` argument when calling the `run()` method:
+
+```python
+>>> fit.run(checkpoint='tutorial_fit_checkpoint')
+```
+
+```{note}
+By default, the sampler is set to resume from the last saved state if a valid checkpoint file matching the provided name is found. This can be disabled by passing the `resume=False` argument to `run()`.
+```
+
+### Saving and re-loading results
+Along with saving the sampling state while running the inference, **``socca``** also provides a simple way to save the final results to disk for later inspection. Once the sampling is completed, it is possible to save the entire `fit` object as follows:
+
+```python
+>>> fit.dump('tutorial_fit_results.pickle')
+```
+
+The results are dumped into a `pickle` file (via `dill`), in order to de-serialize and preserve all the key information in `fit` (including the model, data, and sampling results). This can then be re-loaded at any time as:
+
+```python
+>>> fit2 = socca.load('tutorial_fit_results.pickle')
+```
+
+## Inspecting the results
+**``socca``** provides a few built-in methods for inspecting and visualising the results of the inference. For example, to generate a comparison plot showing the input data, best-fit model, and residuals, it is enough to call:
+
+```python
+>>> fit.plot.comparison()
+```
+
+```{image} _static/figures/tutorial_comparison.png
+:alt: Comparison plot showing the data, model, and residuals for the fitted galaxy.
+:width: 100%
+:align: center
+```
+
+```{note}
+By default, **``socca``** uses the best-fit parameters (i.e. those maximizing the posterior probability) to generate the model image shown in the comparison plot. In the case of strong parameter degeneracies, it is however more appropriate to consider the model obtained by marginalizing over the individual models generated for each sample in the posterior distribution. This can be achieved by passing the `usebest=False` argument to `fit.plot.comparison()`. Please note that, since this involves generating a model image for each sample in the posterior distribution, such an option is significantly more computationally expensive than using the best-fit parameters.
+```
+
+Additionally, it is possible to generate a corner plot of the posterior distributions of all free parameters simply by calling:
+
+```python
+>>> fit.plot.corner()
+```
+
+```{image} _static/figures/tutorial_corner.png
+:alt: Corner plot showing the posterior distributions of the model parameters.
+:width: 100%
+:align: center
+```
+
+This is mostly a simple wrapper around [corner.py](https://github.com/dfm/corner.py) that automatically configures the labels and ranges based on the model parameters and prior distributions. It is also possible to use it for visualising only a subset of the model components by passing a list of component names to the `comp` argument as a list of strings (e.g. `comp=['comp_00']` to show only the first component added to the model), integer indices (e.g. `comp=[0]`), or directly referring to the individual components (e.g. `comp=[point]`).
+
+Finally, by default, both the `comparison` and `corner` plots are displayed on screen. Passing the argument `name="your/file/name/prefix"` however allows for saving the figures to disk.
