@@ -1,5 +1,6 @@
 from .utils import *
 from .priors import pocomcPrior
+from .plotting import Plotter
 
 import dynesty
 import nautilus
@@ -39,6 +40,9 @@ class fitter:
             self.img.shape = self.img.data.shape
 
         self.labels = [self.mod.params[idx] for idx in self.mod.paridx]
+        self.units  = [self.mod.units[self.mod.params[idx]] for idx in self.mod.paridx]
+
+        self.plot = Plotter(self)
     
 #   Compute total model
 #   --------------------------------------------------------
@@ -174,8 +178,10 @@ class fitter:
                                      filepath = checkpoint,
                                        resume = resume)
         
+        discard_exploration = kwargs.pop('discard_exploration',True)
+
         toc = time.time()
-        self.sampler.run(f_live=dlogz,verbose=True,**kwargs)
+        self.sampler.run(f_live=dlogz,verbose=True,discard_exploration=discard_exploration,**kwargs)
         tic = time.time()
 
         dt = tic-toc
@@ -308,20 +314,18 @@ class fitter:
 #   --------------------------------------------------------
     def dump(self,filename):
         odict = {key: self.__dict__[key] for key in self.__dict__.keys()}
-        
+        # ensure filename has a pickle-like suffix
+        p = Path(filename)
+        if p.suffix.lower() not in ['.pickle','.pkl','.pck']:
+            filename = str(p)+'.pickle'
+
         with open(filename,'wb') as f:
             dill.dump(odict,f,dill.HIGHEST_PROTOCOL)
 
-#   Load results
-#   --------------------------------------------------------
-    def load(self,filename):
-        with open(filename,'rb') as f:
-            odict = dill.load(f)
-        self.__dict__.update(odict)
 
 #   Generate best-fit/median model
 #   --------------------------------------------------------
-    def getmodel(self,usebest=True,img=None,doresp=False,doexp=False):
+    def getmodel(self,what='all',usebest=True,img=None,doresp=False,doexp=False):
         gm = lambda pp: self.mod.getmap(self.img if img is None else img,pp,doresp,doexp)
 
         if self.method=='optimizer':
@@ -345,4 +349,32 @@ class fitter:
                 mraw = np.quantile(mraw,0.50,axis=0,method='inverted_cdf',weights=self.weights)
                 msmo = np.quantile(msmo,0.50,axis=0,method='inverted_cdf',weights=self.weights)
                 mbkg = np.quantile(mbkg,0.50,axis=0,method='inverted_cdf',weights=self.weights)
-        return mraw, msmo, mbkg
+        
+        if isinstance(what,str):
+            if what.lower()=='all':
+                return mraw, msmo, mbkg
+            else:
+                what = [what]
+        
+        mout = []
+        for w in what:
+            if w.lower() in ['raw']:
+                mout.append(mraw)
+            elif w.lower() in ['smo','smooth','smoothed','conv','convolved']:
+                mout.append(msmo)
+            elif w.lower() in ['bkg','background']:
+                mout.append(mbkg)
+            else:
+                raise ValueError(f"Unknown model component: {w}")
+            
+        return mout if len(mout)>1 else mout[0]
+       
+#   Load results
+#   --------------------------------------------------------
+def load(filename):
+    with open(filename,'rb') as f:
+        odict = dill.load(f)
+    fit = fitter(img=odict['img'],mod=odict['mod'])
+    for key in odict.keys():
+        fit.__dict__[key] = odict[key]
+    return fit
