@@ -37,6 +37,7 @@ class Model:
         self.gridder = []
         self.tied = []
         self.type = []
+        self.units = {}
 
         if prof is not None:
             self.addcomp(prof,positive)
@@ -53,8 +54,8 @@ class Model:
                 raise ValueError(f'Parameter {p} in component {self.ncomp:02d} is set to None. \
                                    Please provide a valid value or prior.')
 
-            self.params.append( f'src_{self.ncomp:02d}_{p}')
-            self.priors.update({f'src_{self.ncomp:02d}_{p}': par})
+            self.params.append( f'comp_{self.ncomp:02d}_{p}')
+            self.priors.update({f'comp_{self.ncomp:02d}_{p}': par})
             if isinstance(par,numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params)-1)
             
@@ -62,6 +63,9 @@ class Model:
                 self.tied.append(True)
             else:
                 self.tied.append(False)
+
+            self.units.update({f'comp_{self.ncomp:02d}_{p}': prof.units[p]})
+            
         self.profile.append(prof.profile)
         self.gridder.append(prof.getgrid)
         self.ncomp += 1
@@ -91,30 +95,30 @@ class Model:
 
         for nc in range(self.ncomp):
             if self.type[nc]=='Disk':
-                kwarg = {key.replace(f'src_{nc:02d}_radial.','r_'): pars[key] for key in self.params \
-                         if key.startswith(f'src_{nc:02d}') and \
-                            key.replace(f'src_{nc:02d}_radial.','r_') in list(inspect.signature(self.profile[nc]).parameters.keys())}
-                kwarg.update({key.replace(f'src_{nc:02d}_vertical.','z_'): pars[key] for key in self.params \
-                             if key.startswith(f'src_{nc:02d}') and \
-                                key.replace(f'src_{nc:02d}_vertical.','z_') in list(inspect.signature(self.profile[nc]).parameters.keys())})
+                kwarg = {key.replace(f'comp_{nc:02d}_radial.','r_'): pars[key] for key in self.params \
+                         if key.startswith(f'comp_{nc:02d}') and \
+                            key.replace(f'comp_{nc:02d}_radial.','r_') in list(inspect.signature(self.profile[nc]).parameters.keys())}
+                kwarg.update({key.replace(f'comp_{nc:02d}_vertical.','z_'): pars[key] for key in self.params \
+                             if key.startswith(f'comp_{nc:02d}') and \
+                                key.replace(f'comp_{nc:02d}_vertical.','z_') in list(inspect.signature(self.profile[nc]).parameters.keys())})
             
                 rcube, zcube = self.gridder[nc](img.grid,
-                                                pars[f'src_{nc:02d}_radial.xc'],
-                                                pars[f'src_{nc:02d}_radial.yc'],
-                                                pars[f'src_{nc:02d}_vertical.zext'],
-                                                pars[f'src_{nc:02d}_vertical.zsize'],
-                                                pars[f'src_{nc:02d}_radial.theta'],
-                                                pars[f'src_{nc:02d}_vertical.inc'])
+                                                pars[f'comp_{nc:02d}_radial.xc'],
+                                                pars[f'comp_{nc:02d}_radial.yc'],
+                                                pars[f'comp_{nc:02d}_vertical.zext'],
+                                                pars[f'comp_{nc:02d}_vertical.zsize'],
+                                                pars[f'comp_{nc:02d}_radial.theta'],
+                                                pars[f'comp_{nc:02d}_vertical.inc'])
 
-                dx = 2.00*pars[f'src_{nc:02d}_vertical.zext']/(pars[f'src_{nc:02d}_vertical.zsize']-1)
+                dx = 2.00*pars[f'comp_{nc:02d}_vertical.zext']/(pars[f'comp_{nc:02d}_vertical.zsize']-1)
                 mone = self.profile[nc](rcube,zcube,**kwarg)
                 mone = jp.trapezoid(mone,dx=dx,axis=1)
                 mone = jp.mean(mone,axis=0)
                 mraw += mone.copy(); del mone
             else:       
-                kwarg = {key.replace(f'src_{nc:02d}_',''): pars[key] for key in self.params \
-                         if key.startswith(f'src_{nc:02d}') and \
-                            key.replace(f'src_{nc:02d}_','') in list(inspect.signature(self.profile[nc]).parameters.keys())}
+                kwarg = {key.replace(f'comp_{nc:02d}_',''): pars[key] for key in self.params \
+                         if key.startswith(f'comp_{nc:02d}') and \
+                            key.replace(f'comp_{nc:02d}_','') in list(inspect.signature(self.profile[nc]).parameters.keys())}
 
                 if self.type[nc]=='Point':
                     uphase, vphase = img.fft.shift(kwarg['xc'],kwarg['yc'])
@@ -144,11 +148,11 @@ class Model:
         
                 else:
                     rgrid = self.gridder[nc](img.grid,
-                                             pars[f'src_{nc:02d}_xc'],
-                                             pars[f'src_{nc:02d}_yc'],
-                                             pars[f'src_{nc:02d}_theta'],
-                                             pars[f'src_{nc:02d}_e'],
-                                             pars[f'src_{nc:02d}_cbox'])
+                                             pars[f'comp_{nc:02d}_xc'],
+                                             pars[f'comp_{nc:02d}_yc'],
+                                             pars[f'comp_{nc:02d}_theta'],
+                                             pars[f'comp_{nc:02d}_e'],
+                                             pars[f'comp_{nc:02d}_cbox'])
 
                     mone = self.profile[nc](rgrid,**kwarg)
                     mone = jp.mean(mone,axis=0)
@@ -181,7 +185,7 @@ class Model:
 class Component:
     idcls = 0
     def __init__(self,**kwargs):
-        self.id = f'src_{type(self).idcls:02d}'
+        self.id = f'comp_{type(self).idcls:02d}'
         type(self).idcls += 1
 
         self.positive = kwargs.get('positive',config.Component.positive)
@@ -637,9 +641,9 @@ class Disk(Component):
 
         if self.radial.id!=self.id:
             type(self).idcls -= 1
-            idmin = np.minimum(int(self.radial.id.replace('src_','')),
-                               int(self.id.replace('src_','')))
-            self.id = f'src_{idmin:02d}'
+            idmin = np.minimum(int(self.radial.id.replace('comp_','')),
+                               int(self.id.replace('comp_','')))
+            self.id = f'comp_{idmin:02d}'
             self.radial.id = self.id
 
         rkw = [f'r_{key}' for key in list(inspect.signature(self.radial.profile).parameters.keys()) if key not in ['r','z']]
