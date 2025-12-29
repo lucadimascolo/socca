@@ -1,6 +1,6 @@
 # socca
 
-**``socca``** is a minimal library for efficiently modelling image-space astronomical data. It is intended to be fast and flexible, taking advantage of the [`JAX`](https://github.com/google/jax) framework for performing just-in-time compilation and of state-of-the-art sampling algorithms ([`dynesty`](https://github.com/joshspeagle/dynesty), [`nautilus`](https://nautilus-sampler.readthedocs.io/en/latest/), [`pocomc`](https://github.com/minaskar/pocomc)) for the posterior exploration.
+**``socca``** is a minimal library for efficiently modelling image-space astronomical data. It is intended to be fast and flexible, taking advantage of the [`JAX`](https://github.com/google/jax) framework for performing just-in-time compilation and of state-of-the-art sampling algorithms ([`dynesty`](https://github.com/joshspeagle/dynesty), [`nautilus`](https://github.com/johannesulf/nautilus), [`pocomc`](https://github.com/minaskar/pocomc)) for the posterior exploration.
 
 
 This code is broadly inspired by the excellent [`pysersic`](https://github.com/pysersic/pysersic) and [`astrophot`](https://github.com/Autostronomy/AstroPhot) libraries. We recommend their use if you require a more mature and thoroughly tested solution. **``socca``** is still in its infancy and many experimental features may undergo significant changes in the future. 
@@ -31,6 +31,7 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 :caption: Using socca
 ./tutorial_quickstart.md
 ./tutorial_noise.md
+./tutorial_models.md
 ./tutorial_priors.md
 ```
 

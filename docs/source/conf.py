@@ -28,14 +28,17 @@ ISSUE_URL = ("https://github.com/lucadimascolo/socca/issues/new"
 )
 
 #html_theme = "sphinxawesome_theme"
-html_theme = "shibuya"
+#html_theme = "breeze"
+#html_theme = "sphinx_book_theme"
+#html_theme = "shibuya"
+html_theme = "furo"
 
 html_static_path = ['_static']
 html_css_files = ['custom.css']
 
-html_theme_options = {
-  "accent_color": "tomato",
-}
+# html_theme_options = {
+#   "accent_color": "tomato",
+# }
 
 '''
 html_theme_options = {
