@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from functools import partial
 
+from pathlib import Path
+
 import jax; jax.config.update('jax_enable_x64',True)
 import jax.numpy as jp
 import jax.scipy
