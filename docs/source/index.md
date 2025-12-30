@@ -31,6 +31,7 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 :caption: Using socca
 ./tutorial_quickstart.md
 ./tutorial_noise.md
+./tutorial_data.md
 ./tutorial_models.md
 ./tutorial_priors.md
 ```
