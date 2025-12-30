@@ -287,8 +287,8 @@ class Image:
             self.noise = noisepdf.Normal()
         else: self.noise = noise
 
-        if self.psf is None and self.noise.__class__.__name__=='NormalALMA':
-            raise ValueError('PSF must be defined for images with NormalALMA noise.')
+        if self.psf is None and self.noise.__class__.__name__=='NormalRI':
+            raise ValueError('PSF must be defined for images with NormalRI noise.')
         
         noise_kwargs = list(inspect.signature(self.noise).parameters.keys())
         noise_kwargs = {k: eval(f'self.{k}') for k in noise_kwargs}
