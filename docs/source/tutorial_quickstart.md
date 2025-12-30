@@ -65,9 +65,9 @@ As shown above, the `Point` model is described by a total of three parameters. T
 ```python
 >>> radius = 3.00E-03  # degrees
 >>> point.xc = socca.priors.uniform(low=img.hdu.header['CRVAL1'] - radius, \
->>>                                high=img.hdu.header['CRVAL1'] + radius)
+...                                high=img.hdu.header['CRVAL1'] + radius)
 >>> point.yc = socca.priors.uniform(low=img.hdu.header['CRVAL2'] - radius, \
->>>                                high=img.hdu.header['CRVAL2'] + radius)
+...                                high=img.hdu.header['CRVAL2'] + radius)
 >>> point.Ic = socca.priors.loguniform(low = 1.00E-02, high = 1.00E+02)
 ```
 
