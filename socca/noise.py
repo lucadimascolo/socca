@@ -152,12 +152,14 @@ class NormalCorrelated:
     mask : jax.numpy.ndarray
         Boolean mask array.
     """
-    def __init__(self,cov=None,cube=None,**kwargs):
+    def __init__(self,cov=None,icov=None,cube=None,**kwargs):
         """
         Parameters
         ----------
         cov : array_like, optional
             Covariance matrix. If not provided, computed from cube.
+        icov : array_like, optional
+            Inverse covariance matrix. If provided, used directly.
         cube : array_like, optional
             3D array of noise realizations. First dimension is the number
             of realizations. Used to compute covariance if cov is None.
@@ -169,28 +171,40 @@ class NormalCorrelated:
                 Custom smoothing kernel. If None, uses a 5-point stencil.
         """
 
-        if cube is not None and cov is None:            
-            cov = np.cov(cube.reshape(cube.shape[0],-1),rowvar=True)
+        if icov is not None:
+            self.cov = None
+            self.icov = jp.asarray(icov.astype(float))
 
-            smooth = kwargs.get('smooth',3)
-            if smooth>0:
-                kernel = kwargs.get('kernel',None)
-                if kernel is None:
-                    kernel = np.array([[0.00,1.00,0.00],
-                                       [1.00,1.00,1.00],
-                                       [0.00,1.00,0.00]])/5.00
-                    kernel = CustomKernel(kernel)
+            if cov is not None:
+                warnings.warn('Both covariance and inverse covariance matrix provided. \
+                            Using inverse covariance matrix.')
+                
+            if cube is not None:
+                warnings.warn('Both inverse covariance matrix and noise cube provided. \
+                            Using inverse covariance matrix.')
+        else:
+            if cube is not None and cov is None:            
+                cov = np.cov(cube.reshape(cube.shape[0],-1),rowvar=True)
 
-                for _ in range(smooth): 
-                    cov = jp.array(convolve(cov,kernel,boundary='wrap'))
-        elif cov is not None and cube is not None:
-            warnings.warn('Both covariance matrix and noise cube provided. \
-                           Using covariance matrix.')
-        elif cov is None and cube is None:
-            raise ValueError('Either covariance matrix or noise realization cube must be provided.')
-        
-        self.cov = jp.asarray(cov.astype(float))
-        self.icov = jp.linalg.inv(self.cov)
+                smooth = kwargs.get('smooth',3)
+                if smooth>0:
+                    kernel = kwargs.get('kernel',None)
+                    if kernel is None:
+                        kernel = np.array([[0.00,1.00,0.00],
+                                           [1.00,1.00,1.00],
+                                           [0.00,1.00,0.00]])/5.00
+                        kernel = CustomKernel(kernel)
+
+                    for _ in range(smooth): 
+                        cov = jp.array(convolve(cov,kernel,boundary='wrap'))
+            elif cov is not None and cube is not None:
+                warnings.warn('Both covariance matrix and noise cube provided. \
+                            Using covariance matrix.')
+            elif cov is None and cube is None:
+                raise ValueError('Either covariance matrix or noise realization cube must be provided.')
+            
+            self.cov = jp.asarray(cov.astype(float))
+            self.icov = jp.linalg.inv(self.cov)
 
 #   Set up noise model
 #   --------------------------------------------------------
@@ -199,7 +213,7 @@ class NormalCorrelated:
         self.mask = self.mask==1.00
         self.data = data.at[self.mask].get()
 
-        self.norm = float(jp.linalg.slogdet(2.00*jp.pi*self.cov)[1])
+        self.norm = -float(jp.linalg.slogdet(self.icov/2.00/jp.pi)[1])
         self.logpdf = lambda xs: self._logpdf(xs,self.data,self.icov)-0.50*self.norm
 
 #   Noise log-pdf/likelihood function
@@ -239,12 +253,14 @@ class NormalFourier:
     mask : jax.numpy.ndarray
         Image mask array. This is set when the model is called.
     """
-    def __init__(self,cov=None,cube=None,ftype='real',**kwargs):
+    def __init__(self,cov=None,icov=None,cube=None,ftype='real',**kwargs):
         """
         Parameters
         ----------
         cov : array_like, optional
             Noise covariance in Fourier space. If not provided, computed from cube.
+        icov : array_like, optional
+            Inverse noise covariance in Fourier space. If provided, used directly.
         cube : array_like, optional
             3D array of noise realizations. First dimension is the number
             of realizations. Used to compute covariance if cov is None.
@@ -252,39 +268,59 @@ class NormalFourier:
             Type of Fourier transform to use. Options are:
             - 'real' or 'rfft': real-to-complex FFT (for real input data)
             - 'full' or 'fft': complex-to-complex FFT (for complex input data)
+        **kwargs : dict
+            Additional keyword arguments:
+            - apod : array_like, optional
+                Apodization map applied to the data before Fourier transforming. Default is no apodization.
+            - smooth : int, optional
+                Number of smoothing iterations for covariance matrix. Default is 3.
+            - kernel : array_like, optional
+                Custom smoothing kernel. If None, uses a 5-point stencil.
         """
         if ftype not in ['real','rfft','full','fft']:
             raise ValueError("ftype must be either 'real'/'rfft' or 'full'/'fft'.")
         self.ftype = ftype
 
-        if cube is not None and cov is None:
-            cube = jp.array(cube)
+        if icov is not None:
+            self.cov = None
+            self.icov = jp.asarray(icov.astype(float))
 
-            self.apod = kwargs.get('apod',jp.ones((cube.shape[-2],cube.shape[-1])))
-            
-            fft = jp.fft.rfft2  if ftype in ['real','rfft'] else jp.fft.fft2
-            cov = fft(cube*self.apod[None,...],axes=(-2,-1))
-            cov = jp.mean(jp.abs(cov)**2,axis=0)/jp.mean(self.apod**2)
+            if cov is not None:
+                warnings.warn('Both covariance and inverse covariance matrix provided. \
+                            Using inverse covariance matrix.')
+                
+            if cube is not None:
+                warnings.warn('Both inverse covariance matrix and noise cube provided. \
+                            Using inverse covariance matrix.')
+        else:
+            if cube is not None and cov is None:
+                cube = jp.array(cube)
 
-            smooth = kwargs.get('smooth',3)
-            if smooth>0:
-                kernel = kwargs.get('kernel',None)
-                if kernel is None:
-                    kernel = np.array([[0.00,1.00,0.00],
-                                       [1.00,1.00,1.00],
-                                       [0.00,1.00,0.00]])/5.00
-                    kernel = CustomKernel(kernel)
+                self.apod = kwargs.get('apod',jp.ones((cube.shape[-2],cube.shape[-1])))
+                
+                fft = jp.fft.rfft2  if ftype in ['real','rfft'] else jp.fft.fft2
+                cov = fft(cube*self.apod[None,...],axes=(-2,-1))
+                cov = jp.mean(jp.abs(cov)**2,axis=0)/jp.mean(self.apod**2)
 
-                for _ in range(smooth): 
-                    cov = jp.array(convolve(cov,kernel,boundary='wrap'))
-        elif cov is not None and cube is not None:
-            warnings.warn('Both covariance matrix and noise cube provided. \
-                           Using covariance matrix.')
-        elif cov is None and cube is None:
-            raise ValueError('Either covariance matrix or noise realization cube must be provided.')
+                smooth = kwargs.get('smooth',3)
+                if smooth>0:
+                    kernel = kwargs.get('kernel',None)
+                    if kernel is None:
+                        kernel = np.array([[0.00,1.00,0.00],
+                                        [1.00,1.00,1.00],
+                                        [0.00,1.00,0.00]])/5.00
+                        kernel = CustomKernel(kernel)
 
-        self.cov  = jp.asarray(cov.astype(float))
-        self.icov = 1.00/self.cov
+                    for _ in range(smooth): 
+                        cov = jp.array(convolve(cov,kernel,boundary='wrap'))
+            elif cov is not None and cube is not None:
+                warnings.warn('Both covariance matrix and noise cube provided. \
+                            Using covariance matrix.')
+            elif cov is None and cube is None:
+                raise ValueError('Either covariance matrix or noise realization cube must be provided.')
+
+            self.cov  = jp.asarray(cov.astype(float))
+            self.icov = 1.00/self.cov
 
         mask_icov = jp.logical_or(self.icov==jp.inf,jp.isnan(self.icov))
         self.icov = self.icov.at[mask_icov].set(0.00)
@@ -297,10 +333,13 @@ class NormalFourier:
         self.mask = self.mask==1.00
         self.data = data.copy()
         
+        if not np.all(self.mask):
+            raise ValueError('NormalFourier noise model requires full image (no masked pixels).')
+
         self.cmask = self.icov!=0.00
 
-        self.norm = jp.log(2.00*jp.pi*self.cov.at[self.cmask].get()).sum()
-        
+        self.norm = jp.log(2.00*jp.pi/self.icov.at[self.cmask].get()).sum()
+
         def _logpdf(xs):
             factor = self._logpdf(xs,self.data,
                                      self.icov,
@@ -325,3 +364,9 @@ class NormalFourier:
         chisq = icov*jp.abs(chisq)**2
         return -0.50*jp.sum(chisq.at[cmask].get())
 
+
+# Correlated noise for radio-interferometric data
+# ========================================================
+class NormalRI:
+    def __init__(self):
+        raise NotImplementedError('NormalRI noise model is not yet implemented.')
