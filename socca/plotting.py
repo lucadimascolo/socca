@@ -1,3 +1,5 @@
+from .utils import *
+
 import matplotlib.pyplot as plt
 import matplotlib.colorbar
 import matplotlib
@@ -91,7 +93,7 @@ class Plotter:
                    gs_kwargs={},model_kwargs={}):
 
         if 'what' in model_kwargs:
-            raise Warning('"what" argument in model_kwargs is ignored.')
+            warnings.warn('"what" argument in model_kwargs is ignored.')
             del model_kwargs['what']
 
         imgdata = np.asarray(self.fit.img.data)
@@ -120,11 +122,11 @@ class Plotter:
         axs = [[a.x0,a.y0,a.width,a.width*fx/fy] for a in axs]
 
         bxs = [fig.add_subplot(gs[1,:2]),fig.add_subplot(gs[1,2])]
-        #bxs = [fig.add_subplot(gs[1,gi]) for gi in range(3)]
+
         bxs = [a.get_position() for a in bxs]
         bxs = [[a.x0,a.y0,a.width,a.height] for a in bxs] 
-
         plt.close()
+        
         fig = plt.figure(figsize=figsize,constrained_layout=False)
 
         titles = ['Data', 'Model', 'Residuals']
