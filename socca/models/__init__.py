@@ -40,7 +40,7 @@ class Model:
         self.units = {}
 
         if prof is not None:
-            self.addcomp(prof,positive)
+            self.addcomponent(prof,positive)
 
 # Add a new component to the model
 # --------------------------------------------------------
