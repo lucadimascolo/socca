@@ -105,12 +105,12 @@ class Model:
                 rcube, zcube = self.gridder[nc](img.grid,
                                                 pars[f'comp_{nc:02d}_radial.xc'],
                                                 pars[f'comp_{nc:02d}_radial.yc'],
-                                                pars[f'comp_{nc:02d}_vertical.zext'],
-                                                pars[f'comp_{nc:02d}_vertical.zsize'],
+                                                pars[f'comp_{nc:02d}_vertical.losdepth'],
+                                                pars[f'comp_{nc:02d}_vertical.losbins'],
                                                 pars[f'comp_{nc:02d}_radial.theta'],
                                                 pars[f'comp_{nc:02d}_vertical.inc'])
 
-                dx = 2.00*pars[f'comp_{nc:02d}_vertical.zext']/(pars[f'comp_{nc:02d}_vertical.zsize']-1)
+                dx = 2.00*pars[f'comp_{nc:02d}_vertical.losdepth']/(pars[f'comp_{nc:02d}_vertical.losbins']-1)
                 mone = self.profile[nc](rcube,zcube,**kwarg)
                 mone = jp.trapezoid(mone,dx=dx,axis=1)
                 mone = jp.mean(mone,axis=0)
@@ -189,34 +189,50 @@ class Component:
         type(self).idcls += 1
 
         self.positive = kwargs.get('positive',config.Component.positive)
-        self.okeys = ['id','positive','units','description']
+        self.okeys = ['id','positive','hyper','units','description']
+        self.hyper = []
         self.units = {}
-
         self.description = {}
-
+                
 #   Print model parameters  
 #   --------------------------------------------------------
     def parameters(self):
         keyout =[]
         for key in self.__dict__.keys():
-            if key not in self.okeys and key!='okeys':
+            if key not in self.okeys \
+               and key not in self.hyper \
+               and key!='okeys':
                 keyout.append(key)
 
         if len(keyout)>0:
-            maxlen = np.max(np.array([len(f'{key} [{self.units[key]}]') for key in keyout]))
-        
+            maxlen = np.max(np.array([len(f'{key} [{self.units[key]}]') for key in keyout+self.hyper]))
+
+            print('\nModel parameters')
+            print('='*16)
             for key in keyout:
                 keylen = maxlen-len(f' [{self.units[key]}]')
                 keyval = None if self.__dict__[key] is None else f'{self.__dict__[key]:.4E}'
                 print(f'{key:<{keylen}} [{self.units[key]}] : '+f'{keyval}'.ljust(10) + f' | {self.description[key]}')
+
+            if len(self.hyper)>0:
+                print('\nHyperparameters')
+                print('='*15)
+                for key in self.hyper:
+                    keylen = maxlen-len(f' [{self.units[key]}]')
+                    kvalue = self.__dict__[key]
+                    kvalue = None if kvalue is None else f'{kvalue:.4E}'
+                    print(f'{key:<{keylen}} [{self.units[key]}] : '+f'{kvalue}'.ljust(10) + f' | {self.description[key]}')
+        
         else:
             print('No parameters defined.')
 
     def parlist(self):
         return [key for key in self.__dict__.keys() if key not in self.okeys and key!='okeys']
         
-    def addpar(self,name,value=None):
+    def addpar(self,name,value=None,units='',description=''):
         setattr(self,name,value)
+        self.units.update({name: units})
+        self.description.update({name: description})
 
 
 # General profile class
@@ -282,6 +298,20 @@ class Profile(Component):
         warnings.warn('Nothing to refactor here.')
         return self.__class__(**self.__dict__)
 
+# Custom profile
+# --------------------------------------------------------
+class CustomProfile(Profile):
+    def __init__(self,parameters,profile,**kwargs):
+        super().__init__(**kwargs)
+        self.okeys.append('profile')
+
+        for p in parameters:
+            setattr(self,p['name'],None)
+            self.units.update({p['name']: p.get('unit','not specified')})
+            self.description.update({p['name']: p.get('description','No description provided')})
+        
+        self.profile = jax.jit(profile)
+
 
 # Beta profile
 # --------------------------------------------------------
@@ -297,6 +327,7 @@ class Beta(Profile):
         self.description.update(dict(rc = 'Core radius',
                                      Ic = 'Central surface brightness',
                                    beta = 'Slope parameter'))
+        
     @staticmethod
     @jax.jit
     def profile(r,Ic,rc,beta):
@@ -389,17 +420,17 @@ class Sersic(Profile):
 class Exponential(Profile):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
-        self.re = kwargs.get('re', config.Exponential.re)
-        self.Ie = kwargs.get('Ie', config.Exponential.Ie)
+        self.rs = kwargs.get('rs', config.Exponential.rs)
+        self.Is = kwargs.get('Is', config.Exponential.Is)
 
-        self.units.update(dict(re='deg',Ie='image'))
-        self.description.update(dict(re = 'Scale radius',
-                                     Ie = 'Surface brightness at re'))
+        self.units.update(dict(rs='deg', Is='image'))
+        self.description.update(dict(rs = 'Scale radius',
+                                     Is = 'Central surface brightness'))
                 
     @staticmethod
     @jax.jit
-    def profile(r,Ie,re):
-        return Ie*jp.exp(-r/re)
+    def profile(r,Is,rs):
+        return Is*jp.exp(-r/rs)
 
 
 # PolyExponential
@@ -407,15 +438,14 @@ class Exponential(Profile):
 # --------------------------------------------------------
 class PolyExponential(Exponential):
     def __init__(self,**kwargs):
+        nk = 4
         super().__init__(**kwargs)
-        self.c1 = kwargs.get('c1',config.PolyExponential.c1)
-        self.c2 = kwargs.get('c2',config.PolyExponential.c2)
-        self.c3 = kwargs.get('c3',config.PolyExponential.c3)
-        self.c4 = kwargs.get('c4',config.PolyExponential.c4)
+        for k in range(nk):
+            setattr(self,f'c{k+1}',kwargs.get(f'c{k+1}',config.PolyExponential.ck))
         self.rc = kwargs.get('rc',config.PolyExponential.rc)
 
         self.units.update(dict(rc='deg'))
-        self.units.update({f'c{ci}':'' for ci in range(1,5)})
+        self.units.update({f'c{k+1}':'' for k in range(nk)})
 
         self.description.update(dict(c1 = 'Polynomial coefficient 1',
                                      c2 = 'Polynomial coefficient 2',
@@ -425,9 +455,9 @@ class PolyExponential(Exponential):
         
     @staticmethod
     @jax.jit
-    def profile(r,Ie,re,c1,c2,c3,c4,rc):
+    def profile(r,Is,rs,c1,c2,c3,c4,rc):
         factor = 1.00+c1*(r/rc)+c2*((r/rc)**2)+c3*((r/rc)**3)+c4*((r/rc)**4)
-        return factor*Ie*jp.exp(-r/re)
+        return factor*Is*jp.exp(-r/rs)
 
 
 # PolyExponential
@@ -452,15 +482,15 @@ class PolyExpoRefact(Exponential):
                                      rc = 'Reference radius for polynomial terms'))
     @staticmethod
     @jax.jit
-    def profile(r,Ie,re,I1,I2,I3,I4,rc):
-        factor = Ie*jp.exp(-r/re)
+    def profile(r,Is,rs,I1,I2,I3,I4,rc):
+        factor = Is*jp.exp(-r/rs)
         for ci in range(1,5):
-            factor += eval(f'I{ci}')*jp.exp(-r/re)*((r/rc)**ci)
+            factor += eval(f'I{ci}')*jp.exp(-r/rs)*((r/rc)**ci)
         return factor
     
     def refactor(self):
-        kwargs = {key: getattr(self,key) for key in ['xc','yc','theta','e','Ie','re','rc']}
-        for ci in range(1,5): kwargs.update({f'c{ci}': eval(f'I{ci}')/kwargs['Ie']})
+        kwargs = {key: getattr(self,key) for key in ['xc','yc','theta','e','Is','rs','rc']}
+        for ci in range(1,5): kwargs.update({f'c{ci}': eval(f'I{ci}')/kwargs['Is']})
 
         return PolyExponential(**kwargs)
 
@@ -481,8 +511,8 @@ class ModExponential(Exponential):
         
     @staticmethod
     @jax.jit
-    def profile(r,Ie,re,rm,alpha):
-        return Ie*jp.exp(-r/re)*(1.00+r/rm)**alpha
+    def profile(r,Is,rs,rm,alpha):
+        return Is*jp.exp(-r/rs)*(1.00+r/rm)**alpha
 
 
 # Point source
@@ -534,7 +564,7 @@ class Point(Component):
 class Background(Component):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
-        self.rc = kwargs.get('rc',config.Background.rc)
+        self.rs = kwargs.get('rs',config.Background.rs)
         self.a0 = kwargs.get('a0',config.Background.a0)
         self.a1x = kwargs.get('a1x',config.Background.a1x)
         self.a1y = kwargs.get('a1y',config.Background.a1y)
@@ -546,10 +576,10 @@ class Background(Component):
         self.a3xyy = kwargs.get('a3xyy',config.Background.a3xyy)
         self.a3yyy = kwargs.get('a3yyy',config.Background.a3yyy)
 
-        self.units = dict(rc='deg')
+        self.units = dict(rs='deg')
         self.units.update({key: '' for key in self.__dict__.keys() if key not in self.okeys and key[0]=='a'})
         
-        self.description.update(dict(rc    = 'Reference radius for polynomial terms',
+        self.description.update(dict(rs    = 'Reference radius for polynomial terms',
                                      a0    = 'Polynomial coefficient 0',
                                      a1x   = 'Polynomial coefficient 1 in x',
                                      a1y   = 'Polynomial coefficient 1 in y',
@@ -563,8 +593,8 @@ class Background(Component):
 
     @staticmethod
     @jax.jit
-    def profile(x,y,a0,a1x,a1y,a2xx,a2xy,a2yy,a3xxx,a3xxy,a3xyy,a3yyy,rc):
-        xc, yc = x/rc, y/rc
+    def profile(x,y,a0,a1x,a1y,a2xx,a2xy,a2yy,a3xxx,a3xxy,a3xyy,a3yyy,rs):
+        xc, yc = x/rs, y/rs
         factor  = a0
         factor += a1x*xc + a1y*yc
         factor += a2xy*xc*yc + a2xx*xc**2 + a2yy*yc**2
@@ -593,49 +623,70 @@ class Background(Component):
 
 # Vertical profile
 # --------------------------------------------------------
-class Height:
+class Height(Component):
     def __init__(self,**kwargs):
-        self.okeys = ['units']
-        self.units = {}
+        super().__init__(**kwargs)
 
         self.inc  = kwargs.get('inc',config.Height.inc)
         
-        self.zext = kwargs.get('zext',config.Height.zext)
-        self.zsize = kwargs.get('zsize',config.Height.zsize)
-        self.units.update(dict(zext='deg', zsize='',inc='rad'))
-
-        self.description = dict(zext = 'Half vertical extent for integration',
-                               zsize = 'Number of vertical samples for integration',
-                                 inc = 'Inclination angle (0=face-on)')
+        self.losdepth = kwargs.get('losdepth',config.Height.losdepth)
+        self.losbins  = kwargs.get('losbins', config.Height.losbins)
+        self.units = dict(losdepth='deg', losbins='',inc='rad')
         
+        self.hyper = ['losdepth','losbins']
+
+        self.description = dict(losdepth = 'Half line-of-sigt extent for integration',
+                                 losbins = 'Number of points for line-of-sight integration',
+                                     inc = 'Inclination angle (0=face-on)')
+    
     @abstractmethod
     def profile(z):
         pass
 
+
 # Hyperbolic cosine
 # --------------------------------------------------------
-class HyperCos(Height):
+class HyperSecantHeight(Height):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
-        self.zs = kwargs.get('zs',config.HyperCos.zs)
+        self.zs = kwargs.get('zs',config.HyperSecantHeight.zs)
+        self.alpha = kwargs.get('alpha',config.HyperSecantHeight.alpha)
+
+        self.units.update(dict(zs='deg',alpha=''))
+        self.description.update(dict(zs = 'Scale height',
+                                  alpha = 'Exponent to the hyperbolic secant'
+                                  ))
+
+    @staticmethod
+    @jax.jit
+    def profile(z,zs,alpha):
+        factor = jp.cosh(jp.abs(z)/zs)
+        return 1.00/factor**alpha
+
+
+# Exponential height
+# --------------------------------------------------------
+class ExponentialHeight(Height):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+        self.zs = kwargs.get('zs',config.ExponentialHeight.zs)
         self.units.update(dict(zs='deg'))
         self.description.update(dict(zs = 'Scale height'))
 
     @staticmethod
     @jax.jit
     def profile(z,zs):
-        factor = jp.cosh(jp.abs(z)/zs)
-        return 1.00/factor**2
+        return jp.exp(-jp.abs(z)/zs)
 
 
 # Disk model with finite thickness
 # --------------------------------------------------------
 class Disk(Component):
-    def __init__(self,radial=Sersic(),vertical=HyperCos(),**kwargs):
+    def __init__(self,radial=Sersic(),vertical=HyperSecantHeight(),**kwargs):
         super().__init__(**kwargs)
         for key in ['radial','vertical','profile']:
             self.okeys.append(key)
-        
+
         self.radial   = radial
         self.vertical = vertical
 
@@ -656,7 +707,11 @@ class Disk(Component):
 
         self.profile = jax.jit(partial(eval(profile_),self.radial,self.vertical))
 
-        print(self.vertical.units)
+        for key in self.radial.hyper:
+            self.hyper.append(f'radial.{key}')
+        
+        for key in self.vertical.hyper:
+            self.hyper.append(f'vertical.{key}')
 
         self.units.update({f'radial.{key}': self.radial.units[key] for key in self.radial.units.keys()})
         self.units.update({f'vertical.{key}': self.vertical.units[key] for key in self.vertical.units.keys()})
@@ -682,12 +737,12 @@ class Disk(Component):
         rcube, zcube = self.getgrid(img.grid,
                                     self.radial.xc,
                                     self.radial.yc,
-                                    self.vertical.zext,
-                                    self.vertical.zsize,
+                                    self.vertical.losdepth,
+                                    self.vertical.losbins,
                                     self.radial.theta,
                                     self.vertical.inc)
 
-        dx = 2.00*self.vertical.zext/(self.vertical.zsize-1)
+        dx = 2.00*self.vertical.losdepth/(self.vertical.losbins-1)
 
         mgrid = self.profile(rcube,zcube,**kwarg)
         mgrid = jp.trapezoid(mgrid,dx=dx,axis=1)
@@ -702,11 +757,11 @@ class Disk(Component):
         return mgrid
 
     @staticmethod
-    @partial(jax.jit,static_argnames=['grid','zsize'])
-    def getgrid(grid,xc,yc,zext,zsize=200,theta=0.00,inc=0.00):
+    @partial(jax.jit,static_argnames=['grid','losbins'])
+    def getgrid(grid,xc,yc,losdepth,losbins=200,theta=0.00,inc=0.00):
         ssize, ysize, xsize = grid.x.shape
 
-        zt = jp.linspace(-zext,zext,zsize)
+        zt = jp.linspace(-losdepth,losdepth,losbins)
 
         sint = jp.sin(theta)
         cost = jp.cos(theta)
@@ -717,9 +772,9 @@ class Disk(Component):
         xt, yt = -xt*sint-yt*cost,\
                   xt*cost-yt*sint
 
-        xt = jp.broadcast_to(xt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
-        yt = jp.broadcast_to(yt[   :,None,   :,   :],(ssize,zsize,ysize,xsize)).copy()
-        zt = jp.broadcast_to(zt[None,   :,None,None],(ssize,zsize,ysize,xsize)).copy()
+        xt = jp.broadcast_to(xt[   :,None,   :,   :],(ssize,losbins,ysize,xsize)).copy()
+        yt = jp.broadcast_to(yt[   :,None,   :,   :],(ssize,losbins,ysize,xsize)).copy()
+        zt = jp.broadcast_to(zt[None,   :,None,None],(ssize,losbins,ysize,xsize)).copy()
 
         sini = jp.sin(inc-0.50*jp.pi)
         cosi = jp.cos(inc-0.50*jp.pi)
@@ -732,21 +787,37 @@ class Disk(Component):
     def parameters(self):
         keyout =[]
         for key in self.radial.__dict__.keys():
-            if key not in self.okeys and key!='okeys':
+            if key not in self.okeys \
+               and f'radial.{key}' not in self.hyper \
+               and key!='okeys':
                 keyout.append(f'radial.{key}')
         for key in self.vertical.__dict__.keys():
-            if key not in self.okeys and key!='okeys':
+            if key not in self.okeys \
+               and f'vertical.{key}' not in self.hyper \
+               and key!='okeys':
                 keyout.append(f'vertical.{key}')
-
-        if len(keyout)>0:
-            maxlen = np.max(np.array([len(f'{key} [{self.units[key]}]') for key in keyout]))
         
+        if len(keyout)>0:
+            maxlen = np.max(np.array([len(f'{key} [{self.units[key]}]') for key in keyout+self.hyper]))
+
+            print('\nModel parameters')
+            print('='*16)
             for key in keyout:
                 keylen = maxlen-len(f' [{self.units[key]}]')
                 kvalue = self.radial.__dict__[key.replace('radial.','')] if 'radial' in key else \
                          self.vertical.__dict__[key.replace('vertical.','')]
                 kvalue = None if kvalue is None else f'{kvalue:.4E}'
                 print(f'{key:<{keylen}} [{self.units[key]}] : '+f'{kvalue}'.ljust(10) + f' | {self.description[key]}')
+        
+            if len(self.hyper)>0:
+                print('\nHyperparameters')
+                print('='*15)
+                for key in self.hyper:
+                    keylen = maxlen-len(f' [{self.units[key]}]')
+                    kvalue = self.radial.__dict__[key.replace('radial.','')] if 'radial' in key else \
+                            self.vertical.__dict__[key.replace('vertical.','')]
+                    kvalue = None if kvalue is None else f'{kvalue:.4E}'
+                    print(f'{key:<{keylen}} [{self.units[key]}] : '+f'{kvalue}'.ljust(10) + f' | {self.description[key]}')
         else:
             print('No parameters defined.')
 
@@ -754,3 +825,4 @@ class Disk(Component):
         pars_  = [f'radial.{key}' for key in self.radial.__dict__.keys() if key not in self.okeys and key!='okeys']
         pars_ += [f'vertical.{key}' for key in self.vertical.__dict__.keys() if key not in self.okeys and key!='okeys']
         return pars_
+    
