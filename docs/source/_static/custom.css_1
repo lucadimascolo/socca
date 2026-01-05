@@ -1,0 +1,132 @@
+:root.light {
+  --code-block-background: #F8F8F8;
+  --yue-c-code-text: var(--accent-a11);
+  --yue-c-code-background: none;
+}
+
+:root.dark {
+  --code-block-background: #202020;
+}
+
+.yue code {
+  padding: 0 !important;
+  background: none !important;
+  color: var(--yue-c-code-text);
+  font-weight: bold;
+}
+
+.yue a code,
+.yue h1 code,
+.yue h2 code,
+.yue h3 code,
+.yue h4 code,
+.yue blockquote code,
+.yue th code {
+  padding: 0 !important;
+  background: none !important;
+  color: inherit;
+  font-weight: inherit;
+}
+
+.yue a,
+.yue a:hover {
+  text-decoration: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* 2) Use ONE underline mechanism: border-bottom on the <a> */
+.yue a {
+  border-bottom: 2px dotted var(--yue-c-link-border);
+}
+
+.yue a:hover {
+  border-bottom-color: transparent;
+}
+
+/* 3) Prevent nested elements (especially code) from drawing a second line */
+.yue a code,
+.yue a * {
+  text-decoration: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border-bottom: none !important;
+}
+
+/* Custom Admonition Icons */
+
+.admonition::before,
+.admonition::after,
+.admonition-title::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  border: none !important;
+  mask: none !important;
+  -webkit-mask: none !important;
+}
+
+.admonition > .admonition-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.admonition > .admonition-title::before {
+  content: "";
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}
+
+.admonition.attention > .admonition-title::before {
+  mask-image: var(--admonition-attention-icon);
+}
+
+.admonition.caution > .admonition-title::before {
+  mask-image: var(--admonition-caution-icon);
+}
+
+.admonition.danger > .admonition-title::before {
+  mask-image: var(--admonition-danger-icon);
+}
+
+.admonition.error > .admonition-title::before {
+  mask-image: var(--admonition-error-icon);
+}
+
+.admonition.hint > .admonition-title::before {
+  mask-image: var(--admonition-hint-icon);
+}
+
+.admonition.important > .admonition-title::before {
+  mask-image: var(--admonition-important-icon);
+}
+
+.admonition.note > .admonition-title::before {
+  mask-image: var(--admonition-seealso-icon)
+}
+
+.admonition.tip > .admonition-title::before {
+  mask-image: var(--admonition-tip-icon);
+}
+
+.admonition.seealso > .admonition-title::before {
+  mask-image: var(--admonition-seealso-icon);
+}
+
+.admonition.admonition-todo > .admonition-title::before {
+  mask-image: var(--admonition-todo-icon);
+}
+
+
+.admonition.warning > .admonition-title::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpolygon points='12,2 22,20 2,20' fill='none' stroke='black' stroke-width='2'/%3E%3Cline x1='12' y1='8' x2='12' y2='13' stroke='black' stroke-width='2'/%3E%3Ccircle cx='12' cy='17' r='1' fill='black'/%3E%3C/svg%3E");
+}
