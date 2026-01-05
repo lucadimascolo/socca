@@ -37,16 +37,13 @@ class Sersic:
 
 @dataclass(frozen=True)
 class Exponential:
-    re : float = None
-    Ie : float = None
+    rs : float = None
+    Is : float = None
 
 
 @dataclass(frozen=True)
 class PolyExponential:
-    c1 : float = 0.00
-    c2 : float = 0.00
-    c3 : float = 0.00
-    c4 : float = 0.00
+    ck : float = 0.00
     rc : float = 1.00/3.60E+03
     
 
@@ -75,7 +72,7 @@ class Point:
 @dataclass(frozen=True)
 class Background:
     positive : bool = False
-    rc       : float = 1.00/60.00/60.00
+    rs       : float = 1.00/60.00/60.00
     a0       : float = None
     a1x      : float = 0.00
     a1y      : float = 0.00
@@ -90,10 +87,15 @@ class Background:
 
 @dataclass(frozen=True)
 class Height:
-    inc   : float = 0.00
-    zext  : float = 10.00/60.00/60.00
-    zsize : int   = 200
+    inc      : float = 0.00
+    losdepth : float = 10.00/60.00/60.00
+    losbins  : int   = 200
 
 @dataclass(frozen=True)
-class HyperCos:
+class HyperSecantHeight:
+    zs    : float = None
+    alpha : float = 2.00
+
+@dataclass(frozen=True)
+class ExponentialHeight:
     zs : float = None
