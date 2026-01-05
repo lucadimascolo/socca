@@ -118,7 +118,7 @@ Since no prior or value is assigned to `cbox`, it remains fixed at its default v
 
 
 ```{seealso}
-Many other components are available in the `socca.models` module. Please refer to the ["Available components"](./tutorial_models.md) documentation page for a complete overview of all the implemented models. The collection is continuously growing to accomodate all the potential use cases, and new components will be added in future releases of **``socca``**.
+Many other components are available in the `socca.models` module. Please refer to the ["Available model components"](./tutorial_models.md) documentation page for a complete overview of all the implemented models. The collection is continuously growing to accomodate all the potential use cases, and new components will be added in future releases of **``socca``**.
 ```
 
 ### Building a composite model
