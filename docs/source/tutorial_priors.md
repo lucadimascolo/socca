@@ -56,7 +56,7 @@ At each step of the inference process, this instructs **``socca``** to use exact
 
 A final class of priors is represented by functional expressions. This is useful when there is a complex interdependence between parameters or, for instance, when one parameter can be expressed as a scaled version of another.
 
-As an example, consider two Sérsic components, with the effective radius of the first component constrained to be smaller than that of the second. This can be implemented as follows:
+As an example, consider two [Sérsic components](./tutorial_models.md#sersic), with the effective radius of the first component constrained to be smaller than that of the second. This can be implemented as follows:
 
 ```python
 >>> from socca.models import Sersic
