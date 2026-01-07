@@ -29,11 +29,12 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 :hidden:
 :maxdepth: 2
 :caption: Using socca
-./tutorial_quickstart.md
-./tutorial_noise.md
-./tutorial_data.md
-./tutorial_models.md
-./tutorial_priors.md
+./tutorials/tutorial_quickstart.md
+./tutorials/tutorial_noise.md
+./tutorials/tutorial_data.md
+./tutorials/tutorial_models.md
+./tutorials/tutorial_priors.md
+./tutorials/tutorial_fitting.md
 ```
 
 ```{toctree}
