@@ -3,8 +3,11 @@
 [![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Documentation Status](https://github.com/lucadimascolo/socca/actions/workflows/docs.yml/badge.svg)](https://github.com/lucadimascolo/socca/actions/workflows/docs.yml)
 
 `socca` is a minimal library for efficiently modelling image-space astronomical data. It is intended to be fast and flexible, taking advantage of the [`JAX`](https://github.com/google/jax) framework for performing just-in-time compilation and of state-of-the-art sampling algorithms ([`dynesty`](https://github.com/joshspeagle/dynesty), [`nautilus`](https://nautilus-sampler.readthedocs.io/en/latest/), [`pocomc`](https://github.com/minaskar/pocomc)) for the posterior exploration.
+
+For detailed installation instructions, tutorials, and usage guides, check out the documentation at **[lucadimascolo.github.io/socca](https://lucadimascolo.github.io/socca)**.
 
 Installation
 ---------------------------------------------------
