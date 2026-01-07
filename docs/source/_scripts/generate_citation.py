@@ -41,7 +41,7 @@ year = year_match.group(1) if year_match else "0000"
 bibtex = re.sub(r"^(@\w+\{)[^,]+,", rf"\1socca{year},", bibtex, count=1, flags=re.MULTILINE)
 
 lines = bibtex.splitlines()
-field_info = [] 
+field_info = []
 pattern = re.compile(r"^(\s*)([A-Za-z][\w-]*)\s*=\s*(.+?)(,?)\s*$")
 for i, line in enumerate(lines):
     m = pattern.match(line)
@@ -50,11 +50,28 @@ for i, line in enumerate(lines):
         field_info.append((i, indent, key, value.strip(), comma))
 
 if field_info:
-    max_key = max(len(key) for (_, _, key, _, _) in field_info)
-    for i, indent, key, value, comma in field_info:
-        comma_txt = "," if comma else ""
-        lines[i] = f"  {indent}{key.rjust(max_key)} = {value}{comma_txt}"
-    bibtex = "\n".join(lines)
+    desired_order = ["author", "title", "year", "month", "url"]
+    order_index = {k: i for i, k in enumerate(desired_order)}
+
+    ordered_fields = sorted(
+        field_info,
+        key=lambda t: (order_index.get(t[2].lower(), 1000), t[0])
+    )
+
+    max_key = max(len(key) for (_, _, key, _, _) in ordered_fields)
+
+    header_line = next((ln for ln in lines if ln.strip().startswith("@")), None)
+    closing_brace = "}"
+
+    rebuilt_field_lines = []
+    for idx, (_, indent, key, value, _) in enumerate(ordered_fields):
+        comma_txt = "," if idx < len(ordered_fields) - 1 else ""
+        rebuilt_field_lines.append(f"  {indent}{key.rjust(max_key)} = {value}{comma_txt}")
+
+    if header_line:
+        bibtex = "\n".join([header_line] + rebuilt_field_lines + [closing_brace])
+    else:
+        bibtex = "\n".join(lines)
 
 OUT_FILE.write_text(
     "# Citing socca\n\n"
@@ -67,7 +84,28 @@ OUT_FILE.write_text(
     "```{note}\n"
     "In the coming months, we plan to submit a dedicated paper to the Journal of Open Source Software (JOSS). "
     "Once available, we will update this section with the relevant citation information.\n"
-    "```\n",
+    "```\n\n"
+    "If you use the `Disk` component in your work, please also consider citing the following paper:\n"
+    "```bibtex\n"
+    "@article{vanAsselt2025,\n"
+    "  author = {{van Asselt}, Marloes and {Rizzo}, Francesca and {Di Mascolo}, Luca},\n"
+    "        title = \"{Early thin-disc assembly revealed by JWST edge-on galaxies}\",\n"
+    "      journal = {arXiv e-prints},\n"
+    "     keywords = {Astrophysics of Galaxies},\n"
+    "         year = {2026},\n"
+    "        month = {1},\n"
+    "          eid = {arXiv:XXXX.YYYY},\n"
+    "        pages = {arXiv:XXXX.YYYY},\n"
+    "          doi = {10.48550/arXiv.XXXX.YYYY},\n"
+    "archivePrefix = {arXiv},\n"
+    "       eprint = {XXXX.YYYY},\n"
+    " primaryClass = {astro-ph.CO},\n"
+    "       adsurl = {https://ui.adsabs.harvard.edu/abs/2026arXivXXXXYYYY},\n"
+    "      adsnote = {Provided by the SAO/NASA Astrophysics Data System}\n"
+    "}\n"
+
+    "```\n"
+    ,
     encoding="utf-8",
 )
 
