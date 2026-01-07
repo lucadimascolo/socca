@@ -49,7 +49,7 @@ class fitter:
     def _get_model(self,pp):
         doresp = ~np.all(np.array(self.img.resp) == 1.00) #True
         doexp  = ~np.all(np.array(self.img.exp)  == 1.00) #True
-        return self.mod.getmap(self.img,pp,doresp=doresp,doexp=doexp)
+        return self.mod.getmodel(self.img,pp,doresp=doresp,doexp=doexp)
 
 #   Compute log-likelihood
 #   --------------------------------------------------------
@@ -98,24 +98,9 @@ class fitter:
         
         sampler_methods = {'dynesty': self._run_dynesty,
                           'nautilus': self._run_nautilus,
-                            'pocomc': self._run_pocomc,
-                           'numpyro': self._run_numpyro,
-                         'optimizer': self._run_optimizer
         }
         
         self.logz_prior = None
-        
-        if self.method in ['dynesty','nautilus','pocomc']:
-            nlive = kwargs.pop('nlive',1000)
-            dlogz = kwargs.pop('dlogz',0.01)
-
-        if self.method in ['numpyro']:
-            nwarmup  = kwargs.pop('nwarmup', 1000)
-            nsamples = kwargs.pop('nsamples',1000)
-
-        if self.method in ['optimizer']:
-            midpoint = kwargs.pop('midpoint',True)
-            pinits   = kwargs.pop('pinits',None)
 
         if self.method in sampler_methods:
             sampler_kwargs = list(inspect.signature(sampler_methods[self.method]).parameters.keys())
@@ -127,23 +112,37 @@ class fitter:
         self.logz_data = self.img.data.at[self.mask].get()
         self.logz_data = self.pdfnoise(**{key: jp.zeros(self.logz_data.shape) for key in self.pdfkwarg})
         self.logz_data = self.logz_data.sum()
-    
 
 #   Fitting method - Dynesty sampler
 #   --------------------------------------------------------
-    def _run_dynesty(self,log_likelihood,log_prior,prior_transform,nlive,dlogz,checkpoint,resume,getzprior,**kwargs):
-        ndims = len(self.mod.paridx)
-
+    def _run_dynesty(self,log_likelihood,log_prior,prior_transform,checkpoint,resume,getzprior,**kwargs):
         if checkpoint is None: resume = False
 
+        ndims = len(self.mod.paridx)
+
+        nlive = kwargs.pop('nlive',1000)
+        dlogz = kwargs.pop('dlogz',0.01)
+
+        sampler_kwargs = {}
+        for key in inspect.signature(dynesty.NestedSampler).parameters.keys():
+            if key not in ['loglikelihood','prior_transform','ndim','nlive']:
+                if key in kwargs:
+                    sampler_kwargs[key] = kwargs.pop(key)
+                    
+        run_kwargs = {}
+        for key in inspect.signature(dynesty.NestedSampler.run_nested).parameters.keys():
+            if key not in ['dlogz','checkpoint_file','resume']:
+                if key in kwargs:
+                    run_kwargs[key] = kwargs.pop(key)
+                    
         print('\n* Running the main sampling step')
         if ~resume or not os.path.exists(checkpoint):
-            sampler = dynesty.NestedSampler(log_likelihood,
-                                          prior_transform,
-                                            ndim = ndims,
-                                           nlive = nlive,
-                                           bound = 'multi')
-            sampler.run_nested(dlogz=dlogz,checkpoint_file=checkpoint)
+            sampler = dynesty.NestedSampler(loglikelihood = log_likelihood,
+                                          prior_transform = prior_transform,
+                                                     ndim = ndims,
+                                                    nlive = nlive,
+                                                            **sampler_kwargs)
+            sampler.run_nested(dlogz=dlogz,checkpoint_file=checkpoint,**run_kwargs)
         else:
             sampler = dynesty.NestedSampler.restore(checkpoint)
             sampler.run_nested(resume=True)
@@ -158,30 +157,57 @@ class fitter:
 
         if getzprior:
             print('\n* Sampling the prior probability')
-            sampler_prior = dynesty.NestedSampler(log_prior,prior_transform,
+            self.sampler_prior = dynesty.NestedSampler(log_prior,prior_transform,
                                                 ndim = ndims,
                                                nlive = nlive,
-                                               bound = 'multi')
-            sampler_prior.run_nested(dlogz=dlogz)
-            self.logz_prior = sampler.results['logz'][-1]
+                                                       **sampler_kwargs)
+            self.sampler_prior.run_nested(dlogz=dlogz)
+            self.logz_prior = self.sampler_prior.results['logz'][-1]
+        else:
+            self.sampler_prior = None
+            self.logz_prior = None
 
 #   Fitting method - Nautilus sampler
 #   --------------------------------------------------------
-    def _run_nautilus(self,log_likelihood,log_prior,prior_transform,nlive,dlogz,checkpoint,resume,getzprior,**kwargs):
+    def _run_nautilus(self,log_likelihood,log_prior,prior_transform,checkpoint,resume,getzprior,**kwargs):
         ndims = len(self.mod.paridx)
 
+        nlive = 1000
+        for key in ['nlive','n_live']:
+            nlive = kwargs.pop(key,nlive)
+
+        flive = 0.01
+        for key in ['flive','f_live']:
+            flive = kwargs.pop(key,flive)
+
+        sampler_kwargs = {}
+        for key in inspect.signature(nautilus.Sampler).parameters.keys():
+            if key not in ['loglikelihood','prior_transform','n_dim','n_live','filepath','resume']:
+                if key in kwargs:
+                    sampler_kwargs[key] = kwargs.pop(key)
+
+        run_kwargs = {}
+        for key in inspect.signature(nautilus.Sampler.run).parameters.keys():
+            if key not in ['f_live','verbose','discard_exploration']:
+                if key in kwargs:
+                    run_kwargs[key] = kwargs.pop(key)
+                    
         print('\n* Running the main sampling step')
         self.sampler = nautilus.Sampler(prior = prior_transform,
                                    likelihood = log_likelihood,
                                         n_dim = ndims,
                                        n_live = nlive,
                                      filepath = checkpoint,
-                                       resume = resume)
+                                       resume = resume,
+                                                **sampler_kwargs)
         
         discard_exploration = kwargs.pop('discard_exploration',True)
 
         toc = time.time()
-        self.sampler.run(f_live=dlogz,verbose=True,discard_exploration=discard_exploration,**kwargs)
+        self.sampler.run(f_live = flive,
+                        verbose = True,
+            discard_exploration = discard_exploration,
+                                  **run_kwargs)
         tic = time.time()
 
         dt = tic-toc
@@ -195,36 +221,60 @@ class fitter:
 
         if getzprior:
             print('\n* Sampling the prior probability')
-            sampler_prior = nautilus.Sampler(prior_transform,log_prior,n_live=nlive,n_dim=ndims)
-            sampler_prior.run(f_live=dlogz,verbose=True,**kwargs)
-            self.logz_prior = sampler_prior.log_z
+            self.sampler_prior = nautilus.Sampler(prior_transform,log_prior,n_live=nlive,n_dim=ndims,**sampler_kwargs)
+            self.sampler_prior.run(f_live=flive,verbose=True,discard_exploration=discard_exploration,**run_kwargs)
+            self.logz_prior = self.sampler_prior.log_z
+        else:
+            self.sampler_prior = None
+            self.logz_prior = None
 
 #   Fitting method - PocoMC sampler
 #   --------------------------------------------------------
-    def _run_pocomc(self,log_likelihood,log_prior,nlive,checkpoint,resume,getzprior,**kwargs):
+    def _run_pocomc(self,log_likelihood,log_prior,checkpoint,resume,getzprior,**kwargs):
         if checkpoint is None and resume: checkpoint = 'run'
+
+        save_every = kwargs.pop('save_every',10) if checkpoint is not None else None
+
         pocodir = '{0}_pocomc_dump'.format(checkpoint.replace('.hdf5','').replace('.h5',''))
+
+        nlive = 1000
+        for key in ['nlive','n_live','n_effective']:
+            nlive = kwargs.pop(key,nlive)
+
+        n_active = kwargs.get('n_active',nlive//2)
+
+        sampler_kwargs = {}
+        for key in inspect.signature(pocomc.Sampler).parameters.keys():
+            if key not in ['likelihood','prior','n_effective','n_active','output_dir']:
+                if key in kwargs:
+                    sampler_kwargs[key] = kwargs.pop(key)
+
+        run_kwargs = {}
+        for key in inspect.signature(pocomc.Sampler.run).parameters.keys():
+            if key not in ['save_every','resume_state_path','progress']:
+                if key in kwargs:
+                    run_kwargs[key] = kwargs.pop(key)
 
         prior = []
         for key in self.mod.params:
             if isinstance(self.mod.priors[key],numpyro.distributions.Distribution):
                 prior.append(self.mod.priors[key])
-        prior = pocomcPrior(prior,seed=kwargs.get('seed',0))
+        prior = pocomcPrior(prior,seed=kwargs.pop('seed',0))
 
         print('\n* Running the main sampling step')
         self.sampler = pocomc.Sampler(likelihood = log_likelihood,
                                            prior = prior,
                                      n_effective = nlive,
-                                        n_active = nlive//2,
+                                        n_active = n_active,
                                        vectorize = False,
                                       output_dir = pocodir if resume else None,
-                                         dynamic = True,
-                                    random_state = 0)
-
-        save_every = kwargs.get('save_every',10) if checkpoint is not None else None
+                                                   **sampler_kwargs)
 
         states_ = sorted(glob.glob(f'{pocodir}/*.state')) if resume else []
-        self.sampler.run(save_every=save_every,resume_state_path=states_[-1] if len(states_) else None,progress=True)
+        self.sampler.run(save_every = save_every,
+                  resume_state_path = states_[-1] if len(states_) else None,
+                           progress = True
+                                     **run_kwargs)
 
         self.samples, self.logw, _, _ = self.sampler.posterior()
         self.logz, _ = self.sampler.evidence()
@@ -233,19 +283,30 @@ class fitter:
 
         if getzprior:
             print('\n* Sampling the prior probability')
-            sampler_prior = pocomc.Sampler(likelihood = log_prior,
+            self.sampler_prior = pocomc.Sampler(likelihood = log_prior,
                                                 prior = prior,
                                           n_effective = nlive,
-                                             n_active = nlive//2,
+                                             n_active = n_active,
                                             vectorize = False,
-                                              dynamic = True,
-                                         random_state = 0)
-            self.sampler_prior.run(progress=True)
+                                                        **sampler_kwargs)
+            self.sampler_prior.run(progress=True,**run_kwargs)
             self.logz_prior, _ = self.sampler_prior.evidence()
+        else:
+            self.sampler_prior = None
+            self.logz_prior = None
 
 #   Fitting method - Numpyro NUTS
 #   --------------------------------------------------------
-    def _run_numpyro(self,log_likelihood,nwarmup,nsamples,**kwargs):
+    def _run_numpyro(self,log_likelihood,**kwargs):
+
+        nwarmup = 1000
+        for key in ['n_warmup','nwarmup','num_warmup']:
+            nwarmup = kwargs.pop(key,nwarmup)
+
+        nsamples = 2000
+        for key in ['n_samples','nsamples','num_samples']:
+            nsamples = kwargs.pop(key,nsamples)
+
         def model():
             pp = []
             for pi, p in enumerate(self.mod.paridx):
@@ -254,12 +315,24 @@ class fitter:
 
             numpyro.factor('post',log_likelihood(pp))
 
-        rkey = jax.random.PRNGKey(kwargs.get('seed',0)) 
+        rkey = jax.random.PRNGKey(kwargs.pop('seed',0)) 
         rkey, seed = jax.random.split(rkey)
 
-        nuts = numpyro.infer.NUTS(model)
-        mcmc = numpyro.infer.MCMC(nuts,num_warmup=nwarmup,num_samples=nsamples)
-        mcmc.run(seed)
+        nuts_kwargs = {}
+        for key in inspect.signature(numpyro.infer.NUTS).parameters.keys():
+            if key not in ['model']:
+                if key in kwargs:
+                    nuts_kwargs[key] = kwargs.pop(key)
+
+        mcmc_kwargs = {}
+        for key in inspect.signature(numpyro.infer.MCMC).parameters.keys():
+            if key not in ['nuts','num_warmup','num_samples']:
+                if key in kwargs:
+                    mcmc_kwargs[key] = kwargs.pop(key)
+
+        nuts = numpyro.infer.NUTS(model,**nuts_kwargs)
+        mcmc = numpyro.infer.MCMC(nuts,num_warmup=nwarmup,num_samples=nsamples,**mcmc_kwargs)
+        mcmc.run(seed,**kwargs)
 
         samp = mcmc.get_samples()
 
@@ -268,7 +341,13 @@ class fitter:
 
 #   Fitting method - optimizer
 #   --------------------------------------------------------
-    def _run_optimizer(self,midpoint,pinits,**kwargs):
+    def _run_optimizer(self,pinits,**kwargs):
+
+        opt_kwargs = {}
+        for key in inspect.signature(scipy.optimize.minimize).parameters.keys():
+            if key not in ['fun','x0','jac','bounds','method']:
+                if key in kwargs:
+                    opt_kwargs[key] = kwargs.pop(key)
 
         def _opt_prior(pp):
             return jp.array(self._prior_transform(pp))
@@ -278,16 +357,29 @@ class fitter:
             return -self._log_likelihood(pars)
         
         opt_func_jac = jax.jit(jax.value_and_grad(_opt_func))
-
-        if pinits is None:
-            if midpoint:
+    
+        if isinstance(pinits,(list,tuple,np.ndarray,jp.ndarray)):
+            pinits = jp.asarray(pinits)
+            for pi, p in enumerate(pinits):
+                key = self.mod.params[self.mod.paridx[pi]]
+                pinits = pinits.at[pi].set(self.mod.priors[key].cdf(p))
+        else:
+            if pinits == 'median':
                 pinits = jp.array([0.50 for _ in self.mod.paridx])
-            else:
+            elif pinits == 'random':
                 pinits = jp.array([np.random.rand() for _ in self.mod.paridx])
-                
+            else:
+                raise ValueError("Unknown pinits option. Use 'median', 'random', \
+                                  or provide an array-like object of initial values.")
+            
         bounds = [(0.00,1.00) for _ in self.mod.paridx]
     
-        self.results = scipy.optimize.minimize(fun=opt_func_jac,x0=pinits,jac=True,bounds=bounds,method='L-BFGS-B')
+        self.results = scipy.optimize.minimize(fun = opt_func_jac,
+                                                x0 = pinits,
+                                               jac = True,
+                                            bounds = bounds,
+                                            method = 'L-BFGS-B',
+                                                     **opt_kwargs)
 
 #   Compute standard Bayesian Model Selection estimators
 #   --------------------------------------------------------
@@ -295,18 +387,25 @@ class fitter:
         lnBF_raw = self.logz-self.logz_data
         seff_raw = np.sign(lnBF_raw)*np.sqrt(2.00*np.abs(lnBF_raw))
 
-        lnBF_cor = lnBF_raw-self.logz_prior
-        seff_cor = np.sign(lnBF_cor)*np.sqrt(2.00*np.abs(lnBF_cor))
-
         if verbose:
             print('\nnull-model comparison')
-            print('-'*20)
+            print('='*21)
             print(f'ln(Bayes factor) : {lnBF_raw:10.3E}')
             print(f'effective sigma  : {seff_raw:10.3E}')
-            print('\nprior deboosted')
-            print('-'*20)
-            print(f'ln(Bayes factor) : {lnBF_cor:10.3E}')
-            print(f'effective sigma  : {seff_cor:10.3E}\n')
+
+        if self.logz_prior is None:
+            lnBF_cor = None
+            seff_cor = None
+            warnings.warn('Prior evidence not computed. Cannot apply prior deboosting.')
+        else:
+            lnBF_cor = lnBF_raw-self.logz_prior
+            seff_cor = np.sign(lnBF_cor)*np.sqrt(2.00*np.abs(lnBF_cor))
+
+            if verbose:
+                print('\nprior deboosted')
+                print('='*21)
+                print(f'ln(Bayes factor) : {lnBF_cor:10.3E}')
+                print(f'effective sigma  : {seff_cor:10.3E}\n')
 
         return lnBF_raw, seff_raw, lnBF_cor, seff_cor
 
@@ -326,7 +425,7 @@ class fitter:
 #   Generate best-fit/median model
 #   --------------------------------------------------------
     def getmodel(self,what='all',usebest=True,img=None,doresp=False,doexp=False):
-        gm = lambda pp: self.mod.getmap(self.img if img is None else img,pp,doresp,doexp)
+        gm = lambda pp: self.mod.getmodel(self.img if img is None else img,pp,doresp,doexp)
 
         if self.method=='optimizer':
             p = self._prior_transform(self.results.x)
