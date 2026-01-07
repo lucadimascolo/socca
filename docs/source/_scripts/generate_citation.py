@@ -18,8 +18,10 @@ OUT_FILE = ROOT / "docs" / "source" / "citation.md"
 
 cmd = [
     "cffconvert",
-    "--infile", str(CFF_FILE),
-    "--format", "bibtex",
+    "--infile",
+    str(CFF_FILE),
+    "--format",
+    "bibtex",
 ]
 
 result = subprocess.run(
@@ -38,7 +40,9 @@ bibtex = result.stdout.strip()
 year_match = re.search(r"^\s*year\s*=\s*\{(\d{4})\}", bibtex, flags=re.MULTILINE)
 year = year_match.group(1) if year_match else "0000"
 
-bibtex = re.sub(r"^(@\w+\{)[^,]+,", rf"\1socca{year},", bibtex, count=1, flags=re.MULTILINE)
+bibtex = re.sub(
+    r"^(@\w+\{)[^,]+,", rf"\1socca{year},", bibtex, count=1, flags=re.MULTILINE
+)
 
 lines = bibtex.splitlines()
 field_info = []
@@ -54,8 +58,7 @@ if field_info:
     order_index = {k: i for i, k in enumerate(desired_order)}
 
     ordered_fields = sorted(
-        field_info,
-        key=lambda t: (order_index.get(t[2].lower(), 1000), t[0])
+        field_info, key=lambda t: (order_index.get(t[2].lower(), 1000), t[0])
     )
 
     max_key = max(len(key) for (_, _, key, _, _) in ordered_fields)
@@ -66,7 +69,9 @@ if field_info:
     rebuilt_field_lines = []
     for idx, (_, indent, key, value, _) in enumerate(ordered_fields):
         comma_txt = "," if idx < len(ordered_fields) - 1 else ""
-        rebuilt_field_lines.append(f"  {indent}{key.rjust(max_key)} = {value}{comma_txt}")
+        rebuilt_field_lines.append(
+            f"  {indent}{key.rjust(max_key)} = {value}{comma_txt}"
+        )
 
     if header_line:
         bibtex = "\n".join([header_line] + rebuilt_field_lines + [closing_brace])
@@ -89,7 +94,7 @@ OUT_FILE.write_text(
     "```bibtex\n"
     "@article{vanAsselt2025,\n"
     "  author = {{van Asselt}, Marloes and {Rizzo}, Francesca and {Di Mascolo}, Luca},\n"
-    "        title = \"{Early thin-disc assembly revealed by JWST edge-on galaxies}\",\n"
+    '        title = "{Early thin-disc assembly revealed by JWST edge-on galaxies}",\n'
     "      journal = {arXiv e-prints},\n"
     "     keywords = {Astrophysics of Galaxies},\n"
     "         year = {2026},\n"
@@ -103,9 +108,7 @@ OUT_FILE.write_text(
     "       adsurl = {https://ui.adsabs.harvard.edu/abs/2026arXivXXXXYYYY},\n"
     "      adsnote = {Provided by the SAO/NASA Astrophysics Data System}\n"
     "}\n"
-
-    "```\n"
-    ,
+    "```\n",
     encoding="utf-8",
 )
 

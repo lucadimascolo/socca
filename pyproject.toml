@@ -52,3 +52,6 @@ exclude = ["data*","examples*"]
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 79
