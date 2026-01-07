@@ -70,9 +70,67 @@ class Model:
         self.gridder.append(prof.getgrid)
         self.ncomp += 1
 
+    def parameters(self,freeonly=False):
+        keyout =[]
+        for key in self.params:
+            if freeonly:
+                if isinstance(self.priors[key],numpyro.distributions.Distribution):
+                    keyout.append(key)
+            else:
+                keyout.append(key)
+
+        if len(keyout)>0:
+            maxlen = np.max(np.array([len(f'{key} [{self.units[key]}]') for key in keyout]))
+
+            print('\nModel parameters')
+            print('='*16)
+            for key in keyout:
+                keylen = maxlen-len(f' [{self.units[key]}]')
+                par = self.priors[key]
+                if isinstance(par,numpyro.distributions.Distribution):
+                    keyval = f'Distribution: {par.__class__.__name__}'
+                elif isinstance(par,(types.LambdaType, types.FunctionType)):
+                    keyval = 'Tied parameter'
+                else:
+                    keyval = f'{par:.4E}'
+                print(f'{key:<{keylen}} [{self.units[key]}] : '+f'{keyval}'.ljust(10))
+        
+        else:
+            print('No parameters defined.')
+
+# Get the model map with fixed parameters
+# --------------------------------------------------------
+    def getmap(self,img,convolve=None,addbackground=False):            
+        pars = {}
+        for ki, key in enumerate(self.params):
+            if isinstance(self.priors[key],(float,int)):
+                pars[key] = self.priors[key]
+            elif isinstance(self.priors[key],numpyro.distributions.Distribution):
+                raise ValueError(f'Parameter {key} is a distribution. Use getmap() with sampled values instead.')
+        
+        for ki, key in enumerate(self.params):
+            if self.tied[ki]:
+                kwarg = list(inspect.signature(self.priors[key]).parameters.keys())
+                kwarg = {k: pars[k] for k in kwarg}
+                pars[key] = self.priors[key](**kwarg)
+                del kwarg
+        
+        mraw, msmo, mbkg, _ = self.getmodel(img,pars,doresp=False,doexp=False)
+        
+        if not addbackground:
+            msmo = msmo - mbkg
+
+        if convolve:
+            return msmo
+        else:
+            if addbackground:
+                warnings.warn('The background component is added only to the convolved map. \
+                               Returning the raw map without background.')
+            return mraw
+
 # Get the model map
 # --------------------------------------------------------
-    def getmap(self,img,pp,doresp=False,doexp=False):
+    def getmodel(self,img,pp,doresp=False,doexp=False):
         pars = {}
         for ki, key in enumerate(self.params):
             if isinstance(self.priors[key],(float,int)):
@@ -172,10 +230,11 @@ class Model:
         if img.psf is None:
             msmo = msmo+mpts
 
-        msmo = msmo+mbkg
         if doexp: 
             msmo *= img.exp
             mbkg *= img.exp
+
+        msmo = msmo+mbkg
 
         return mraw+mpts, msmo, mbkg, mneg
 
@@ -606,7 +665,10 @@ class Background(Component):
     def getgrid(grid,xc,yc):
         return (grid.x-xc)*jp.cos(jp.deg2rad(yc)), grid.y-yc
 
-    def getmap(self,img):
+    def getmap(self,img,**kwargs):
+        if 'convolve' in kwargs:
+            warnings.warn('Background component does not support convolution. Ignoring `convolve` argument.')
+
         xc, yc = self.img.wcs.crval
         xgrid, ygrid = self.getgrid(img.grid,xc,yc)
         klist = [key for key in self.__dict__.keys() if key not in self.okeys and key[0]=='a']+['rc']
