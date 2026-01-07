@@ -1,2 +1,46 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Python files
+*.py text eol=lf diff=python
+*.pyx text eol=lf diff=python
+
+# Configuration files
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.rst text eol=lf
+
+# Jupyter notebooks - use nbdiff for better diffs if available
+*.ipynb text eol=lf
+
+# Binary files (explicitly mark as binary)
+*.fits binary
+*.hdf5 binary
+*.h5 binary
+*.pkl binary
+*.pickle binary
+*.npy binary
+*.npz binary
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text eol=lf
+
+# Archives
+*.tar binary
+*.gz binary
+*.zip binary
+
+# Git LFS (if you decide to use it for large files)
+# *.fits filter=lfs diff=lfs merge=lfs -text
+# *.hdf5 filter=lfs diff=lfs merge=lfs -text
