@@ -168,7 +168,7 @@ class Image:
         - csize : int, array_like, or Quantity, optional
             Size for cutout operation.
         - addmask : dict, optional
-            Dictionary with 'regions', 'combine', and 'mask' keys for masking.
+            Dictionary with 'regions' and 'combine' keys for masking.
         - addpsf : dict, optional
             Dictionary with 'img', 'normalize', and 'idx' keys for PSF.
     
@@ -274,8 +274,7 @@ class Image:
 
         if 'addmask' in kwargs:
             self.addmask(regions = kwargs['addmask'].get('regions'),
-                         combine = kwargs['addmask'].get('combine',True),
-                            mask = kwargs['addmask'].get('mask',None))
+                         combine = kwargs['addmask'].get('combine',True))
         
         self.psf = None
         if 'addpsf' in kwargs:
@@ -340,25 +339,20 @@ class Image:
 
 #   Add mask
 #   --------------------------------------------------------
-    def addmask(self,regions,mask=None,combine=True):
+    def addmask(self,regions,combine=True):
         """
         regions : list
             List of regions to be masked. It can be
             a mix of strings, pyregion objects, np.arrays, and HDUs.
-        mask : array_like, optional
-            Mask to be added to the image.
         combine : bool, optional
             If True, combine with the existing mask. 
             If False, reset the mask.
         """
-        if mask is not None:
-            data = _hdu_mask(mask,self.hdu)
-        else:
-            data = np.ones(self.data.shape)
+        
+        mask = np.ones(self.data.shape)
+        if combine: mask = mask*self.mask.copy()
 
-        if combine: data = data*self.mask.copy()
-
-        hdu = fits.PrimaryHDU(data=data,header=self.wcs.to_header())
+        hdu = fits.PrimaryHDU(data=mask,header=self.wcs.to_header())
 
         for ri, r in enumerate(regions):
             if isinstance(r,str):
@@ -372,8 +366,8 @@ class Image:
             elif isinstance(r,np.ndarray):
                 hdu.data = hdu.data*(r==1.00).astype(float)
             elif isinstance(r,(fits.ImageHDU,fits.PrimaryHDU)):
-                data = _hdu_mask(mask,self.hdu)
-                hdu.data = hdu.data*data    
+                mask = _hdu_mask(mask,self.hdu)
+                hdu.data = hdu.data*mask    
         
         self.mask = hdu.data.astype(int).copy()
 
