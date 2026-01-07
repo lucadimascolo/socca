@@ -37,7 +37,9 @@ if result.returncode != 0:
 
 bibtex = result.stdout.strip()
 
-year_match = re.search(r"^\s*year\s*=\s*\{(\d{4})\}", bibtex, flags=re.MULTILINE)
+year_match = re.search(
+    r"^\s*year\s*=\s*\{(\d{4})\}", bibtex, flags=re.MULTILINE
+)
 year = year_match.group(1) if year_match else "0000"
 
 bibtex = re.sub(
@@ -63,7 +65,9 @@ if field_info:
 
     max_key = max(len(key) for (_, _, key, _, _) in ordered_fields)
 
-    header_line = next((ln for ln in lines if ln.strip().startswith("@")), None)
+    header_line = next(
+        (ln for ln in lines if ln.strip().startswith("@")), None
+    )
     closing_brace = "}"
 
     rebuilt_field_lines = []
@@ -74,27 +78,34 @@ if field_info:
         )
 
     if header_line:
-        bibtex = "\n".join([header_line] + rebuilt_field_lines + [closing_brace])
+        bibtex = "\n".join(
+            [header_line] + rebuilt_field_lines + [closing_brace]
+        )
     else:
         bibtex = "\n".join(lines)
 
 OUT_FILE.write_text(
     "# Citing socca\n\n"
-    "If you are going to include in a publication any results obtained using **``socca``**, "
-    "please consider adding an hyperlink to the [GitHub repository](https://github.com/lucadimascolo/socca) "
+    "If you are going to include in a publication any results obtained "
+    "using **``socca``**, please consider adding an hyperlink to the "
+    "[GitHub repository](https://github.com/lucadimascolo/socca) "
     "or citing it as follows:\n\n"
     "```bibtex\n"
     f"{bibtex}\n"
     "```\n"
     "```{note}\n"
-    "In the coming months, we plan to submit a dedicated paper to the Journal of Open Source Software (JOSS). "
-    "Once available, we will update this section with the relevant citation information.\n"
+    "In the coming months, we plan to submit a dedicated paper to the "
+    "Journal of Open Source Software (JOSS). Once available, we will "
+    "update this section with the relevant citation information.\n"
     "```\n\n"
-    "If you use the `Disk` component in your work, please also consider citing the following paper:\n"
+    "If you use the `Disk` component in your work, please also consider "
+    "citing the following paper:\n"
     "```bibtex\n"
     "@article{vanAsselt2025,\n"
-    "  author = {{van Asselt}, Marloes and {Rizzo}, Francesca and {Di Mascolo}, Luca},\n"
-    '        title = "{Early thin-disc assembly revealed by JWST edge-on galaxies}",\n'
+    "  author = {{van Asselt}, Marloes and {Rizzo}, Francesca and "
+    "{Di Mascolo}, Luca},\n"
+    '        title = "{Early thin-disc assembly revealed by JWST '
+    'edge-on galaxies}",\n'
     "      journal = {arXiv e-prints},\n"
     "     keywords = {Astrophysics of Galaxies},\n"
     "         year = {2026},\n"

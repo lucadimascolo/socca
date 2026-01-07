@@ -184,12 +184,14 @@ class FFTspec:
 # --------------------------------------------------------
 class Image:
     """
-    A class for handling astronomical images with support for WCS, PSF, masking, and noise modeling.
+    A class for handling astronomical images with support for WCS, PSF,
+    masking, and noise modeling.
 
-    This class provides a comprehensive framework for working with astronomical images,
-    including coordinate transformations, PSF convolution, exposure and response maps,
-    region masking, and various noise models. It supports FFT-based operations and
-    sub-pixel sampling through a configurable subgrid parameter.
+    This class provides a comprehensive framework for working with
+    astronomical images, including coordinate transformations, PSF
+    convolution, exposure and response maps, region masking, and various
+    noise models. It supports FFT-based operations and sub-pixel sampling
+    through a configurable subgrid parameter.
 
     Parameters
     ----------
@@ -406,7 +408,8 @@ class Image:
             self.noise(self.data, self.mask)
         else:
             raise NotImplementedError(
-                "Cutout is only implemented for images with uncorrelated noise [Normal]."
+                "Cutout is only implemented for images with "
+                "uncorrelated noise [Normal]."
             )
 
     #   Add mask

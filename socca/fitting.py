@@ -501,8 +501,8 @@ class fitter:
                 pinits = jp.array([np.random.rand() for _ in self.mod.paridx])
             else:
                 raise ValueError(
-                    "Unknown pinits option. Use 'median', 'random', \
-                                  or provide an array-like object of initial values."
+                    "Unknown pinits option. Use 'median', 'random', "
+                    "or provide an array-like object of initial values."
                 )
 
         bounds = [(0.00, 1.00) for _ in self.mod.paridx]
