@@ -43,15 +43,17 @@ class Normal:
         Keyword arguments for specifying the noise model.
         Accepted keywordss (with aliases):
             - sigma: float or str, optional
-                Standard deviation of the noise. Default is None, in which case the
-                noise level is estimated using the median absolute deviation.
-                Accepted aliases: ``sig``, ``std``, ``rms``, ``stddev``
+                Standard deviation of the noise. Default is None, in which
+                case the noise level is estimated using the median absolute
+                deviation. Accepted aliases: ``sig``, ``std``, ``rms``,
+                ``stddev``
             - var: float or str, optional
                 Variance of the noise
                 Accepted aliases: ``var``, ``variance``
             - wht: float or str, optional
                 Weight (inverse variance) of the noise
-                Accepted aliases: ``wht``, ``wgt``, ``weight``, ``weights``, ``invvar``
+                Accepted aliases: ``wht``, ``wgt``, ``weight``,
+                ``weights``, ``invvar``
             - idx: int, optional
                 HDU index to use when loading noise maps from FITS files.
                 Default is 0.
@@ -184,7 +186,8 @@ class NormalCorrelated:
         **kwargs : dict
             Additional keyword arguments:
             - smooth : int, optional
-                Number of smoothing iterations for covariance matrix. Default is 3.
+                Number of smoothing iterations for covariance matrix.
+                Default is 3.
             - kernel : array_like, optional
                 Custom smoothing kernel. If None, uses a 5-point stencil.
         """
@@ -233,7 +236,8 @@ class NormalCorrelated:
                 )
             elif cov is None and cube is None:
                 raise ValueError(
-                    "Either covariance matrix or noise realization cube must be provided."
+                    "Either covariance matrix or noise realization cube "
+                    "must be provided."
                 )
 
             self.cov = jp.asarray(cov.astype(float))
@@ -295,9 +299,11 @@ class NormalFourier:
         Parameters
         ----------
         cov : array_like, optional
-            Noise covariance in Fourier space. If not provided, computed from cube.
+            Noise covariance in Fourier space. If not provided,
+            computed from cube.
         icov : array_like, optional
-            Inverse noise covariance in Fourier space. If provided, used directly.
+            Inverse noise covariance in Fourier space. If provided,
+            used directly.
         cube : array_like, optional
             3D array of noise realizations. First dimension is the number
             of realizations. Used to compute covariance if cov is None.
@@ -308,9 +314,11 @@ class NormalFourier:
         **kwargs : dict
             Additional keyword arguments:
             - apod : array_like, optional
-                Apodization map applied to the data before Fourier transforming. Default is no apodization.
+                Apodization map applied to the data before Fourier
+                transforming. Default is no apodization.
             - smooth : int, optional
-                Number of smoothing iterations for covariance matrix. Default is 3.
+                Number of smoothing iterations for covariance matrix.
+                Default is 3.
             - kernel : array_like, optional
                 Custom smoothing kernel. If None, uses a 5-point stencil.
         """
@@ -374,7 +382,8 @@ class NormalFourier:
                 )
             elif cov is None and cube is None:
                 raise ValueError(
-                    "Either covariance matrix or noise realization cube must be provided."
+                    "Either covariance matrix or noise realization cube "
+                    "must be provided."
                 )
 
             self.cov = jp.asarray(cov.astype(float))
@@ -393,7 +402,8 @@ class NormalFourier:
 
         if not np.all(self.mask):
             raise ValueError(
-                "NormalFourier noise model requires full image (no masked pixels)."
+                "NormalFourier noise model requires full image "
+                "(no masked pixels)."
             )
 
         self.cmask = self.icov != 0.00

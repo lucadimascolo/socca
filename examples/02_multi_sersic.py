@@ -13,7 +13,9 @@ img = "input/exp_convoluted.fits"
 img = socca.data.Image(img=img, noise=noise)
 
 x_stddev = (
-    img.hdu.header["BMAJ"] / img.hdu.header["CDELT2"] / np.sqrt(8.00 * np.log(2.00))
+    img.hdu.header["BMAJ"]
+    / img.hdu.header["CDELT2"]
+    / np.sqrt(8.00 * np.log(2.00))
 )
 x, y = np.meshgrid(np.arange(img.data.shape[0]), np.arange(img.data.shape[0]))
 kernel = Gaussian2DKernel(x_stddev=x_stddev)
@@ -71,7 +73,7 @@ fit = socca.fitter(mod=mod, img=img)
 fit.run(method="nautilus", dlogz=0.10, nlive=400, n_like_max=10000)
 _, msmo, _ = fit.getmodel()
 
-# ------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 
 plt.subplot(131)
 plt.imshow(img.data)
@@ -82,7 +84,7 @@ plt.imshow(img.data - msmo)
 plt.show()
 plt.close()
 
-# ------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 
 if fit.method != "optimizer":
     for key in ["re", "Ie"]:
@@ -102,13 +104,19 @@ if fit.method != "optimizer":
         edges = np.array(
             [
                 [
-                    np.maximum(fit.samples[:, ei].min(), e[1] - sigma * (e[1] - e[0])),
-                    np.minimum(fit.samples[:, ei].max(), e[1] + sigma * (e[2] - e[1])),
+                    np.maximum(
+                        fit.samples[:, ei].min(), e[1] - sigma * (e[1] - e[0])
+                    ),
+                    np.minimum(
+                        fit.samples[:, ei].max(), e[1] + sigma * (e[2] - e[1])
+                    ),
                 ]
                 for ei, e in enumerate(edges)
             ]
         )
 
-    corner.corner(fit.samples, weights=fit.weights, labels=fit.labels, range=edges)
+    corner.corner(
+        fit.samples, weights=fit.weights, labels=fit.labels, range=edges
+    )
     plt.savefig("test_corner.pdf", format="pdf", dpi=300)
     plt.close()

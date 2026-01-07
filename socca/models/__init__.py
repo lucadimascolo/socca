@@ -68,8 +68,8 @@ class Model:
 
             if par is None:
                 raise ValueError(
-                    f"Parameter {p} in component {self.ncomp:02d} is set to None. \
-                                   Please provide a valid value or prior."
+                    f"Parameter {p} in component {self.ncomp:02d} is set "
+                    f"to None. Please provide a valid value or prior."
                 )
 
             self.params.append(f"comp_{self.ncomp:02d}_{p}")
@@ -134,7 +134,8 @@ class Model:
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 raise ValueError(
-                    f"Parameter {key} is a distribution. Use getmap() with sampled values instead."
+                    f"Parameter {key} is a distribution. "
+                    f"Use getmap() with sampled values instead."
                 )
 
         for ki, key in enumerate(self.params):
@@ -158,8 +159,8 @@ class Model:
         else:
             if addbackground:
                 warnings.warn(
-                    "The background component is added only to the convolved map. \
-                               Returning the raw map without background."
+                    "The background component is added only to the "
+                    "convolved map. Returning the raw map without background."
                 )
             return mraw
 
@@ -463,7 +464,8 @@ class Profile(Component):
                 )
             if kwarg[key] is None:
                 raise ValueError(
-                    f"keyword {key} is set to None. Please provide a valid value."
+                    f"keyword {key} is set to None. "
+                    f"Please provide a valid value."
                 )
 
         mgrid = self.profile(rgrid, **kwarg)
@@ -804,7 +806,8 @@ class Point(Component):
                 )
             if kwarg[key] is None:
                 raise ValueError(
-                    f"keyword {key} is set to None. Please provide a valid value."
+                    f"keyword {key} is set to None. "
+                    f"Please provide a valid value."
                 )
 
         uphase, vphase = img.fft.shift(self.xc, self.yc)
@@ -888,7 +891,8 @@ class Background(Component):
     def getmap(self, img, **kwargs):
         if "convolve" in kwargs:
             warnings.warn(
-                "Background component does not support convolution. Ignoring `convolve` argument."
+                "Background component does not support convolution. "
+                "Ignoring `convolve` argument."
             )
 
         xc, yc = self.img.wcs.crval
@@ -907,7 +911,8 @@ class Background(Component):
                 )
             if kwarg[key] is None:
                 raise ValueError(
-                    f"keyword {key} is set to None. Please provide a valid value."
+                    f"keyword {key} is set to None. "
+                    f"Please provide a valid value."
                 )
 
         return self.profile(xgrid, ygrid, **kwarg)
@@ -1071,7 +1076,8 @@ class Disk(Component):
                 )
             if kwarg[key] is None:
                 raise ValueError(
-                    f"keyword {key} is set to None. Please provide a valid value."
+                    f"keyword {key} is set to None. "
+                    f"Please provide a valid value."
                 )
 
         rcube, zcube = self.getgrid(
