@@ -66,6 +66,7 @@ select = [
 ]
 
 ignore = [
+    "D104",  # "Missing docstring in public package"
     "D203",  # conflicts with D211
     "D213",  # conflicts with D212
 ]
