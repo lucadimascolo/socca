@@ -6,9 +6,15 @@
 This code is broadly inspired by the excellent [`pysersic`](https://github.com/pysersic/pysersic) and [`astrophot`](https://github.com/Autostronomy/AstroPhot) libraries. We recommend their use if you require a more mature and thoroughly tested solution. **``socca``** is still in its infancy and many experimental features may undergo significant changes in the future. 
 
 [![GitHub](https://img.shields.io/badge/GitHub-lucadimascolo%2Fsocca-blue.svg?style=flat)](https://github.com/lucadimascolo/socca) [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
-[![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
-[![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
+[![CI](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml/badge.svg)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
+[![Docs](https://github.com/lucadimascolo/socca/actions/workflows/docs.yml/badge.svg)](https://lucadimascolo.github.io/socca)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![JAX](https://img.shields.io/badge/JAX-enabled-orange)](https://docs.jax.dev/en/latest/index.html)
+[![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
+
+
 
 
 ## Author and license
@@ -40,13 +46,7 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 ```{toctree}
 :hidden:
 :maxdepth: 2
-:caption: API Reference
+:caption: Additional resources
 ./api/index.md
-```
-
-```{toctree}
-:hidden:
-:maxdepth: 2
-:caption: Discussions
 ./faq.md
 ```
