@@ -14,13 +14,27 @@ This code is broadly inspired by the excellent [`pysersic`](https://github.com/p
 [![JAX](https://img.shields.io/badge/JAX-enabled-orange)](https://docs.jax.dev/en/latest/index.html)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 
+<br/>
 
+```{admonition} Where to start?
+:class: tip
 
+⚙️ Clearly, first things first: head to the [installation guide](./installation.md) to get the package installed on your system.
+
+🚀 To start using **``socca``**, we recommend going through the [quickstart tutorial](./tutorials/tutorial_quickstart.md) which will guide you through the main features of the library step by step. For a more in-depth overview of the different functionalities, check out the other guides in the "Using socca" section or the [API reference](./api/index.md).
+
+🐛 Found a bug or want to contribute? Check out the [contribution guide](./contribute.md) for more information on how to get involved.
+
+📚 Using **``socca``** in your research? Please see the [citation guide](./citation.md) for how to cite it in your publications.
+```
 
 ## Author and license
 Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contributors](https://github.com/lucadimascolo/socca/graphs/contributors).
 
 **``socca``** is an open-source library released under the MIT License. The full license terms can be found in the [LICENSE](https://github.com/lucadimascolo/socca/blob/main/LICENSE) file in the main repository.
+
+## Acknowledgements
+Many thanks to Marloes van Asselt for testing early versions of the code and building the building the first prototypr of the `Disk` model component. Further thanks to Nic Zaparniuk for having extensively tested the code.
 
 ```{toctree}
 :hidden:
