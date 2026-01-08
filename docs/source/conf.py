@@ -1,7 +1,8 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+"""Configuration file for the Sphinx documentation builder.
+
+For the full list of built-in configuration values, see the documentation:
+https://www.sphinx-doc.org/en/master/usage/configuration.html
+"""
 
 import subprocess
 from pathlib import Path
@@ -74,9 +75,11 @@ source_suffix = {
 
 
 def run_citation_generator(app):
+    """Generate citation.md from CITATION.cff before building docs."""
     script = Path(__file__).parent / "_scripts" / "generate_citation.py"
     subprocess.check_call(["python", str(script)])
 
 
 def setup(app):
+    """Configure Sphinx application with custom hooks."""
     app.connect("builder-inited", run_citation_generator)
