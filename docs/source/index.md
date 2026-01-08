@@ -40,6 +40,13 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 ```{toctree}
 :hidden:
 :maxdepth: 2
+:caption: API Reference
+./api/index.md
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 2
 :caption: Discussions
 ./faq.md
 ```

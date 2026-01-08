@@ -48,6 +48,19 @@ extensions = [
     "sphinx.ext.mathjax",
 ]
 
+# Napoleon settings to make attributes explicit
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
+napoleon_include_init_with_doc = True
+napoleon_use_ivar = True  # Use ":ivar:" for instance attributes
+napoleon_use_param = True
+napoleon_use_rtype = True
+napoleon_attr_annotations = True
+
+# Autodoc settings
+autodoc_typehints = "description"
+autodoc_member_order = "bysource"
+
 myst_enable_extensions = [
     "amsmath",
     "dollarmath",
