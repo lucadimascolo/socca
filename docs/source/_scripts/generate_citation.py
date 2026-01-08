@@ -1,3 +1,5 @@
+"""Generate citation.md file from CITATION.cff using cffconvert."""
+
 from pathlib import Path
 import subprocess
 import sys
