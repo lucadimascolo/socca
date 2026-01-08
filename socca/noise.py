@@ -1,3 +1,5 @@
+"""Noise models and likelihood functions for astronomical images."""
+
 from .utils import _img_loader
 
 import jax
@@ -37,6 +39,8 @@ class Normal:
 
     def __init__(self, **kwargs):
         """
+        Initialize normal noise model.
+
         Parameters
         ----------
         kwargs : dict
@@ -215,6 +219,8 @@ class NormalCorrelated:
 
     def __init__(self, cov=None, icov=None, cube=None, **kwargs):
         """
+        Initialize correlated normal noise model.
+
         Parameters
         ----------
         cov : array_like, optional
@@ -233,7 +239,6 @@ class NormalCorrelated:
             - kernel : array_like, optional
                 Custom smoothing kernel. If None, uses a 5-point stencil.
         """
-
         if icov is not None:
             self.cov = None
             self.icov = jp.asarray(icov.astype(float))
@@ -358,6 +363,7 @@ class NormalCorrelated:
 class NormalFourier:
     """
     Noise model with independent noise in Fourier space.
+
     The noise covariance is defined in Fourier space.
 
     Attributes
@@ -384,6 +390,8 @@ class NormalFourier:
 
     def __init__(self, cov=None, icov=None, cube=None, ftype="real", **kwargs):
         """
+        Initialize Fourier-space noise model.
+
         Parameters
         ----------
         cov : array_like, optional
@@ -589,6 +597,8 @@ class NormalFourier:
 # Correlated noise for radio-interferometric data
 # ========================================================
 class NormalRI:
+    """Radio-interferometric noise model (placeholder)."""
+
     def __init__(self):
         """
         Initialize radio-interferometric noise model (not yet implemented).

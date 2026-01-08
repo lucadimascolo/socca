@@ -1,3 +1,5 @@
+"""Bayesian inference engine for astronomical image modeling."""
+
 from functools import partial
 
 import jax
@@ -30,7 +32,7 @@ import scipy.optimize
 # Compute importance weights for nested sampling
 # --------------------------------------------------------
 def get_imp_weights(logw, logz=None):
-    """
+    r"""
     Compute importance weights from log-weights and log-evidence.
 
     Converts log-weights to normalized importance weights using the
@@ -56,9 +58,9 @@ def get_imp_weights(logw, logz=None):
     The importance weights are computed as:
 
     .. math::
-        w_i = \\exp(\\log w_i - \\log Z - \\log\\sum_j \\exp(\\log w_j - \\log Z))
+        w_i = \exp(\log w_i - \log Z - \log\sum_j \exp(\log w_j - \log Z))
 
-    where :math:`\\log Z` is the log-evidence (logz[-1]).
+    where :math:`\log Z` is the log-evidence (logz[-1]).
     """
     if logz is None:
         logz = [logw.max()]
@@ -75,6 +77,14 @@ def get_imp_weights(logw, logz=None):
 # Initialize fitter structure
 # --------------------------------------------------------
 class fitter:
+    """
+    Main inference engine for fitting astronomical models to image data.
+
+    The fitter class orchestrates Bayesian inference using nested sampling
+    (dynesty, nautilus) or MCMC (numpyro) methods. It manages likelihood
+    computation, prior transformations, and sampler execution.
+    """
+
     def __init__(self, img, mod):
         """
         Initialize the fitter with an image and model.
@@ -281,6 +291,24 @@ class fitter:
         getzprior=False,
         **kwargs,
     ):
+        """
+        Execute Bayesian inference using the specified sampling method.
+
+        Parameters
+        ----------
+        method : str, optional
+            Sampling method: 'nautilus', 'dynesty', or 'numpyro'.
+            Default is 'nautilus'.
+        checkpoint : str, optional
+            Path to checkpoint file for saving/loading sampler state.
+        resume : bool, optional
+            Whether to resume from checkpoint if available. Default is True.
+        getzprior : bool, optional
+            Whether to compute log-evidence prior normalization.
+            Default is False.
+        **kwargs : dict
+            Additional keyword arguments passed to the sampler.
+        """
         self.method = method
 
         def log_likelihood(theta):

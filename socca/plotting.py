@@ -1,3 +1,5 @@
+"""Visualization utilities for model fitting results."""
+
 import matplotlib.pyplot as plt
 import matplotlib.colorbar
 import matplotlib
@@ -19,7 +21,23 @@ matplotlib.rcParams["font.sans-serif"] = ["Helvetica"]
 # Plotting utilities
 # ========================================================
 class Plotter:
+    """
+    Visualization interface for model fitting results.
+
+    Provides methods for plotting posterior samples, corner plots, model
+    images, residuals, and other diagnostic visualizations.
+    """
+
     def __init__(self, fit):
+        """
+        Initialize the Plotter with a reference to a fitter object.
+
+        Parameters
+        ----------
+        fit : fitter
+            Fitter object containing the model, data, samples, and results
+            to be plotted.
+        """
         self.fit = fit
 
     #   Corner plot of the posterior samples
@@ -35,6 +53,47 @@ class Plotter:
         bins=40,
         **kwargs,
     ):
+        """
+        Create corner plots showing posterior distributions and correlations.
+
+        Generates a corner (triangle) plot displaying 1D and 2D marginalized
+        posterior distributions for model parameters. Plots can be customized
+        to show specific components and parameter ranges.
+
+        Parameters
+        ----------
+        name : str, optional
+            Output filename (without extension). If None, displays plot
+            interactively instead of saving. Default is None.
+        comp : str, int, list, or None, optional
+            Component(s) to plot. Can be:
+            - None: Plot all components (default)
+            - str: Single component name (e.g., 'comp_00')
+            - int: Component index
+            - list: Multiple components (names, indices, or objects)
+        fmt : str, optional
+            Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
+        sigma : float, optional
+            Number of standard deviations to use for automatic axis limits.
+            If None, uses full parameter ranges. Default is 10.0.
+        edges : array_like or None, optional
+            Explicit axis limits as [[xmin, xmax], ...] for each parameter.
+            If None, computed automatically from `sigma`. Default is None.
+        quantiles : list, optional
+            Quantiles to display on 1D histograms. Default is [0.16, 0.5, 0.84]
+            (median and 1-sigma intervals).
+        bins : int, optional
+            Number of bins for histograms. Default is 40.
+        **kwargs : dict, optional
+            Additional keyword arguments passed to corner.corner().
+            See corner package documentation for available options.
+
+        Notes
+        -----
+        - Automatically handles parameter units in axis labels
+        - Uses weighted samples if available from nested sampling
+        - Supports truths parameter via kwargs to show true parameter values
+        """
         if comp is None:
             comp = [f"comp_{ci:02d}" for ci in range(self.fit.mod.ncomp)]
         elif isinstance(comp, str):
@@ -123,6 +182,53 @@ class Plotter:
         gs_kwargs={},
         model_kwargs={},
     ):
+        """
+        Create a three-panel comparison plot: data, model, and residuals.
+
+        Generates a publication-quality figure showing the observed data,
+        best-fit model, and residuals (data - model) side by side with
+        appropriate colormaps and colorbars.
+
+        Parameters
+        ----------
+        name : str, optional
+            Output filename (with or without extension). Required for saving;
+            if None, plot is saved with a default name.
+        fmt : str, optional
+            Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
+        fx : float, optional
+            Figure width scaling factor. Default is 1.0.
+        fy : float, optional
+            Figure height scaling factor. Default is 0.38.
+        dpi : float, optional
+            Dots per inch for output resolution. Default is ~55.97.
+        cmaps : str, list, or dict, optional
+            Colormap specification. Can be:
+            - str: Single colormap applied to all panels
+            - list: [data_cmap, model_cmap, residual_cmap]
+            - dict: {'data': cmap, 'model': cmap, 'residuals': cmap}
+            Defaults to ['magma', 'magma', 'RdBu_r'].
+        cmap_data : str, optional
+            Colormap for data panel (overrides cmaps). Default is 'magma'.
+        cmap_model : str, optional
+            Colormap for model panel (overrides cmaps). Default is 'magma'.
+        cmap_residual : str, optional
+            Colormap for residual panel (overrides cmaps). Default is 'RdBu_r'.
+        gs_kwargs : dict, optional
+            Keyword arguments for GridSpec layout (hspace, wspace, margins).
+        model_kwargs : dict, optional
+            Keyword arguments passed to getmodel() for model generation.
+            The 'what' argument is automatically set to 'smoothed' and ignored
+            if provided.
+
+        Notes
+        -----
+        - Data and model panels share the same color scale
+        - Residual panel uses a symmetric diverging colormap centered at 0
+        - Uses APLpy for WCS-aware plotting
+        - Automatically includes colorbars for data and residual panels
+        - Output is saved at 300 DPI regardless of input dpi (used for sizing)
+        """
         if "what" in model_kwargs:
             warnings.warn('"what" argument in model_kwargs is ignored.')
             del model_kwargs["what"]
