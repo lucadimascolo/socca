@@ -1046,7 +1046,7 @@ class Profile(Component):
         - Generalized elliptical isophotes with boxiness
 
         The elliptical radius is computed as:
-        r = [(|x'|^(2+c) + |y'/(1-e)|^(2+c)]^(1/(2+c))
+        r = [(abs(x')^(2+c) + abs(y'/(1-e))^(2+c)]^(1/(2+c))
         where c is the boxiness parameter.
 
         This function is JIT-compiled for performance during model evaluation.
@@ -1097,7 +1097,7 @@ class Profile(Component):
 # Custom profile
 # --------------------------------------------------------
 class CustomProfile(Profile):
-    """
+    r"""
     User-defined custom surface brightness profile.
 
     Allows users to define arbitrary profile functions with custom parameters,
@@ -1111,8 +1111,8 @@ class CustomProfile(Profile):
         - 'unit': str, optional, physical unit (default: 'not specified')
         - 'description': str, optional, parameter description
     profile : callable
-        Function defining the profile. Should have signature profile(r, **params)
-        where r is the elliptical radius and **params are the custom parameters.
+        Function defining the profile. Should have signature profile(r, \*\*params)
+        where r is the elliptical radius and \*\*params are the custom parameters.
     **kwargs : dict
         Standard profile parameters (xc, yc, theta, e, cbox, positive).
 
@@ -1140,7 +1140,7 @@ class CustomProfile(Profile):
     """
 
     def __init__(self, parameters, profile, **kwargs):
-        """
+        r"""
         Initialize a custom profile with user-defined parameters and function.
 
         Parameters
@@ -1148,7 +1148,7 @@ class CustomProfile(Profile):
         parameters : list of dict
             Parameter specifications with 'name', 'unit', and 'description'.
         profile : callable
-            Profile function with signature profile(r, **params).
+            Profile function with signature profile(r, \*\*params).
         **kwargs : dict
             Standard profile parameters (xc, yc, theta, e, cbox).
         """
@@ -2049,9 +2049,9 @@ class Background(Component):
     -----
     The background is defined as:
 
-    B(x,y) = a0 + a1x*x' + a1y*y'
-             + a2xx*x'^2 + a2xy*x'*y' + a2yy*y'^2
-             + a3xxx*x'^3 + a3xxy*x'^2*y' + a3xyy*x'*y'^2 + a3yyy*y'^3
+    B(x,y) = a0 + a1x·x' + a1y·y'
+             + a2xx·x'^2 + a2xy·x'·y' + a2yy·y'^2
+             + a3xxx·x'^3 + a3xxy·x'^2·y' + a3xyy·x'·y'^2 + a3yyy·y'^3
 
     where x' = x/rs and y' = y/rs are normalized coordinates.
 
@@ -2098,13 +2098,13 @@ class Background(Component):
                 a0="Polynomial coefficient 0",
                 a1x="Polynomial coefficient 1 in x",
                 a1y="Polynomial coefficient 1 in y",
-                a2xx="Polynomial coefficient 2 in x*x",
-                a2xy="Polynomial coefficient 2 in x*y",
-                a2yy="Polynomial coefficient 2 in y*y",
-                a3xxx="Polynomial coefficient 3 in x*x*x",
-                a3xxy="Polynomial coefficient 3 in x*x*y",
-                a3xyy="Polynomial coefficient 3 in x*y*y",
-                a3yyy="Polynomial coefficient 3 in y*y*y",
+                a2xx="Polynomial coefficient 2 in x·x",
+                a2xy="Polynomial coefficient 2 in x·y",
+                a2yy="Polynomial coefficient 2 in y·y",
+                a3xxx="Polynomial coefficient 3 in x·x·x",
+                a3xxy="Polynomial coefficient 3 in x·x·y",
+                a3xyy="Polynomial coefficient 3 in x·y·y",
+                a3yyy="Polynomial coefficient 3 in y·y·y",
             )
         )
 
@@ -2140,8 +2140,8 @@ class Background(Component):
         -----
         Evaluates the polynomial:
 
-        B = a0 + a1x*x' + a1y*y' + a2xx*x'^2 + a2xy*x'*y' + a2yy*y'^2
-            + a3xxx*x'^3 + a3xxy*x'^2*y' + a3xyy*x'*y'^2 + a3yyy*y'^3
+        B = a0 + a1x·x' + a1y·y' + a2xx·x'^2 + a2xy·x'·y' + a2yy·y'^2
+            + a3xxx·x'^3 + a3xxy·x'^2·y' + a3xyy·x'·y'^2 + a3yyy·y'^3
 
         where x' = x/rs and y' = y/rs.
 
@@ -2385,7 +2385,7 @@ class HyperSecantHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = sech(|z|/zs)^alpha
+    rho(z) = sech(abs(z)/zs)^alpha
 
     Common cases:
     - alpha = 1: Simple sech profile
@@ -2432,7 +2432,7 @@ class HyperSecantHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: sech(|z|/zs)^alpha.
+            Density at height z: sech(abs(z)/zs)^alpha.
 
         Notes
         -----
@@ -2472,7 +2472,7 @@ class ExponentialHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = exp(-|z|/zs)
+    rho(z) = exp(-abs(z)/zs)
 
     This simple exponential profile is appropriate for thin stellar disks
     and is the vertical analog of the exponential radial profile. The scale
@@ -2512,7 +2512,7 @@ class ExponentialHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: exp(-|z|/zs).
+            Density at height z: exp(-abs(z)/zs).
 
         Notes
         -----
