@@ -162,3 +162,5 @@ cython_debug/
 tests_
 
 .DS_Store
+
+CLAUDE.md
