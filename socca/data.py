@@ -1,3 +1,5 @@
+"""Image data handling and WCS coordinate grid utilities."""
+
 from .utils import _img_loader, _reduce_axes
 from . import noise as noisepdf
 
@@ -19,6 +21,26 @@ import reproject
 # Get mask from input HDU
 # --------------------------------------------------------
 def _hdu_mask(mask, hdu):
+    """
+    Reproject a mask to match the WCS of a target HDU.
+
+    Takes a mask HDU and reprojects it to match the coordinate system and
+    shape of the target HDU. The reprojected mask is converted to binary
+    values (0 or 1).
+
+    Parameters
+    ----------
+    mask : fits.PrimaryHDU or fits.ImageHDU
+        Input mask HDU to be reprojected.
+    hdu : fits.PrimaryHDU or fits.ImageHDU
+        Target HDU whose header defines the output WCS and shape.
+
+    Returns
+    -------
+    numpy.ndarray
+        Binary mask array with values 0.0 (masked) or 1.0 (valid).
+        NaN values from reprojection are set to 0.0.
+    """
     data, _ = reproject.reproject_interp(mask, hdu.header)
     data[np.isnan(data)] = 0.00
     return np.where(data < 1.00, 0.00, 1.00)
@@ -28,7 +50,7 @@ def _hdu_mask(mask, hdu):
 # --------------------------------------------------------
 class WCSgrid:
     """
-    WCS coordinate grid for image
+    WCS coordinate grid for image.
 
     Parameters
     ----------
@@ -76,6 +98,38 @@ class WCSgrid:
 
     @staticmethod
     def getmesh(hdu=None, wcs=None, header=None):
+        """
+        Generate mesh coordinate arrays in world coordinate system.
+
+        Creates 2D coordinate grids in world coordinates from either an HDU,
+        WCS object, or FITS header. Handles 360-degree wraparound for RA
+        coordinates near the discontinuity.
+
+        Parameters
+        ----------
+        hdu : fits.PrimaryHDU or fits.ImageHDU, optional
+            FITS HDU object containing header with WCS information.
+        wcs : astropy.wcs.WCS, optional
+            WCS object for coordinate transformation. If None, derived from
+            header or HDU.
+        header : fits.Header, optional
+            FITS header containing WCS keywords.
+
+        Returns
+        -------
+        tuple of numpy.ndarray
+            (gridwx, gridwy) - 2D arrays of x and y world coordinates.
+
+        Raises
+        ------
+        ValueError
+            If neither header nor hdu is provided, or if both are provided.
+
+        Notes
+        -----
+        Exactly one of `hdu` or `header` must be specified (not both).
+        The method automatically handles RA coordinate discontinuity at 360°.
+        """
         if (header is None) and (hdu is not None):
             headerWCS = hdu.header.copy()
         elif (header is not None) and (hdu is None):
@@ -110,7 +164,7 @@ class WCSgrid:
 # --------------------------------------------------------
 class FFTspec:
     """
-    FFT specification for image
+    FFT specification for image.
 
     Parameters
     ----------
@@ -159,6 +213,31 @@ class FFTspec:
         }
 
     def shift(self, xc, yc):
+        """
+        Compute FFT phase shifts for translating image center.
+
+        Calculates the phase shifts in Fourier space (u and v) needed to
+        shift the image center to new world coordinates. This enables
+        efficient image translation via the FFT shift theorem.
+
+        Parameters
+        ----------
+        xc : float
+            Target x-coordinate (RA or longitude) in world coordinates.
+        yc : float
+            Target y-coordinate (Dec or latitude) in world coordinates.
+
+        Returns
+        -------
+        tuple of jax.numpy.ndarray
+            (uphase, vphase) - Complex phase shift arrays for u and v
+            frequencies, to be applied in Fourier space.
+
+        Notes
+        -----
+        The x-coordinate shift accounts for spherical projection effects
+        via cos(declination) scaling.
+        """
         dx = (xc - self.head["CRVAL1"]) * jp.cos(
             jp.deg2rad(self.head["CRVAL2"])
         )
@@ -184,6 +263,8 @@ class FFTspec:
 # --------------------------------------------------------
 class Image:
     """
+    Image object for astronomical data.
+
     A class for handling astronomical images with support for WCS, PSF,
     masking, and noise modeling.
 
@@ -264,13 +345,6 @@ class Image:
     -----
     - Missing CDELT keywords are computed from CD matrix elements.
     - NaN values in the input image are automatically masked.
-
-    Examples
-    --------
-    >>> from socca.data import Image
-    >>> img = Image('observation.fits', exposure='exposure.fits')
-    >>> img.addpsf('psf.fits', normalize=True)
-    >>> img.addmask(regions=['mask.reg'], combine=True)
     """
 
     def __init__(
@@ -365,8 +439,31 @@ class Image:
     #   --------------------------------------------------------
     def cutout(self, center, csize):
         """
-        center : tuple or SkyCoord
-        csize  : int, array_like, or Quantity
+        Extract a cutout region from the image.
+
+        Creates a smaller cutout of the image centered at the specified
+        coordinates. All image attributes (data, mask, exposure, response,
+        PSF, grid, FFT) are updated to reflect the cutout region.
+
+        Parameters
+        ----------
+        center : tuple or astropy.coordinates.SkyCoord
+            Center coordinates for the cutout. Can be a SkyCoord object
+            or a tuple of (RA, Dec) values.
+        csize : int, array_like, or astropy.units.Quantity
+            Size of the cutout. Can be a single value (for square cutout),
+            a tuple of (width, height), or a Quantity with angular units.
+
+        Raises
+        ------
+        NotImplementedError
+            If the noise model is not Normal (uncorrelated noise).
+
+        Notes
+        -----
+        - Updates all image attributes including WCS, grid, and FFT specifications
+        - If a PSF is present, it is also cutout to match the new image size
+        - The image center (CRPIX/CRVAL) is updated to the cutout center
         """
         cutout_data = Cutout2D(self.data, center, csize, wcs=self.wcs)
         cutout_mask = Cutout2D(self.mask, center, csize, wcs=self.wcs)
@@ -416,14 +513,32 @@ class Image:
     #   --------------------------------------------------------
     def addmask(self, regions, combine=True):
         """
-        regions : list
-            List of regions to be masked. It can be
-            a mix of strings, pyregion objects, np.arrays, and HDUs.
-        combine : bool, optional
-            If True, combine with the existing mask.
-            If False, reset the mask.
-        """
+        Add or update masking regions to the image.
 
+        Applies masking from various input formats (region files, pyregion
+        objects, arrays, or HDUs). Masks can be combined with existing
+        masks or replace them entirely.
+
+        Parameters
+        ----------
+        regions : list
+            List of regions to be masked. Elements can be:
+            - str: Path to a region file (DS9/CRTF format)
+            - pyregion.Shape: pyregion shape object
+            - numpy.ndarray: Binary mask array (1=valid, 0=masked)
+            - fits.ImageHDU or fits.PrimaryHDU: FITS mask HDU
+        combine : bool, optional
+            If True, combine with the existing mask (logical AND).
+            If False, reset and replace the existing mask.
+            Default is True.
+
+        Notes
+        -----
+        - Multiple regions can be specified in a single call
+        - For region files/shapes, pixels inside the region are masked (set to 0)
+        - For array/HDU inputs, the mask is multiplied with existing mask
+        - HDU masks are automatically reprojected to match image WCS
+        """
         mask = np.ones(self.data.shape)
         if combine:
             mask = mask * self.mask.copy()
@@ -451,12 +566,32 @@ class Image:
     #   --------------------------------------------------------
     def addpsf(self, img, normalize=True, idx=0):
         """
-        img : array_like, HDU, or str
-            PSF image to be added to the image.
+        Add a point spread function (PSF) to the image.
+
+        Loads and prepares a PSF kernel for convolution operations. The PSF
+        is normalized, resized if needed, and its FFT is precomputed for
+        efficient convolution in Fourier space.
+
+        Parameters
+        ----------
+        img : array_like, fits.HDU, or str
+            PSF image input. Can be:
+            - numpy or jax array: PSF kernel directly
+            - fits.ImageHDU or fits.PrimaryHDU: FITS HDU with PSF
+            - str: Path to FITS file containing PSF
         normalize : bool, optional
-            If True, normalize the PSF image.
+            If True, normalize the PSF to unit sum before use.
+            Default is True.
         idx : int, optional
-            Index of the HDU to be loaded.
+            HDU index to load if `img` is a filename.
+            Default is 0 (primary HDU).
+
+        Notes
+        -----
+        - If PSF dimensions exceed image dimensions, it is automatically cropped
+        - The PSF FFT is precomputed and stored in `self.psf_fft` for efficiency
+        - PSF kernel is stored in `self.psf` for reference
+        - PSF is zero-padded to match image dimensions before FFT
         """
         if isinstance(img, (np.ndarray, jp.ndarray)):
             kernel = img.copy()

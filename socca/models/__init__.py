@@ -79,6 +79,15 @@ def zoo():
 # General model structure
 # --------------------------------------------------------
 class Model:
+    """
+    Composite model container for combining multiple profile components.
+
+    The Model class provides a flexible framework for constructing complex
+    astronomical models by combining individual profile components (Beta, Sersic,
+    Point, etc.). It manages parameter priors, positivity constraints, and model
+    evaluation.
+    """
+
     def __init__(self, prof=None, positive=None):
         """
         Initialize a composite model with optional initial profile component.
@@ -899,6 +908,22 @@ class Profile(Component):
 
     @abstractmethod
     def profile(self, r):
+        """
+        Abstract method defining the radial profile function.
+
+        Subclasses must implement this method to define the surface brightness
+        distribution as a function of radius and other profile-specific parameters.
+
+        Parameters
+        ----------
+        r : ndarray
+            Radial coordinate in degrees.
+
+        Returns
+        -------
+        ndarray
+            Surface brightness values at each radius.
+        """
         pass
 
     def getmap(self, img, convolve=False):
@@ -1143,6 +1168,14 @@ class CustomProfile(Profile):
 # Beta profile
 # --------------------------------------------------------
 class Beta(Profile):
+    """
+    Beta profile for modeling galaxy clusters and elliptical galaxies.
+
+    The Beta profile describes a power-law density distribution commonly used
+    for X-ray and radio observations of galaxy clusters. It has the form
+    I(r) = Ic * (1 + (r/rc)^2)^(-beta).
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.rc = kwargs.get("rc", config.Beta.rc)
@@ -1210,6 +1243,15 @@ class Beta(Profile):
 # gNFW profile
 # --------------------------------------------------------
 class gNFW(Profile):
+    """
+    Generalized Navarro-Frenk-White (gNFW) profile for modeling dark matter halos.
+
+    The gNFW profile is a flexible three-parameter model commonly used to describe
+    the surface brightness distribution of galaxy clusters and dark matter halos.
+    It generalizes the NFW profile with adjustable inner (gamma), intermediate
+    (alpha), and outer (beta) slopes.
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.rc = kwargs.get("rc", config.gNFW.rc)
@@ -1328,6 +1370,15 @@ b_ = jp.array(b_)
 
 
 class Sersic(Profile):
+    """
+    Sersic profile for modeling elliptical galaxies and bulges.
+
+    The Sersic profile is a generalization of de Vaucouleurs' law that describes
+    the light distribution in elliptical galaxies and galactic bulges. The profile
+    shape is controlled by the Sersic index (ns), with ns=1 corresponding to an
+    exponential disk and ns=4 to a de Vaucouleurs profile.
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.re = kwargs.get("re", config.Sersic.re)
@@ -1407,6 +1458,14 @@ class Sersic(Profile):
 # Exponential profile
 # --------------------------------------------------------
 class Exponential(Profile):
+    """
+    Exponential disk profile for modeling disk galaxies and spiral arms.
+
+    The exponential profile (Sersic index n=1) is the standard model for disk
+    galaxies. It describes a surface brightness distribution that decays
+    exponentially with radius: I(r) = Is * exp(-r/rs).
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.rs = kwargs.get("rs", config.Exponential.rs)
@@ -1471,6 +1530,14 @@ class Exponential(Profile):
 # Mancera Piña et al., A&A, 689, A344 (2024)
 # --------------------------------------------------------
 class PolyExponential(Exponential):
+    """
+    Exponential profile with polynomial modulation.
+
+    Extended exponential profile that includes polynomial terms to model
+    deviations from a pure exponential disk. Based on the formalism from
+    Mancera Piña et al., A&A, 689, A344 (2024).
+    """
+
     def __init__(self, **kwargs):
         nk = 4
         super().__init__(**kwargs)
@@ -1567,6 +1634,14 @@ class PolyExponential(Exponential):
 # Mancera Piña et al., A&A, 689, A344 (2024)
 # --------------------------------------------------------
 class PolyExpoRefact(Exponential):
+    """
+    Refactored polynomial exponential profile with intensity coefficients.
+
+    Alternative parameterization of the polynomial exponential profile using
+    intensity coefficients instead of polynomial coefficients. Based on the
+    formalism from Mancera Piña et al., A&A, 689, A344 (2024).
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.I1 = kwargs.get("I1", config.PolyExpoRefact.I1)
@@ -1681,6 +1756,15 @@ class PolyExpoRefact(Exponential):
 # Mancera Piña et al., A&A, 689, A344 (2024)
 # --------------------------------------------------------
 class ModExponential(Exponential):
+    """
+    Modified exponential profile with power-law modulation.
+
+    An exponential profile modulated by a power law to provide additional
+    flexibility for modeling disk profiles with deviations from pure exponential
+    behavior. Based on the formalism from Mancera Piña et al., A&A, 689, A344
+    (2024).
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.rm = kwargs.get("rm", config.ModExponential.rm)
@@ -1696,7 +1780,7 @@ class ModExponential(Exponential):
     @jax.jit
     def profile(r, Is, rs, rm, alpha):
         """
-        Modified exponential profile with power-law modulation.
+        Generate modified exponential profile with power-law modulation.
 
         An exponential profile modulated by a power law, providing an additional
         degree of freedom to model disk profiles with deviations from pure
@@ -2301,7 +2385,7 @@ class HyperSecantHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = sech(\|z\|/zs)^alpha
+    rho(z) = sech(|z|/zs)^alpha
 
     Common cases:
     - alpha = 1: Simple sech profile
@@ -2348,7 +2432,7 @@ class HyperSecantHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: sech(\|z\|/zs)^alpha.
+            Density at height z: sech(|z|/zs)^alpha.
 
         Notes
         -----
@@ -2388,7 +2472,7 @@ class ExponentialHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = exp(-\|z\|/zs)
+    rho(z) = exp(-|z|/zs)
 
     This simple exponential profile is appropriate for thin stellar disks
     and is the vertical analog of the exponential radial profile. The scale
@@ -2428,7 +2512,7 @@ class ExponentialHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: exp(-\|z\|/zs).
+            Density at height z: exp(-|z|/zs).
 
         Notes
         -----
