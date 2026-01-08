@@ -133,6 +133,27 @@ class Normal:
     #   Set up noise model
     #   --------------------------------------------------------
     def __call__(self, data, mask):
+        """
+        Set up the noise model with data and mask.
+
+        Processes the input data and mask, computes or loads the noise sigma,
+        and creates the log probability density function for likelihood
+        evaluation.
+
+        Parameters
+        ----------
+        data : array_like
+            Image data array to be modeled.
+        mask : array_like
+            Binary mask array (1=valid, 0=masked). Pixels where mask==0
+            are excluded from likelihood calculations.
+
+        Notes
+        -----
+        - Computes noise standard deviation via getsigma()
+        - Applies mask to extract valid pixels
+        - Creates a lambda function for log-likelihood evaluation
+        """
         self.mask = mask.astype(int).copy()
         self.data = data.copy()
 
@@ -149,6 +170,26 @@ class Normal:
     @staticmethod
     @jax.jit
     def _logpdf(x, data, sigma):
+        """
+        Compute log probability density for independent normal noise.
+
+        JAX JIT-compiled static method that evaluates the sum of log
+        probabilities for independent normal distributions at each pixel.
+
+        Parameters
+        ----------
+        x : jax.numpy.ndarray
+            Model values at each pixel (flattened, masked pixels excluded).
+        data : jax.numpy.ndarray
+            Observed data values (flattened, masked pixels excluded).
+        sigma : jax.numpy.ndarray
+            Noise standard deviation at each pixel (flattened, masked excluded).
+
+        Returns
+        -------
+        float
+            Total log probability (sum over all valid pixels).
+        """
         return jax.scipy.stats.norm.logpdf(x, loc=data, scale=sigma).sum()
 
 
@@ -185,6 +226,7 @@ class NormalCorrelated:
             of realizations. Used to compute covariance if cov is None.
         **kwargs : dict
             Additional keyword arguments:
+
             - smooth : int, optional
                 Number of smoothing iterations for covariance matrix.
                 Default is 3.
@@ -246,6 +288,27 @@ class NormalCorrelated:
     #   Set up noise model
     #   --------------------------------------------------------
     def __call__(self, data, mask):
+        """
+        Set up the correlated noise model with data and mask.
+
+        Processes the input data and mask, computes normalization for the
+        multivariate normal distribution, and creates the log probability
+        density function using the covariance/inverse covariance matrix.
+
+        Parameters
+        ----------
+        data : array_like
+            Image data array to be modeled.
+        mask : array_like
+            Binary mask array (1=valid, 0=masked). Pixels where mask==0
+            are excluded from likelihood calculations.
+
+        Notes
+        -----
+        - Computes normalization constant from inverse covariance determinant
+        - Creates lambda function that accounts for pixel correlations
+        - Uses quadratic form with inverse covariance for log-likelihood
+        """
         self.mask = mask.copy()
         self.mask = self.mask == 1.00
         self.data = data.at[self.mask].get()
@@ -261,6 +324,31 @@ class NormalCorrelated:
     @staticmethod
     @jax.jit
     def _logpdf(x, data, icov):
+        """
+        Compute log probability for multivariate normal with covariance.
+
+        JAX JIT-compiled static method that evaluates the quadratic form
+        for a multivariate normal distribution using the inverse covariance
+        matrix.
+
+        Parameters
+        ----------
+        x : jax.numpy.ndarray
+            Model values (flattened vector, masked pixels excluded).
+        data : jax.numpy.ndarray
+            Observed data values (flattened vector, masked pixels excluded).
+        icov : jax.numpy.ndarray
+            Inverse covariance matrix (2D array).
+
+        Returns
+        -------
+        float
+            Log probability: -0.5 * (x-data)^T @ icov @ (x-data)
+
+        Notes
+        -----
+        The normalization constant is added separately in __call__().
+        """
         res = x - data
         return -0.50 * jp.einsum("i,ij,j->", res, icov, res)
 
@@ -313,6 +401,7 @@ class NormalFourier:
             - 'full' or 'fft': complex-to-complex FFT (for complex input data)
         **kwargs : dict
             Additional keyword arguments:
+
             - apod : array_like, optional
                 Apodization map applied to the data before Fourier
                 transforming. Default is no apodization.
@@ -396,6 +485,32 @@ class NormalFourier:
     #   Set up noise model
     #   --------------------------------------------------------
     def __call__(self, data, mask):
+        """
+        Set up the Fourier-space noise model with data and mask.
+
+        Processes the input data and mask, computes normalization for
+        Fourier-space likelihood, and creates the JIT-compiled log
+        probability density function.
+
+        Parameters
+        ----------
+        data : array_like
+            Image data array to be modeled.
+        mask : array_like
+            Binary mask array (1=valid, 0=masked). All pixels must be
+            unmasked for this noise model.
+
+        Raises
+        ------
+        ValueError
+            If any pixels are masked (NormalFourier requires full images).
+
+        Notes
+        -----
+        - Requires all pixels to be valid (no masking)
+        - Computes covariance mask (cmask) for non-zero modes
+        - Creates JIT-compiled log-likelihood with apodization
+        """
         self.mask = mask.copy()
         self.mask = self.mask == 1.00
         self.data = data.copy()
@@ -428,6 +543,39 @@ class NormalFourier:
     #   --------------------------------------------------------
     @staticmethod
     def _logpdf(x, data, icov, dmask, cmask, apod, ftype="real"):
+        """
+        Compute log probability for independent noise in Fourier space.
+
+        Static method that evaluates chi-squared in Fourier space using the
+        inverse covariance. Residuals are apodized before transformation.
+
+        Parameters
+        ----------
+        x : jax.numpy.ndarray
+            Model values (flattened vector).
+        data : jax.numpy.ndarray
+            Observed data array (2D image).
+        icov : jax.numpy.ndarray
+            Inverse covariance in Fourier space (2D).
+        dmask : jax.numpy.ndarray
+            Boolean mask for valid pixels in data space.
+        cmask : jax.numpy.ndarray
+            Boolean mask for non-zero modes in Fourier space.
+        apod : jax.numpy.ndarray
+            Apodization array applied before FFT.
+        ftype : str, optional
+            Fourier transform type ('real'/'rfft' or 'full'/'fft').
+            Default is 'real'.
+
+        Returns
+        -------
+        float
+            Log probability: -0.5 * sum(icov * |FFT(residual * apod)|^2)
+
+        Notes
+        -----
+        The normalization constant is added separately in __call__().
+        """
         fft = jp.fft.rfft2 if ftype in ["real", "rfft"] else jp.fft.fft2
 
         xmap = jp.zeros(dmask.shape)
@@ -442,6 +590,15 @@ class NormalFourier:
 # ========================================================
 class NormalRI:
     def __init__(self):
+        """
+        Initialize radio-interferometric noise model (not yet implemented).
+
+        Raises
+        ------
+        NotImplementedError
+            This noise model is a placeholder for future implementation of
+            radio-interferometric data handling with visibility-space noise.
+        """
         raise NotImplementedError(
             "NormalRI noise model is not yet implemented."
         )

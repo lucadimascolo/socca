@@ -30,6 +30,36 @@ import scipy.optimize
 # Compute importance weights for nested sampling
 # --------------------------------------------------------
 def get_imp_weights(logw, logz=None):
+    """
+    Compute importance weights from log-weights and log-evidence.
+
+    Converts log-weights to normalized importance weights using the
+    log-evidence for numerical stability. The weights are normalized
+    such that they sum to 1.0.
+
+    Parameters
+    ----------
+    logw : array_like
+        Log-weights from nested sampling.
+    logz : float or array_like, optional
+        Log-evidence value(s). If None, uses the maximum log-weight.
+        If not None and not iterable, converts to a single-element list.
+        Default is None.
+
+    Returns
+    -------
+    weights : ndarray
+        Normalized importance weights in linear space.
+
+    Notes
+    -----
+    The importance weights are computed as:
+
+    .. math::
+        w_i = \\exp(\\log w_i - \\log Z - \\log\\sum_j \\exp(\\log w_j - \\log Z))
+
+    where :math:`\\log Z` is the log-evidence (logz[-1]).
+    """
     if logz is None:
         logz = [logw.max()]
     if not hasattr(logz, "__len__"):
@@ -46,6 +76,40 @@ def get_imp_weights(logw, logz=None):
 # --------------------------------------------------------
 class fitter:
     def __init__(self, img, mod):
+        """
+        Initialize the fitter with an image and model.
+
+        Sets up the fitting infrastructure by extracting noise properties,
+        parameter labels, and initializing the plotting interface.
+
+        Parameters
+        ----------
+        img : Image
+            Image object containing the data, noise model, response function,
+            and exposure map.
+        mod : Model
+            Model object defining the forward model, parameters, priors, and
+            parameter transformations.
+
+        Attributes
+        ----------
+        img : Image
+            Reference to the input image object.
+        mod : Model
+            Reference to the input model object.
+        mask : ndarray
+            Boolean mask from the noise model indicating valid pixels.
+        pdfnoise : callable
+            Log-probability density function from the noise model.
+        pdfkwarg : list of str
+            Parameter names expected by the noise PDF function.
+        labels : list of str
+            Parameter names for the fitted parameters.
+        units : list of str
+            Physical units for each fitted parameter.
+        plot : Plotter
+            Plotting interface for visualization of results.
+        """
         self.img = img
         self.mod = mod
 
@@ -70,6 +134,33 @@ class fitter:
     #   Compute total model
     #   --------------------------------------------------------
     def _get_model(self, pp):
+        """
+        Compute the total model with response and exposure corrections.
+
+        Automatically determines whether to apply the instrument response
+        function and exposure map based on whether they deviate from unity.
+
+        Parameters
+        ----------
+        pp : array_like
+            Model parameters in the parameter space.
+
+        Returns
+        -------
+        model_raw : ndarray
+            Raw model before convolution and response application.
+        model_smooth : ndarray
+            Model after convolution and response/exposure corrections.
+        model_background : ndarray
+            Background component of the model.
+        negative_flag : ndarray
+            Boolean array indicating pixels with negative values.
+
+        Notes
+        -----
+        Response is applied if any element of img.resp differs from 1.0.
+        Exposure is applied if any element of img.exp differs from 1.0.
+        """
         doresp = ~np.all(np.array(self.img.resp) == 1.00)  # True
         doexp = ~np.all(np.array(self.img.exp) == 1.00)  # True
         return self.mod.getmodel(self.img, pp, doresp=doresp, doexp=doexp)
@@ -78,6 +169,31 @@ class fitter:
     #   --------------------------------------------------------
     @partial(jax.jit, static_argnames=["self"])
     def _log_likelihood(self, pp):
+        """
+        Compute the log-likelihood for given parameters.
+
+        Evaluates the noise model's log-probability density function on
+        the masked pixels. Returns negative infinity if any masked pixel
+        has a negative model value.
+
+        Parameters
+        ----------
+        pp : array_like
+            Model parameters in the parameter space.
+
+        Returns
+        -------
+        log_likelihood : float
+            Log-likelihood value. Returns -inf if negative model values
+            are detected in the masked region.
+
+        Notes
+        -----
+        This method is JIT-compiled with JAX for performance. The mask
+        is applied to select valid pixels before computing the likelihood.
+        The noise PDF is evaluated using the parameters xs (model data)
+        and xr (raw model data) extracted from pdfkwarg.
+        """
         xr, xs, _, neg = self._get_model(pp)
 
         xs = xs.at[self.mask].get()
@@ -89,6 +205,30 @@ class fitter:
     #   --------------------------------------------------------
     @partial(jax.jit, static_argnames=["self"])
     def _log_prior(self, theta):
+        """
+        Compute the log-prior probability for given parameters.
+
+        Evaluates the log-prior by summing the log-probabilities from
+        each parameter's individual prior distribution.
+
+        Parameters
+        ----------
+        theta : dict or array_like
+            Parameter values. Can be a dictionary with parameter names
+            as keys, or an array-like object indexed by parameter names.
+
+        Returns
+        -------
+        log_prior : float
+            Total log-prior probability computed as the sum of individual
+            parameter log-priors.
+
+        Notes
+        -----
+        This method is JIT-compiled with JAX for performance. The prior
+        is computed by summing log_prob values from each parameter's
+        prior distribution defined in self.mod.priors.
+        """
         prob = 0.00
         for idx in self.mod.paridx:
             key = self.mod.params[idx]
@@ -99,6 +239,32 @@ class fitter:
     #   --------------------------------------------------------
     @partial(jax.jit, static_argnames=["self"])
     def _prior_transform(self, pp):
+        """
+        Transform unit hypercube to parameter space for nested sampling.
+
+        Applies the inverse cumulative distribution function (quantile
+        function) of each parameter's prior to transform uniform [0, 1]
+        samples to the prior distribution.
+
+        Parameters
+        ----------
+        pp : array_like
+            Parameter values in the unit hypercube, with each element
+            in the range [0, 1].
+
+        Returns
+        -------
+        parameters : jax.numpy.ndarray
+            Transformed parameters in the physical parameter space.
+
+        Notes
+        -----
+        This method is JIT-compiled with JAX for performance. The
+        transformation is used by nested sampling algorithms that
+        sample from a unit hypercube and need to map to the prior.
+        Each parameter's prior must implement an icdf (inverse CDF)
+        method.
+        """
         prior = []
         for pi, p in enumerate(pp):
             key = self.mod.params[self.mod.paridx[pi]]
@@ -167,6 +333,55 @@ class fitter:
         getzprior,
         **kwargs,
     ):
+        """
+        Run nested sampling using the Dynesty sampler.
+
+        Performs Bayesian parameter estimation using nested sampling
+        via the Dynesty package. Supports checkpointing, resuming,
+        and optional prior evidence computation.
+
+        Parameters
+        ----------
+        log_likelihood : callable
+            Function that computes the log-likelihood given parameters.
+        log_prior : callable
+            Function that computes the log-prior given parameters.
+        prior_transform : callable
+            Function that transforms unit hypercube to parameter space.
+        checkpoint : str or None
+            Path to checkpoint file for saving/resuming the sampler state.
+            If None, no checkpointing is performed.
+        resume : bool
+            If True and checkpoint file exists, resume from saved state.
+        getzprior : bool
+            If True, run a second nested sampling to estimate the prior
+            evidence for Bayesian model comparison with prior deboosting.
+        **kwargs : dict
+            Additional keyword arguments passed to dynesty.NestedSampler
+            and its run_nested method. Common options include:
+            - nlive : int, number of live points (default: 1000)
+            - dlogz : float, stopping criterion (default: 0.01)
+
+        Attributes Set
+        --------------
+        sampler : dynesty.NestedSampler
+            The main Dynesty sampler object.
+        samples : ndarray
+            Posterior samples from nested sampling.
+        weights : ndarray
+            Importance weights for each sample.
+        logz : float
+            Log-evidence (marginal likelihood) estimate.
+        sampler_prior : dynesty.NestedSampler or None
+            Prior sampler object if getzprior=True, else None.
+        logz_prior : float or None
+            Prior evidence if getzprior=True, else None.
+
+        Notes
+        -----
+        The method automatically extracts valid kwargs for NestedSampler
+        and run_nested based on their function signatures.
+        """
         if checkpoint is None:
             resume = False
 
@@ -245,6 +460,59 @@ class fitter:
         getzprior,
         **kwargs,
     ):
+        """
+        Run nested sampling using the Nautilus sampler.
+
+        Performs Bayesian parameter estimation using neural network-
+        accelerated nested sampling via the Nautilus package. Supports
+        checkpointing, resuming, and optional prior evidence computation.
+
+        Parameters
+        ----------
+        log_likelihood : callable
+            Function that computes the log-likelihood given parameters.
+        log_prior : callable
+            Function that computes the log-prior given parameters.
+        prior_transform : callable
+            Function that transforms unit hypercube to parameter space.
+        checkpoint : str or None
+            Path to checkpoint file for saving/resuming the sampler state.
+        resume : bool
+            If True and checkpoint file exists, resume from saved state.
+        getzprior : bool
+            If True, run a second nested sampling to estimate the prior
+            evidence for Bayesian model comparison with prior deboosting.
+        **kwargs : dict
+            Additional keyword arguments passed to nautilus.Sampler and
+            its run method. Common options include:
+            - nlive/n_live : int, number of live points (default: 1000)
+            - flive/f_live : float, stopping criterion (default: 0.01)
+            - discard_exploration : bool, discard exploration phase
+              samples (default: True)
+
+        Attributes Set
+        --------------
+        sampler : nautilus.Sampler
+            The main Nautilus sampler object.
+        samples : ndarray
+            Posterior samples from nested sampling.
+        logw : ndarray
+            Log-weights for each sample.
+        weights : ndarray
+            Normalized importance weights for each sample.
+        logz : float
+            Log-evidence (marginal likelihood) estimate.
+        sampler_prior : nautilus.Sampler or None
+            Prior sampler object if getzprior=True, else None.
+        logz_prior : float or None
+            Prior evidence if getzprior=True, else None.
+
+        Notes
+        -----
+        Nautilus uses neural networks to learn the iso-likelihood
+        contours, making it efficient for high-dimensional problems.
+        The method prints elapsed time after completion.
+        """
         ndims = len(self.mod.paridx)
 
         nlive = 1000
@@ -340,6 +608,63 @@ class fitter:
         getzprior,
         **kwargs,
     ):
+        """
+        Run nested sampling using the pocoMC sampler.
+
+        Performs Bayesian parameter estimation using preconditioned
+        Monte Carlo nested sampling via the pocoMC package. Supports
+        checkpointing, resuming, and optional prior evidence computation.
+
+        Parameters
+        ----------
+        log_likelihood : callable
+            Function that computes the log-likelihood given parameters.
+        log_prior : callable
+            Function that computes the log-prior given parameters.
+        checkpoint : str or None
+            Path prefix for checkpoint files. If None and resume=True,
+            defaults to "run". Checkpoint files are saved in a directory
+            named "{checkpoint}_pocomc_dump".
+        resume : bool
+            If True, resume from the latest saved state in the checkpoint
+            directory.
+        getzprior : bool
+            If True, run a second nested sampling to estimate the prior
+            evidence for Bayesian model comparison with prior deboosting.
+        **kwargs : dict
+            Additional keyword arguments passed to pocomc.Sampler and
+            its run method. Common options include:
+            - nlive/n_live/n_effective : int, effective sample size
+              (default: 1000)
+            - n_active : int, number of active particles
+              (default: nlive // 2)
+            - save_every : int, save state every N iterations
+              (default: 10)
+            - seed : int, random seed (default: 0)
+
+        Attributes Set
+        --------------
+        sampler : pocomc.Sampler
+            The main pocoMC sampler object.
+        samples : ndarray
+            Posterior samples from nested sampling.
+        logw : ndarray
+            Log-weights for each sample.
+        weights : ndarray
+            Normalized importance weights for each sample.
+        logz : float
+            Log-evidence (marginal likelihood) estimate.
+        sampler_prior : pocomc.Sampler or None
+            Prior sampler object if getzprior=True, else None.
+        logz_prior : float or None
+            Prior evidence if getzprior=True, else None.
+
+        Notes
+        -----
+        pocoMC uses normalizing flows for preconditioned sampling,
+        making it efficient for complex, multimodal posteriors.
+        Prior distributions must be NumPyro distributions.
+        """
         if checkpoint is None and resume:
             checkpoint = "run"
 
@@ -425,6 +750,40 @@ class fitter:
     #   Fitting method - Numpyro NUTS
     #   --------------------------------------------------------
     def _run_numpyro(self, log_likelihood, **kwargs):
+        """
+        Run Hamiltonian Monte Carlo sampling using NumPyro's NUTS.
+
+        Performs Bayesian parameter estimation using the No-U-Turn
+        Sampler (NUTS), a variant of Hamiltonian Monte Carlo (HMC),
+        via the NumPyro package.
+
+        Parameters
+        ----------
+        log_likelihood : callable
+            Function that computes the log-likelihood given parameters.
+        **kwargs : dict
+            Additional keyword arguments passed to numpyro.infer.NUTS
+            and numpyro.infer.MCMC. Common options include:
+            - n_warmup/nwarmup/num_warmup : int, number of warmup
+              iterations (default: 1000)
+            - n_samples/nsamples/num_samples : int, number of posterior
+              samples (default: 2000)
+            - seed : int, random seed (default: 0)
+
+        Attributes Set
+        --------------
+        samples : ndarray
+            Posterior samples from MCMC, shape (n_samples, n_params).
+        weights : ndarray
+            Uniform weights (all ones) since MCMC samples are unweighted.
+
+        Notes
+        -----
+        NUTS automatically tunes step size and number of leapfrog steps
+        during the warmup phase. This method does not compute evidence,
+        so it cannot be used for Bayesian model comparison. The method
+        requires parameter priors to be NumPyro distributions.
+        """
         nwarmup = 1000
         for key in ["n_warmup", "nwarmup", "num_warmup"]:
             nwarmup = kwargs.pop(key, nwarmup)
@@ -472,6 +831,50 @@ class fitter:
     #   Fitting method - optimizer
     #   --------------------------------------------------------
     def _run_optimizer(self, pinits, **kwargs):
+        """
+        Run maximum likelihood optimization using scipy.optimize.
+
+        Finds the maximum likelihood estimate (MLE) or maximum a
+        posteriori (MAP) estimate using L-BFGS-B optimization with
+        automatic differentiation via JAX.
+
+        Parameters
+        ----------
+        pinits : array_like, str
+            Initial parameter values. Can be:
+            - array_like : specific initial values in parameter space
+              (will be transformed to unit hypercube internally)
+            - "median" : start from the median of each prior (0.5 in
+              unit hypercube)
+            - "random" : start from random values in unit hypercube
+        **kwargs : dict
+            Additional keyword arguments passed to scipy.optimize.minimize.
+            Common options include:
+            - tol : float, tolerance for termination
+            - options : dict, solver-specific options
+
+        Attributes Set
+        --------------
+        results : scipy.optimize.OptimizeResult
+            Optimization result object containing:
+            - x : optimal parameters in unit hypercube
+            - fun : negative log-likelihood at optimum
+            - success : whether optimization succeeded
+            - message : description of termination cause
+
+        Raises
+        ------
+        ValueError
+            If pinits is a string other than "median" or "random".
+
+        Notes
+        -----
+        The optimization is performed in the unit hypercube space
+        with bounds [0, 1] for each parameter. The objective function
+        is the negative log-likelihood, and gradients are computed
+        automatically using JAX. The L-BFGS-B method is used for
+        box-constrained optimization.
+        """
         opt_kwargs = {}
         for key in inspect.signature(
             scipy.optimize.minimize
@@ -519,6 +922,49 @@ class fitter:
     #   Compute standard Bayesian Model Selection estimators
     #   --------------------------------------------------------
     def bmc(self, verbose=True):
+        """
+        Compute Bayesian model comparison estimators.
+
+        Calculates the Bayes factor and effective detection significance
+        for model comparison against the null model (data only). Optionally
+        computes prior-deboosted values if prior evidence is available.
+
+        Parameters
+        ----------
+        verbose : bool, optional
+            If True, print the computed statistics. Default is True.
+
+        Returns
+        -------
+        lnBF_raw : float
+            Natural logarithm of the raw Bayes factor (model vs. null).
+        seff_raw : float
+            Effective Gaussian detection significance for raw Bayes factor,
+            computed as ``sign(ln BF) * sqrt(2 * |ln BF|)``.
+        lnBF_cor : float or None
+            Natural logarithm of the prior-deboosted Bayes factor.
+            None if prior evidence was not computed.
+        seff_cor : float or None
+            Effective significance for prior-deboosted Bayes factor.
+            None if prior evidence was not computed.
+
+        Warnings
+        --------
+        UserWarning
+            If prior evidence (logz_prior) is None, warns that prior
+            deboosting cannot be applied.
+
+        Notes
+        -----
+        The raw Bayes factor compares the model evidence to the null
+        model evidence (data-only). The prior-deboosted Bayes factor
+        additionally accounts for the prior volume to avoid Occam's
+        razor penalty when the prior is uninformative.
+
+        The effective significance approximates the detection significance
+        in terms of Gaussian standard deviations using the Wilks' theorem
+        approximation: ``sigma_eff = sign(ln BF) * sqrt(2 * |ln BF|)``.
+        """
         lnBF_raw = self.logz - self.logz_data
         seff_raw = np.sign(lnBF_raw) * np.sqrt(2.00 * np.abs(lnBF_raw))
 
@@ -549,6 +995,30 @@ class fitter:
     #   Dump results
     #   --------------------------------------------------------
     def dump(self, filename):
+        """
+        Save the fitter object to a pickle file.
+
+        Serializes the entire fitter object state including samples,
+        weights, sampler objects, and all attributes to a file using
+        dill for enhanced pickling support.
+
+        Parameters
+        ----------
+        filename : str or Path
+            Output file path. If the filename does not have a pickle
+            extension (.pickle, .pkl, .pck), ".pickle" is appended
+            automatically.
+
+        Notes
+        -----
+        Uses dill instead of pickle to handle complex objects like
+        JAX-compiled functions and lambda functions. The file is
+        written with the highest protocol for optimal compression.
+
+        See Also
+        --------
+        load : Load a fitter object from a pickle file.
+        """
         odict = {key: self.__dict__[key] for key in self.__dict__.keys()}
         # ensure filename has a pickle-like suffix
         p = Path(filename)
@@ -563,6 +1033,61 @@ class fitter:
     def getmodel(
         self, what="all", usebest=True, img=None, doresp=False, doexp=False
     ):
+        """
+        Generate best-fit or median model from sampling results.
+
+        Computes model realizations using either the weighted median
+        parameters or by marginalizing over all posterior samples.
+
+        Parameters
+        ----------
+        what : str or list of str, optional
+            Which model component(s) to return. Options include:
+
+            - "all" : return all components (raw, smooth, background)
+            - "raw" : raw model before convolution
+            - "smo"/"smooth"/"smoothed"/"conv"/"convolved" : model after
+              PSF convolution
+            - "bkg"/"background" : background component
+
+            Default is "all".
+        usebest : bool, optional
+            If True, compute model at weighted median parameters.
+            If False, compute median model by marginalizing over all
+            samples. Default is True.
+        img : Image, optional
+            Image object to use for model computation. If None, uses
+            self.img. Default is None.
+        doresp : bool, optional
+            Whether to apply instrument response. Default is False.
+        doexp : bool, optional
+            Whether to apply exposure map. Default is False.
+
+        Returns
+        -------
+        model_raw : ndarray
+            Raw model before convolution. Returned if "all" or "raw"
+            is requested.
+        model_smooth : ndarray
+            Model after convolution and background subtraction. Returned
+            if "all" or a smoothed variant is requested.
+        model_background : ndarray
+            Background component. Returned if "all" or "bkg" is requested.
+
+        Raises
+        ------
+        ValueError
+            If an unknown model component name is provided in `what`.
+
+        Notes
+        -----
+        For optimizer results, only usebest=True mode is supported.
+        The weighted median uses importance weights for nested sampling
+        results. When usebest=False, the method marginalizes over all
+        posterior samples to compute the median model, which can be
+        computationally expensive for large sample sets.
+        """
+
         def gm(pp):
             return self.mod.getmodel(
                 self.img if img is None else img, pp, doresp, doexp
@@ -650,6 +1175,38 @@ class fitter:
 #   Load results
 #   --------------------------------------------------------
 def load(filename):
+    """
+    Load a fitter object from a pickle file.
+
+    Deserializes a previously saved fitter object, restoring all
+    samples, weights, sampler objects, and attributes.
+
+    Parameters
+    ----------
+    filename : str or Path
+        Path to the pickle file created by fitter.dump().
+
+    Returns
+    -------
+    fit : fitter
+        Restored fitter object with all attributes and state.
+
+    Notes
+    -----
+    Uses dill for deserialization to handle complex objects like
+    JAX-compiled functions. The loaded fitter object is fully
+    functional and can be used for plotting, model generation,
+    and further analysis.
+
+    See Also
+    --------
+    fitter.dump : Save a fitter object to a pickle file.
+
+    Examples
+    --------
+    >>> fit = load('results.pickle')
+    >>> mraw, msmo, mbkg = fit.getmodel()
+    """
     with open(filename, "rb") as f:
         odict = dill.load(f)
     fit = fitter(img=odict["img"], mod=odict["mod"])
