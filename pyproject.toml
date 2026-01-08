@@ -55,3 +55,20 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 79
+exclude = [
+    "examples",
+    "data",
+]
+
+[tool.ruff.lint]
+select = [
+    "D",  # docstring checks
+]
+
+ignore = [
+    "D203",  # conflicts with D211
+    "D213",  # conflicts with D212
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
