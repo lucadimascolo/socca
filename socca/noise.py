@@ -30,11 +30,6 @@ class Normal:
         Image data array. This is inherited from the parent Data class.
     mask : jax.numpy.ndarray
         Image mask array. This is inherited from the parent Data class.
-
-    Methods
-    -------
-    getsigma()
-        Estimate or build the noise standard deviation map.
     """
 
     def __init__(self, **kwargs):

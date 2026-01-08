@@ -331,16 +331,6 @@ class Image:
     subgrid : int
         Subgrid sampling factor.
 
-    Methods
-    -------
-    cutout(center, csize)
-        Extract a cutout region from the image.
-    addmask(regions, mask=None, combine=True)
-        Add or update masking regions.
-    addpsf(img, normalize=True, idx=0)
-        Add a point spread function to the image.
-
-
     Notes
     -----
     - Missing CDELT keywords are computed from CD matrix elements.
