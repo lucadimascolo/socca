@@ -79,7 +79,7 @@ As for the other sampling methods, additional keyword arguments accepted by `sci
 
 The optimization results are stored in `fit.results`, which is a `scipy.optimize.OptimizeResult` object providing access to the optimal parameters (`fit.results.x`), the final log-likelihood value (`-fit.results.fun`), and convergence information (`fit.results.success`, `fit.results.message`).
 
-## Accessing the best-fit model
+## Accessing and saving the best-fit model
 
 After running the inference, the `fitter` object provides a convenient `getmodel()` method to generate model images using the best-fit or median posterior parameters:
 
@@ -105,7 +105,7 @@ The `what` argument controls the output:
 
 | Option | Description |
 |:------:|-------------|
-| `'all'` (default) | Returns a tuple of `(raw, smoothed, background)` |
+| `'all'`<br>(default) | Returns a tuple of `(raw, smoothed, background)` |
 | `'raw'` | Unconvolved model (excluding background) |
 | `'smoothed'`<br>`'conv'`<br>`'convolved'` | PSF-convolved model (excluding background) |
 | `'background'`<br>`'bkg'` | Background component only |
@@ -120,9 +120,7 @@ When `usebest=True` (default), the model is computed using the weighted median o
 
 For the optimizer method, `getmodel()` uses the optimal parameters found during optimization (`fit.results.x`), regardless of the `usebest` setting.
 
-### Saving the model to FITS
-
-To save the best-fit model directly to a FITS file with preserved WCS information. For instance, to save the raw model:
+You can also save the best-fit model directly to a FITS file with preserved WCS information. For instance, to save the raw model:
 
 ```python
 >>> fit.savemodel('raw_model.fits', what='raw')
