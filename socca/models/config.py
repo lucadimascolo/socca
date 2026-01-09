@@ -51,6 +51,14 @@ class Sersic:
 
 
 @dataclass(frozen=True)
+class Gaussian:
+    """Default parameters for Gaussian profile."""
+
+    rs: float = None
+    Is: float = None
+
+
+@dataclass(frozen=True)
 class Exponential:
     """Default parameters for Exponential profile."""
 
