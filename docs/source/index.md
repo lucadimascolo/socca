@@ -11,7 +11,7 @@ This code is broadly inspired by the excellent [`pysersic`](https://github.com/p
 [![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg?style=flat-square)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://github.com/astral-sh/ruff)
 [![CI](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/ci.yml?style=flat-square&label=CI)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/docs.yml?style=flat-square&label=Docs)](https://lucadimascolo.github.io/socca)<br/>
+[![Docs](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/docs.yml?style=flat-square&label=docs)](https://lucadimascolo.github.io/socca)<br/>
 [![JAX](https://img.shields.io/badge/accelerated%20by-JAX-923CAA?style=flat-square)](https://docs.jax.dev/en/latest/index.html)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat-square)](http://www.astropy.org/)
 
@@ -26,7 +26,7 @@ This code is broadly inspired by the excellent [`pysersic`](https://github.com/p
 
 🐛 Found a bug or want to contribute? Check out the [contribution guide](./contribute.md) for more information on how to get involved.
 
-📚 Using **``socca``** in your research? Please see the [citation guide](./citation.md) for how to cite it in your publications.
+📚 Using **``socca``** in your research? Please see the [citation page](./citation.md) for how to cite it in your publications.
 ```
 
 <br/>
