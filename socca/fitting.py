@@ -1125,7 +1125,6 @@ class fitter:
         posterior samples to compute the median model, which can be
         computationally expensive for large sample sets.
         """
-        # Normalize component names for display
         name_map = {
             "raw": "raw",
             "smo": "smoothed",
@@ -1304,7 +1303,7 @@ class fitter:
             header["NSLICES"] = (len(what), "Number of model slices")
             for i, w in enumerate(what):
                 label = name_map.get(w.lower(), w)
-                header[f"SLICE{i+1}"] = (
+                header[f"SLICE{i + 1}"] = (
                     label,
                     f"Model component in slice {i}",
                 )
