@@ -5,15 +5,15 @@
 
 This code is broadly inspired by the excellent [`pysersic`](https://github.com/pysersic/pysersic) and [`astrophot`](https://github.com/Autostronomy/AstroPhot) libraries. We recommend their use if you require a more mature and thoroughly tested solution. **``socca``** is still in its infancy and many experimental features may undergo significant changes in the future. 
 
-[![GitHub](https://img.shields.io/badge/GitHub-lucadimascolo%2Fsocca-blue.svg?style=flat-square)](https://github.com/lucadimascolo/socca)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat-square)](https://www.python.org/downloads/)
-[![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg?style=flat-square)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat-square)](https://github.com/astral-sh/ruff)
-[![CI](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/ci.yml?style=flat-square&label=CI)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/docs.yml?style=flat-square&label=docs)](https://lucadimascolo.github.io/socca)<br/>
-[![JAX](https://img.shields.io/badge/accelerated%20by-JAX-923CAA?style=flat-square)](https://docs.jax.dev/en/latest/index.html)
-[![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat-square)](http://www.astropy.org/)
+[![GitHub](https://img.shields.io/badge/GitHub-lucadimascolo%2Fsocca-blue.svg?style=flat)](https://github.com/lucadimascolo/socca)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat)](https://www.python.org/downloads/)
+[![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg?style=flat)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat)](https://github.com/astral-sh/ruff)
+[![CI](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/ci.yml?style=flat&label=CI)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/docs.yml?style=flat&label=docs)](https://lucadimascolo.github.io/socca)<br/>
+[![JAX](https://img.shields.io/badge/accelerated%20by-JAX-923CAA?style=flat)](https://docs.jax.dev/en/latest/index.html)
+[![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 
 <br/>
 
