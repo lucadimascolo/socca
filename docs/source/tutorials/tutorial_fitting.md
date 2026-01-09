@@ -120,6 +120,20 @@ When `usebest=True` (default), the model is computed using the weighted median o
 
 For the optimizer method, `getmodel()` uses the optimal parameters found during optimization (`fit.results.x`), regardless of the `usebest` setting.
 
+### Saving the model to FITS
+
+To save the best-fit model directly to a FITS file with preserved WCS information. For instance, to save the raw model:
+
+```python
+>>> fit.savemodel('raw_model.fits', what='raw')
+Generating raw model
+Saved to raw_model.fits
+```
+
+The `savemodel()` method accepts the same arguments as `getmodel()` (such as `what`, `usebest`, `doresp`, `doexp`), and writes the resulting model image to a FITS file with the WCS header from the input image.
+
+When saving a single model type, the FITS header includes a `MODEL` keyword indicating it. When saving multiple types as a list, the output is a multi-slice FITS file with header keywords `NSLICES` (total number of slices) and `SLICE1`, `SLICE2`, etc. identifying the specific model in each slice.
+
 ## Checkpointing and resuming
 
 All sampling methods support saving the sampler state during the run, allowing interrupted runs to be resumed:
