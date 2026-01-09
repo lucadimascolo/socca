@@ -40,7 +40,7 @@ As mentioned above, **``socca``** uses the image itself to estimate the noise pr
 
 ## Defining a model
 
-The next step is to define a model for the astronomical source(s) we want to fit.  
+The next step is to define a model for the astronomical source(s) we want to fit.
 The basic building blocks of any model in **``socca``** are individual modular components, which can be combined linearly to describe the complex morphology of astronomical sources.
 
 ### Point source
