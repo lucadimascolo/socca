@@ -116,7 +116,10 @@ class Normal:
                 sigma = np.sqrt(sigma)
             elif self.select in self.options["wht"]:
                 self.mask.at[sigma == 0.00].set(0)
-                sigma = 1.00 / np.sqrt(sigma)
+                if isinstance(sigma, (float, int)) and sigma != 0.00:
+                    sigma = 1.00 / np.sqrt(sigma)
+                else:
+                    sigma[sigma != 0.00] = 1.00 / np.sqrt(sigma[sigma != 0.00])
             elif self.select not in self.options["sig"]:
                 raise ValueError("Unrecognized noise identifier")
 
