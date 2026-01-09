@@ -5,7 +5,7 @@
 [![CI](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml/badge.svg)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
 [![Docs](https://github.com/lucadimascolo/socca/actions/workflows/docs.yml/badge.svg)](https://lucadimascolo.github.io/socca)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![JAX](https://img.shields.io/badge/JAX-enabled-orange)](https://docs.jax.dev/en/latest/index.html)
+[![JAX](https://img.shields.io/badge/accelerated%20by-JAX-923CAA)](https://docs.jax.dev/en/latest/index.html)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 
 
