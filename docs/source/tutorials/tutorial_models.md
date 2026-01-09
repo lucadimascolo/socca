@@ -21,6 +21,7 @@ A quick list of all available model components can be obtained by calling the `z
 Beta
 gNFW
 Sersic
+Gaussian
 Exponential
 PolyExponential
 PolyExpoRefact
@@ -143,7 +144,7 @@ $$
 
 where $r_e$ is the effective radius enclosing half of the total flux, $I_e$ is the surface brightness at $r_e$, and $n$ is the Sérsic index controlling the concentration of the profile. The constant $b_n$ is defined such that $\Gamma(2n) = 2\gamma(2n, b_n)$, where $\Gamma$ and $\gamma$ are the complete and incomplete Gamma functions, respectively. For computational efficiency, the value of $b_n$ is interpolated at each step of the inference from a precomputed lookup table covering the range $n \in [0.25, 10]$.
 
-The Sérsic profile encompasses several commonly used models as special cases, including the Guassian ($n=0.5$),the exponential ($n = 1$), and the de Vaucouleurs ($n = 4$) profiles.
+The Sérsic profile encompasses several commonly used models as special cases, including the Gaussian ($n=0.5$), the exponential ($n = 1$), and the de Vaucouleurs ($n = 4$) profiles.
 
 ```python
 >>> from socca.models import Sersic
@@ -162,6 +163,31 @@ Ie  [image] : None       | Surface brightness at re
 ns       [] : 5.0000E-01 | Sersic index
 ```
 
+#### Gaussian
+The `Gaussian` class implements a Gaussian surface brightness profile. The functional form of the profile is given by:
+
+$$
+I(r) = I_s \exp\left\{-\frac{1}{2}\left(\frac{r}{r_s}\right)^2\right\},
+$$
+
+where $I_s$ is the central surface brightness and $r_s$ is the scale radius (standard deviation of the Gaussian). The Gaussian profile is equivalent to a Sérsic profile with Sérsic index $n = 0.5$. The half-width at half-maximum (HWHM) is approximately $1.177 \, r_s$. Still, it is provided as a separate component for computational convenience and efficiency.
+
+```python
+>>> from socca.models import Gaussian
+>>> comp = Gaussian()
+>>> comp.parameters()
+
+Model parameters
+================
+xc    [deg] : None       | Right ascension of centroid
+yc    [deg] : None       | Declination of centroid
+theta [rad] : 0.0000E+00 | Position angle (east from north)
+e        [] : 0.0000E+00 | Projected axis ratio
+cbox     [] : 0.0000E+00 | Projected boxiness
+rs    [deg] : None       | Scale radius
+Is  [image] : None       | Central surface brightness
+```
+
 #### Exponential
 The `Exponential` class implements a simple exponential surface brightness profile, commonly used to describe galactic disks and other extended systems with smoothly declining radial profiles:
 
@@ -169,7 +195,7 @@ $$
 I(r) = I_s \exp\left(-\frac{r}{r_s}\right),
 $$
 
-where $I_s$ is the central surface brightness and $r_s$ is the exponential scale radius. The exponential profile is equivalent to a Sérsic profile with Sérsic index $n = 1$, $I_e=I_s \exp\left({-b_{1}}\right)$, and $r_e = b_{1} r_s$, where $b_{1} \approx 1.67835$. Still, this is implemented as a separate component for convenience and computational efficiency.
+where $I_s$ is the central surface brightness and $r_s$ is the exponential scale radius. The exponential profile is equivalent to a Sérsic profile with Sérsic index $n = 1$, $I_e=I_s \exp\left({-b_{1}}\right)$, and $r_e = b_{1} r_s$, where $b_{1} \approx 1.67835$. As for `Gaussian`, this is implemented as a separate component for convenience.
 
 ```python
 >>> from socca.models import Exponential
