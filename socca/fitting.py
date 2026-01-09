@@ -9,22 +9,24 @@ import numpy as np
 import numpyro
 import numpyro.distributions
 
+import dynesty
+import nautilus
+import pocomc
+import scipy.special
+import scipy.optimize
+
 from .priors import pocomcPrior
 from .plotting import Plotter
 
-import dill
-import dynesty
-import glob
 import inspect
-import nautilus
+import dill
+import glob
 import os
-import pocomc
 import time
 import warnings
 from pathlib import Path
 
-import scipy.special
-import scipy.optimize
+from astropy.io import fits
 
 
 # Support functions
@@ -323,6 +325,9 @@ class fitter:
         sampler_methods = {
             "dynesty": self._run_dynesty,
             "nautilus": self._run_nautilus,
+            "pocomc": self._run_pocomc,
+            "optimizer": self._run_optimizer,
+            "numpyro": self._run_numpyro,
         }
 
         self.logz_prior = None
@@ -700,8 +705,12 @@ class fitter:
             kwargs.pop("save_every", 10) if checkpoint is not None else None
         )
 
-        pocodir = "{0}_pocomc_dump".format(
-            checkpoint.replace(".hdf5", "").replace(".h5", "")
+        pocodir = (
+            "{0}_pocomc_dump".format(
+                checkpoint.replace(".hdf5", "").replace(".h5", "")
+            )
+            if checkpoint is not None
+            else None
         )
 
         nlive = 1000
@@ -751,7 +760,8 @@ class fitter:
         self.sampler.run(
             save_every=save_every,
             resume_state_path=states_[-1] if len(states_) else None,
-            progress=True**run_kwargs,
+            progress=True,
+            **run_kwargs,
         )
 
         self.samples, self.logw, _, _ = self.sampler.posterior()
@@ -1115,6 +1125,30 @@ class fitter:
         posterior samples to compute the median model, which can be
         computationally expensive for large sample sets.
         """
+        # Normalize component names for display
+        name_map = {
+            "raw": "raw",
+            "smo": "smoothed",
+            "smooth": "smoothed",
+            "smoothed": "smoothed",
+            "conv": "convolved",
+            "convolved": "convolved",
+            "bkg": "background",
+            "background": "background",
+            "all": "all",
+        }
+
+        if isinstance(what, str):
+            label = name_map.get(what.lower(), what)
+            print(f"Generating {label} model")
+        else:
+            labels = [name_map.get(w.lower(), w) for w in what]
+            if len(labels) == 2:
+                print(f"Generating {' and '.join(labels)} models")
+            else:
+                print(
+                    f"Generating {', '.join(labels[:-1])} and {labels[-1]} models"
+                )
 
         def gm(pp):
             return self.mod.getmodel(
@@ -1198,6 +1232,90 @@ class fitter:
                 raise ValueError(f"Unknown model component: {w}")
 
         return mout if len(mout) > 1 else mout[0]
+
+    #   Save best-fit/median model to file
+    #   --------------------------------------------------------
+    def savemodel(self, name, **kwargs):
+        """
+        Save best-fit or median model to a FITS file.
+
+        Generates a model image using `getmodel()` and writes it to a
+        FITS file with the WCS header from the input image preserved.
+
+        Parameters
+        ----------
+        name : str or Path
+            Output FITS filename. The '.fits' extension is added
+            automatically if not present.
+        **kwargs : dict
+            Additional keyword arguments passed to `getmodel()`.
+            Common options include:
+
+            - what : str, optional
+                Model component to save. Default is 'convolved'.
+                Options: 'raw', 'convolved'/'smoothed', 'background'.
+            - usebest : bool, optional
+                If True (default), use weighted median parameters.
+                If False, compute median of model realizations.
+            - doresp : bool, optional
+                Apply response correction. Default is False.
+            - doexp : bool, optional
+                Apply exposure map. Default is False.
+
+        See Also
+        --------
+        getmodel : Generate model images from posterior samples.
+        dump : Save entire fitter object to pickle file.
+
+        Examples
+        --------
+        >>> # Save the PSF-convolved model
+        >>> fit.savemodel('best_fit_model.fits')
+        >>>
+        >>> # Save the raw (unconvolved) model
+        >>> fit.savemodel('raw_model.fits', what='raw')
+        >>>
+        >>> # Save model computed by marginalizing over samples
+        >>> fit.savemodel('median_model.fits', usebest=False)
+        >>>
+        >>> # Save multiple components as a multi-slice FITS
+        >>> fit.savemodel('all_components.fits', what=['raw', 'convolved'])
+        """
+        what = kwargs.pop("what", "convolved")
+        mod = self.getmodel(what=what, **kwargs)
+
+        # Normalize component names for header
+        name_map = {
+            "raw": "raw",
+            "smo": "smoothed",
+            "smooth": "smoothed",
+            "smoothed": "smoothed",
+            "conv": "convolved",
+            "convolved": "convolved",
+            "bkg": "background",
+            "background": "background",
+            "all": "all",
+        }
+
+        header = self.img.wcs.to_header()
+
+        if isinstance(what, list):
+            data = np.array([np.array(m) for m in mod])
+            header["NSLICES"] = (len(what), "Number of model slices")
+            for i, w in enumerate(what):
+                label = name_map.get(w.lower(), w)
+                header[f"SLICE{i+1}"] = (
+                    label,
+                    f"Model component in slice {i}",
+                )
+        else:
+            data = np.array(mod)
+            label = name_map.get(what.lower(), what)
+            header["MODEL"] = (label, "Model component")
+
+        hdu = fits.PrimaryHDU(data=data, header=header)
+        hdu.writeto(name, overwrite=True)
+        print(f"Saved to {name}")
 
 
 #   Load results
