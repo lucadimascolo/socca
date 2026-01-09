@@ -30,10 +30,6 @@ ISSUE_URL = (
     + "?assignees=&labels=&projects=&template={}.md&title="
 )
 
-# html_theme = "sphinxawesome_theme"
-# html_theme = "breeze"
-# html_theme = "sphinx_book_theme"
-# html_theme = "shibuya"
 html_theme = "furo"
 
 html_static_path = ["_static"]
