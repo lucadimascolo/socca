@@ -35,6 +35,7 @@ def zoo():
     - Beta: Beta profile (power-law density)
     - gNFW: Generalized Navarro-Frenk-White profile
     - Sersic: Sersic profile for elliptical galaxies
+    - Gaussian: Gaussian profile
     - Exponential: Exponential disk profile
     - PolyExponential: Polynomial-exponential profile
     - PolyExpoRefact: Refactored polynomial-exponential profile
@@ -50,6 +51,7 @@ def zoo():
     Beta
     gNFW
     Sersic
+    Gaussian
     Exponential
     PolyExponential
     PolyExpoRefact
@@ -62,6 +64,7 @@ def zoo():
         "Beta",
         "gNFW",
         "Sersic",
+        "Gaussian",
         "Exponential",
         "PolyExponential",
         "PolyExpoRefact",
@@ -280,7 +283,9 @@ class Model:
             for key in keyout:
                 keylen = maxlen - len(f" [{self.units[key]}]")
                 par = self.priors[key]
-                if isinstance(par, numpyro.distributions.Distribution):
+                if par is None:
+                    keyval = None
+                elif isinstance(par, numpyro.distributions.Distribution):
                     keyval = f"Distribution: {par.__class__.__name__}"
                 elif isinstance(par, (types.LambdaType, types.FunctionType)):
                     keyval = "Tied parameter"
@@ -739,11 +744,19 @@ class Component:
             print("=" * 16)
             for key in keyout:
                 keylen = maxlen - len(f" [{self.units[key]}]")
-                keyval = (
-                    None
-                    if self.__dict__[key] is None
-                    else f"{self.__dict__[key]:.4E}"
-                )
+                keypar = self.__dict__[key]
+
+                if keypar is None:
+                    keyval = None
+                elif isinstance(keypar, numpyro.distributions.Distribution):
+                    keyval = f"Distribution: {keypar.__class__.__name__}"
+                elif isinstance(
+                    keypar, (types.LambdaType, types.FunctionType)
+                ):
+                    keyval = "Tied keyparameter"
+                else:
+                    keyval = f"{keypar:.4E}"
+
                 print(
                     f"{key:<{keylen}} [{self.units[key]}] : "
                     + f"{keyval}".ljust(10)
@@ -1455,11 +1468,86 @@ class Sersic(Profile):
         return Ie * jp.exp(-bn * se)
 
 
+# Gaussian
+# --------------------------------------------------------
+class Gaussian(Profile):
+    """
+    Gaussian surface brightness profile.
+
+    The Gaussian profile describes a surface brightness distribution that
+    follows a Gaussian function of radius: I(r) = Is * exp(-0.5 * (r/rs)^2).
+    This profile is equivalent to a Sérsic profile with index n=0.5.
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Initialize a Gaussian profile component.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Keyword arguments including:
+
+            rs : float, optional
+                Scale radius (standard deviation) in degrees.
+            Is : float, optional
+                Central surface brightness (same units as image).
+            xc, yc : float, optional
+                Centroid coordinates (inherited from Profile).
+            theta : float, optional
+                Position angle in radians (inherited from Profile).
+            e : float, optional
+                Projected axis ratio (inherited from Profile).
+            cbox : float, optional
+                Projected boxiness (inherited from Profile).
+        """
+        super().__init__(**kwargs)
+        self.rs = kwargs.get("rs", config.Gaussian.rs)
+        self.Is = kwargs.get("Is", config.Gaussian.Is)
+
+        self.units.update(dict(rs="deg", Is="image"))
+        self.description.update(
+            dict(rs="Scale radius", Is="Central surface brightness")
+        )
+
+    @staticmethod
+    @jax.jit
+    def profile(r, Is, rs):
+        """
+        Gaussian surface brightness distribution.
+
+        Parameters
+        ----------
+        r : ndarray
+            Elliptical radius in degrees.
+        Is : float
+            Central surface brightness (same units as image).
+        rs : float
+            Scale radius (standard deviation) in degrees.
+
+        Returns
+        -------
+        ndarray
+            Surface brightness at radius r.
+
+        Notes
+        -----
+        The Gaussian profile is defined as:
+
+        I(r) = Is * exp(-0.5 * (r / rs)^2)
+
+        This is equivalent to a Sérsic profile with n=0.5. The scale radius
+        rs corresponds to the standard deviation of the Gaussian, and the
+        half-width at half-maximum (HWHM) is approximately 1.177 * rs.
+        """
+        return Is * jp.exp(-0.50 * (r / rs) ** 2)
+
+
 # Exponential profile
 # --------------------------------------------------------
 class Exponential(Profile):
     """
-    Exponential disk profile for modeling disk galaxies and spiral arms.
+    Exponential disk profile.
 
     The exponential profile (Sersic index n=1) is the standard model for disk
     galaxies. It describes a surface brightness distribution that decays
