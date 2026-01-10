@@ -9,13 +9,94 @@ import os
 import warnings
 
 import corner
-import aplpy
 
-from astropy.io import fits
+from astropy.wcs.utils import wcs_to_celestial_frame
+from astropy.coordinates import (
+    ICRS,
+    FK5,
+    FK4,
+    Galactic,
+    HeliocentricTrueEcliptic,
+    BarycentricTrueEcliptic,
+    BaseEclipticFrame,
+)
 from astropy.visualization import ImageNormalize
 
 matplotlib.rcParams["font.family"] = "sans-serif"
 matplotlib.rcParams["font.sans-serif"] = ["Helvetica"]
+
+
+# Get axis labels from WCS frame
+# Adapted from aplpy
+# --------------------------------------------------------
+def getframe(wcs):
+    """
+    Get axis labels from a WCS object based on its celestial frame.
+
+    Parameters
+    ----------
+    wcs : astropy.wcs.WCS
+        WCS object to extract frame information from.
+
+    Returns
+    -------
+    xtext : str
+        Label for the x-axis (e.g., 'RA (ICRS)', 'Galactic Longitude').
+    ytext : str
+        Label for the y-axis (e.g., 'Dec (ICRS)', 'Galactic Latitude').
+    """
+    frame = wcs_to_celestial_frame(wcs)
+    if isinstance(frame, ICRS):
+        xtext = "RA (ICRS)"
+        ytext = "Dec (ICRS)"
+    elif isinstance(frame, FK5):
+        equinox = "{:g}".format(frame.equinox.jyear)
+        xtext = "RA (J{0})".format(equinox)
+        ytext = "Dec (J{0})".format(equinox)
+    elif isinstance(frame, FK4):
+        equinox = "{:g}".format(frame.equinox.byear)
+        xtext = "RA (B{0})".format(equinox)
+        ytext = "Dec (B{0})".format(equinox)
+    elif isinstance(frame, Galactic):
+        xtext = "Galactic Longitude"
+        ytext = "Galactic Latitude"
+
+    elif isinstance(
+        frame,
+        (HeliocentricTrueEcliptic, BarycentricTrueEcliptic, BaseEclipticFrame),
+    ):
+        xtext = "Ecliptic Longitude"
+        ytext = "Ecliptic Latitude"
+    else:
+        cunit_x = wcs.wcs.cunit[0]
+        cunit_y = wcs.wcs.cunit[1]
+
+        cname_x = wcs.wcs.cname[0]
+        cname_y = wcs.wcs.cname[1]
+
+        ctype_x = wcs.wcs.ctype[0]
+        ctype_y = wcs.wcs.ctype[1]
+
+        xunit = " (%s)" % cunit_x if cunit_x not in ["", None] else ""
+        yunit = " (%s)" % cunit_y if cunit_y not in ["", None] else ""
+
+        if len(cname_x) > 0:
+            xtext = cname_x + xunit
+        else:
+            if len(ctype_x) == 8 and ctype_x[4] == "-":
+                xtext = ctype_x[:4].replace("-", "") + xunit
+            else:
+                xtext = ctype_x + xunit
+
+        if len(cname_y) > 0:
+            ytext = cname_y + yunit
+        else:
+            if len(ctype_y) == 8 and ctype_y[4] == "-":
+                ytext = ctype_y[:4].replace("-", "") + yunit
+            else:
+                ytext = ctype_y + yunit
+
+    return xtext, ytext
 
 
 # Plotting utilities
@@ -40,8 +121,8 @@ class Plotter:
         """
         self.fit = fit
 
-    #   Corner plot of the posterior samples
-    #   --------------------------------------------------------
+    # Corner plot of the posterior samples
+    # --------------------------------------------------------
     def corner(
         self,
         name=None,
@@ -166,8 +247,8 @@ class Plotter:
             plt.savefig(f"{name}.{fmt}", format=fmt, dpi=300)
         plt.close()
 
-    #   Comparison plot: data, model, residuals
-    #   --------------------------------------------------------
+    # Comparison plot: data, model, residuals
+    # --------------------------------------------------------
     def comparison(
         self,
         name=None,
@@ -239,12 +320,12 @@ class Plotter:
         figsize = (fx * 504.00 / dpi, fy * 504.00 / dpi)
 
         _gs_kwargs = dict(
-            hspace=0.475,
+            top=0.95,
+            hspace=0.425,
             height_ratios=[1.00, 0.05],
             wspace=0.245,
             width_ratios=[1.00, 1.00, 1.00],
             bottom=0.130,
-            top=0.995,
             left=0.105,
             right=1.000 - 0.105,
         )
@@ -267,17 +348,11 @@ class Plotter:
             right=_gs_kwargs.get("right"),
         )
 
-        axs = [fig.add_subplot(gs[0, gi]) for gi in range(3)]
-        axs = [a.get_position() for a in axs]
-        axs = [[a.x0, a.y0, a.width, a.width * fx / fy] for a in axs]
-
+        axs = [
+            fig.add_subplot(gs[0, gi], projection=self.fit.img.wcs)
+            for gi in range(3)
+        ]
         bxs = [fig.add_subplot(gs[1, :2]), fig.add_subplot(gs[1, 2])]
-
-        bxs = [a.get_position() for a in bxs]
-        bxs = [[a.x0, a.y0, a.width, a.height] for a in bxs]
-        plt.close()
-
-        fig = plt.figure(figsize=figsize, constrained_layout=False)
 
         titles = ["Data", "Model", "Residuals"]
 
@@ -322,26 +397,30 @@ class Plotter:
 
             norm = ImageNormalize(vmin=vmin, vmax=vmax)
 
-            hdu = fits.PrimaryHDU(m, header=self.fit.img.hdu.header)
-            out = aplpy.FITSFigure(hdu, figure=fig, subplot=axs[mi])
-            out.show_colorscale(cmap=cmap, vmin=vmin, vmax=vmax)
-            out.image.set_norm(norm)
+            axs[mi].imshow(m, origin="lower", cmap=cmap, norm=norm)
 
-            if mi > 0:
-                out.tick_labels.hide_y()
-                out.axis_labels.hide_y()
+            axs[mi].set_title(titles[mi], pad=10.00, fontsize=11)
+
+            axs[mi].coords[0].display_minor_ticks(True)
+            axs[mi].coords[1].display_minor_ticks(True)
+
+            axs[mi].coords[0].set_ticklabel(size=9)
+            axs[mi].coords[1].set_ticklabel(size=9)
+
+            xlabel, ylabel = getframe(self.fit.img.wcs)
+
+            axs[mi].coords[0].set_axislabel(xlabel)
+            axs[mi].coords[1].set_axislabel(ylabel)
 
             if mi in [0, 2]:
-                bax = fig.add_axes(bxs[0 if mi == 0 else 1])
+                bax = bxs[0 if mi == 0 else 1]
                 cbar = matplotlib.colorbar.ColorbarBase(
                     bax, cmap=cmap, norm=norm, orientation="horizontal"
                 )
-
                 cbar.set_label("Surface brightness [input units]", fontsize=11)
 
-            out.set_title(titles[mi], pad=10.00, fontsize=11)
-
-            out.tick_labels.set_font(size=9)
+        axs[1].coords[1].set_ticklabel_visible(False)
+        axs[2].coords[1].set_ticklabel_visible(False)
 
         root, ext = os.path.splitext(name)
         if ext.lower() == f".{fmt.lower()}":
