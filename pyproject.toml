@@ -34,6 +34,7 @@ dependencies = [
     "dynesty",
     "nautilus-sampler",
     "pocomc",
+    "aplpy",
     "corner",
     "dill",
     "h5py"
