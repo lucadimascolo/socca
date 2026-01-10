@@ -421,7 +421,7 @@ class Image:
             )
 
         noise_kwargs = list(inspect.signature(self.noise).parameters.keys())
-        noise_kwargs = {k: eval(f"self.{k}") for k in noise_kwargs}
+        noise_kwargs = {k: getattr(self, k) for k in noise_kwargs}
         self.noise(**noise_kwargs)
         self.mask = self.noise.mask.copy()
 
