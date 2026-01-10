@@ -210,7 +210,8 @@ class fitter:
 
         xs = xs.at[self.mask].get()
         xr = xr.at[self.mask].get()
-        pdf = self.pdfnoise(**{key: eval(key) for key in self.pdfkwarg})
+        local_vars = {"xs": xs, "xr": xr}
+        pdf = self.pdfnoise(**{key: local_vars[key] for key in self.pdfkwarg})
         return jp.where(jp.any(neg.at[self.mask].get() == 1), -jp.inf, pdf)
 
     #   Prior probability distribution
@@ -333,18 +334,25 @@ class fitter:
         self.logz_prior = None
 
         if self.method in sampler_methods:
-            sampler_kwargs = list(
+            local_vars = {
+                "log_likelihood": log_likelihood,
+                "log_prior": log_prior,
+                "prior_transform": prior_transform,
+                "checkpoint": checkpoint,
+                "resume": resume,
+                "getzprior": getzprior,
+            }
+            sampler_params = list(
                 inspect.signature(
                     sampler_methods[self.method]
                 ).parameters.keys()
             )
-            sampler_kwargs = [
-                {key: eval(key) for key in sampler_kwargs if key != "kwargs"},
-                eval("kwargs"),
-            ]
-            sampler_methods[self.method](
-                **sampler_kwargs[0], **sampler_kwargs[1]
-            )
+            sampler_kwargs = {
+                key: local_vars[key]
+                for key in sampler_params
+                if key != "kwargs"
+            }
+            sampler_methods[self.method](**sampler_kwargs, **kwargs)
         else:
             raise ValueError(f"Unknown sampling method: {self.method}")
 
