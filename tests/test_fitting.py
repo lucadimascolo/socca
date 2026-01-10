@@ -98,7 +98,10 @@ class TestFitter:
 
     def test_get_model(self, simple_fitter):
         """Test _get_model method."""
-        pp = [simple_fitter.img.hdu.header["CRVAL1"]]
+        pp = [
+            simple_fitter.img.hdu.header["CRVAL1"],
+            simple_fitter.img.hdu.header["CRVAL2"],
+        ]
         result = simple_fitter._get_model(pp)
         assert len(result) == 4
         mraw, msmo, mbkg, mneg = result
@@ -107,13 +110,23 @@ class TestFitter:
 
     def test_log_likelihood_returns_scalar(self, simple_fitter):
         """Test that _log_likelihood returns a scalar."""
-        pp = jp.array([simple_fitter.img.hdu.header["CRVAL1"]])
+        pp = jp.array(
+            [
+                simple_fitter.img.hdu.header["CRVAL1"],
+                simple_fitter.img.hdu.header["CRVAL2"],
+            ]
+        )
         logL = simple_fitter._log_likelihood(pp)
         assert jp.isscalar(logL) or logL.shape == ()
 
     def test_log_likelihood_finite(self, simple_fitter):
         """Test that log-likelihood is finite for valid parameters."""
-        pp = jp.array([simple_fitter.img.hdu.header["CRVAL1"]])
+        pp = jp.array(
+            [
+                simple_fitter.img.hdu.header["CRVAL1"],
+                simple_fitter.img.hdu.header["CRVAL2"],
+            ]
+        )
         logL = simple_fitter._log_likelihood(pp)
         assert jp.isfinite(logL)
 
@@ -133,8 +146,10 @@ class TestFitter:
 
     def test_log_prior(self, simple_fitter):
         """Test _log_prior method."""
-        label = simple_fitter.labels[0]
-        theta = {label: simple_fitter.img.hdu.header["CRVAL1"]}
+        theta = {
+            simple_fitter.labels[0]: simple_fitter.img.hdu.header["CRVAL1"],
+            simple_fitter.labels[1]: simple_fitter.img.hdu.header["CRVAL2"],
+        }
         log_prob = simple_fitter._log_prior(theta)
         assert jp.isfinite(log_prob)
 
