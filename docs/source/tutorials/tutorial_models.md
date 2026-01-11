@@ -336,7 +336,7 @@ $$
 I(r) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} s(R) \, h(R,z) \, \mathrm{d}l,
 $$
 
-where $R$ and $z$ are the cylindrical coordinates in the disk frame, while $r$ and $l$ denote the projected radius and line-of-sight coordinate in the observer frame, respectively. The transformation between the two coordinate systems depends on the inclination angle of the disk with respect to the line-of-sight direction. A detailed discussion of the coordinate transformations involved in this calculation can be found in van Asselt et al. (2025).
+where $R$ and $z$ are the cylindrical coordinates in the disk frame, while $r$ and $l$ denote the projected radius and line-of-sight coordinate in the observer frame, respectively. The transformation between the two coordinate systems depends on the inclination angle of the disk with respect to the line-of-sight direction. A detailed discussion of the coordinate transformations involved in this calculation can be found in [van Asselt et al. (2026)](https://scixplorer.org/abs/2026arXiv260103339V).
 
 ```python
 >>> from socca.models import Disk
