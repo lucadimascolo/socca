@@ -4,5 +4,5 @@
 
 If you are unsure where to start, opening an issue on the [GitHub issue tracker](https://github.com/lucadimascolo/socca/issues/new) or a [discussion thread](https://github.com/lucadimascolo/socca/discussions/new) to share ideas or ask questions is always encouraged.
 
-We are committed to fostering an open, collaborative, and inclusive scientific environment. To help maintain a constructive, respectful, and welcoming community, contributors are expected to
+The authors of **``socca``** are committed to fostering an open, collaborative, and inclusive scientific environment. To help maintain a constructive, respectful, and welcoming community, contributors are expected to
 adhere to the project’s [Code of Conduct](https://github.com/lucadimascolo/socca/blob/main/CODE_OF_CONDUCT.md).
