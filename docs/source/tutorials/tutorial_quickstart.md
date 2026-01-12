@@ -2,10 +2,18 @@
 
 This quickstart will walk you through a minimal end-to-end example of how to use **``socca``** to model an astronomical image. In this specific example, we will model a simulated toy image of a disk-like galaxy using a model comprising a Sérsic component and a point source.
 
-```{image} ../_static/figures/tutorial_mock.png
+```{image} ../_static/figures/tutorial_mock_light.png
 :alt: Image of a mock galaxy, comprising a Sérsic component and a point source.
 :width: 70%
 :align: center
+:class: only-light
+```
+
+```{image} ../_static/figures/tutorial_mock_dark.png
+:alt: Image of a mock galaxy, comprising a Sérsic component and a point source.
+:width: 70%
+:align: center
+:class: only-dark
 ```
 
 You can access all the files you need to run this tutorial [here](https://github.com/lucadimascolo/socca/tree/doc/data/tutorial).
@@ -26,7 +34,7 @@ As a first step, we build the data structure. The first element to define is the
 >>> noise = socca.noise.Normal()
 ```
 
-When no arguments are passed, `Normal` is configured to infer the standard deviation of the noise distribution directly from the input image. This estimate is based on the median absolute deviation of the pixel values. It is also possible to manually specify the standard deviation, variance, or inverse variance (i.e. weight) of the distribution, either as constant values across the image or by providing a corresponding map (see the ["Noise models"](./tutorial_noise.md) documentation page for more details).
+When no arguments are passed, `Normal` is configured to infer the standard deviation of the noise distribution directly from the input image. This estimate is based on the median absolute deviation of the pixel values. It is also possible to manually specify the standard deviation, variance, or inverse variance (i.e. weight) of the distribution, either as constant values across the image or by providing a corresponding map (see the "[Noise models](./tutorial_noise.md)" documentation page for more details).
 
 We are now ready to load the image (and let **``socca``** handle much of the associated bookkeeping):
 
@@ -71,7 +79,7 @@ As shown above, the `Point` model is described by a total of three parameters. T
 >>> point.Ic = socca.priors.loguniform(low = 1.00E-02, high = 1.00E+02)
 ```
 
-Here we assign uniform priors to the centroid coordinates, centred for convenience on the reference coordinates of the input image. The intensity parameter is instead assigned a log-uniform prior, allowing the sampler to efficiently explore several orders of magnitude. For a more extensive overview of the available prior distributions, see the ["Priors and constraints"](./tutorial_priors.md) documentation page.
+Here we assign uniform priors to the centroid coordinates, centred for convenience on the reference coordinates of the input image. The intensity parameter is instead assigned a log-uniform prior, allowing the sampler to efficiently explore several orders of magnitude. For a more extensive overview of the available prior distributions, see the "[Priors and constraints](./tutorial_priors.md)" documentation page.
 
 For the point source component, we are now done. We can move on to the Sérsic component.
 
@@ -118,7 +126,7 @@ Since no prior or value is assigned to `cbox`, it remains fixed at its default v
 
 
 ```{seealso}
-Many other components are available in the `socca.models` module. Please refer to the ["Available model components"](./tutorial_models.md) documentation page for a complete overview of all the implemented models. The collection is continuously growing to accomodate all the potential use cases, and new components will be added in future releases of **``socca``**.
+Many other components are available in the `socca.models` module. Please refer to the "[Available model components](./tutorial_models.md)" documentation page for a complete overview of all the implemented models. The collection is continuously growing to accomodate all the potential use cases, and new components will be added in future releases of **``socca``**.
 ```
 
 ### Building a composite model
@@ -185,10 +193,18 @@ The results are dumped into a `pickle` file (via `dill`), in order to de-seriali
 >>> fit.plot.comparison()
 ```
 
-```{image} ../_static/figures/tutorial_comparison.png
+```{image} ../_static/figures/tutorial_comparison_light.png
 :alt: Comparison plot showing the data, model, and residuals for the fitted galaxy.
 :width: 100%
 :align: center
+:class: only-light
+```
+
+```{image} ../_static/figures/tutorial_comparison_dark.png
+:alt: Comparison plot showing the data, model, and residuals for the fitted galaxy.
+:width: 100%
+:align: center
+:class: only-dark
 ```
 
 ```{note}
@@ -205,6 +221,14 @@ Additionally, it is possible to generate a corner plot of the posterior distribu
 :alt: Corner plot showing the posterior distributions of the model parameters.
 :width: 100%
 :align: center
+:class: only-light
+```
+
+```{image} ../_static/figures/tutorial_corner_dark.png
+:alt: Corner plot showing the posterior distributions of the model parameters.
+:width: 100%
+:align: center
+:class: only-dark
 ```
 
 This is mostly a simple wrapper around [corner.py](https://github.com/dfm/corner.py) that automatically configures the labels and ranges based on the model parameters and prior distributions. It is also possible to use it for visualising only a subset of the model components by passing a list of component names to the `comp` argument as a list of strings (e.g. `comp=['comp_00']` to show only the first component added to the model), integer indices (e.g. `comp=[0]`), or directly referring to the individual components (e.g. `comp=[point]`).

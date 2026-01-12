@@ -1,9 +1,9 @@
 # Noise models
 
 In **``socca``**, the likelihood function to be used during the inference process is fully specified by the noise model associated with the input data. This encodes the assumed statistical properties of the noise affecting the observations and therefore plays a central role in defining how model predictions are compared to data themselves. 
-As shown in ["Getting started"](./tutorial_quickstart.md), any noise model should be linked to the input data by passing the noise object to the corresponding `socca.data.Image` instance:
+As shown in "[Getting started](./tutorial_quickstart.md)", any noise model should be linked to the input data by passing the noise object to the corresponding `socca.data.Image` instance:
 ```python
->>> img = Image(...,noise=noise)
+>>> img = Image(..., noise=noise)
 ```
 
 At present, **``socca``** provides a limited but representative set of Gaussian noise models, covering the most common use cases encountered in astronomical imaging and map-based analyses. Below is a brief description of the noise models currently implemented in **``socca``**.

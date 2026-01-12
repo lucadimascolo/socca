@@ -1,5 +1,74 @@
+html {
+  scroll-behavior: smooth;
+}
+
 /* Justify text
 /* ------------------------------------------------------------------------------------- */
 section {
-    text-align: justify;
+    text-align: justify !important;
+}
+
+/* Remove frame around inline code
+/* ------------------------------------------------------------------------------------- */
+code.literal,
+code.docutils.literal.notranslate,
+.highlight-default.notranslate code,
+p code,
+a code {
+    border: none !important;
+}
+
+/* Remove background from inline code inside links
+/* ------------------------------------------------------------------------------------- */
+a code {
+    background: transparent !important;
+    padding: 0 !important;
+    color: var(--color-foreground-primary) !important;
+    font-weight: 700 !important;
+    transition: color 0.2s ease !important;
+}
+
+a:hover code {
+    color: var(--color-brand-primary) !important;
+}
+
+/* Remove background from bold inline code
+/* ------------------------------------------------------------------------------------- */
+strong code {
+    background: transparent !important;
+    padding: 0 !important;
+    color: var(--color-brand-content) !important;
+}
+
+/* Custom link styles
+/* ------------------------------------------------------------------------------------- */
+.content a {
+    color: var(--color-foreground-primary);
+    text-underline-offset: 0.2em;
+    text-decoration-color: var(--color-brand-content);
+    transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.content a:hover {
+    color: var(--color-brand-primary);
+    text-decoration-color: transparent;
+}
+
+/* Theme-specific images
+/* ------------------------------------------------------------------------------------- */
+body[data-theme="dark"] .only-light,
+body[data-theme="light"] .only-dark {
+    display: none !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    body[data-theme="auto"] .only-light {
+        display: none !important;
+    }
+}
+
+@media (prefers-color-scheme: light) {
+    body[data-theme="auto"] .only-dark {
+        display: none !important;
+    }
 }

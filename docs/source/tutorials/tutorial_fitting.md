@@ -271,4 +271,4 @@ The `comp` argument allows selecting which model components to include in the co
 
 Any additional keyword arguments are passed directly to the underlying `corner.corner()` function, allowing full customization of the plot appearance.
 
-See the ["Getting started"](./tutorial_quickstart.md) guide for example outputs of these plotting functions.
+See the "[Getting started](./tutorial_quickstart.md)" guide for example outputs of these plotting functions.

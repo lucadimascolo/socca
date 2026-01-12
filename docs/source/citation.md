@@ -17,20 +17,20 @@ In the coming months, we plan to submit a dedicated paper to the Journal of Open
 
 If you use the `Disk` component in your work, please also consider citing the following paper:
 ```bibtex
-@article{vanAsselt2025,
+@article{vanAsselt2026,
   author = {{van Asselt}, Marloes and {Rizzo}, Francesca and {Di Mascolo}, Luca},
         title = "{Early thin-disc assembly revealed by JWST edge-on galaxies}",
       journal = {arXiv e-prints},
      keywords = {Astrophysics of Galaxies},
          year = {2026},
         month = {1},
-          eid = {arXiv:XXXX.YYYY},
-        pages = {arXiv:XXXX.YYYY},
-          doi = {10.48550/arXiv.XXXX.YYYY},
+          eid = {arXiv:2601.03339},
+        pages = {arXiv:2601.03339},
+          doi = {10.48550/arXiv.2601.03339},
 archivePrefix = {arXiv},
-       eprint = {XXXX.YYYY},
- primaryClass = {astro-ph.CO},
-       adsurl = {https://ui.adsabs.harvard.edu/abs/2026arXivXXXXYYYY},
+       eprint = {2601.03339},
+ primaryClass = {astro-ph.GA},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2026arXiv260103339V},
       adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```

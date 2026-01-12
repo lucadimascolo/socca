@@ -20,7 +20,7 @@ Since **``socca``** relies on WCS information for coordinate transformations, th
 ```
 
 ## Defining the noise properties
-Any `Image` instance must be associated with a noise model, passed via the `noise` argument. This is required to define the likelihood function used during inference. As shown in the ["Noise models"](./tutorial_noise.md) guide, not providing a noise model will default to using a `Normal` noise model with automatically estimated per-pixel standard deviation. Clearly, providing an explicit noise model tailored to the data at hand is strongly recommended. This can be done as follows:
+Any `Image` instance must be associated with a noise model, passed via the `noise` argument. This is required to define the likelihood function used during inference. As shown in the "[Noise models](./tutorial_noise.md)" guide, not providing a noise model will default to using a `Normal` noise model with automatically estimated per-pixel standard deviation. Clearly, providing an explicit noise model tailored to the data at hand is strongly recommended. This can be done as follows:
 
 ```python
 >>> from socca.data import Image

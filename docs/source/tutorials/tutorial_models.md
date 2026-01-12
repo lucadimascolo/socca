@@ -9,7 +9,7 @@ This section provides a brief overview of all the model components currently imp
 >>> # ... add more components as needed ...
 ```
 
-A more extensive example of how to build and fit composite models to imaging data can be found in the ["Getting started"](./tutorial_quickstart.md) tutorial.
+A more extensive example of how to build and fit composite models to imaging data can be found in the "[Getting started](./tutorial_quickstart.md)" tutorial.
 
 ## Available model components
 
@@ -524,7 +524,7 @@ By construction, the `Background` model is not convolved with the instrumental P
 
 ## Obtaining images from models
 Both the `Model` and individual component classes provide a `getmap()` method to generate two-dimensional model images evaluated on a specified coordinate grid.
-This method requires an `Image` object (see the ["Loading data"](./tutorial_data.md) guide) to define the coordinate grid and, optionally, the PSF for convolution. Depending on whether it is called on an individual component or a composite model, the behavior of `getmap()` differs slightly.
+This method requires an `Image` object (see the "[Loading data](./tutorial_data.md)" guide) to define the coordinate grid and, optionally, the PSF for convolution. Depending on whether it is called on an individual component or a composite model, the behavior of `getmap()` differs slightly.
 
 ### Individual components
 For a single model component, the `getmap()` method returns the two-dimensional surface brightness distribution evaluated on the image grid:

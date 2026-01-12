@@ -7,6 +7,8 @@ https://www.sphinx-doc.org/en/master/usage/configuration.html
 import subprocess
 from pathlib import Path
 
+from torch import var
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
@@ -32,8 +34,32 @@ ISSUE_URL = (
 
 html_theme = "furo"
 
+pygments_style = "catppuccin-latte"
+pygments_dark_style = "catppuccin-mocha"
+
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+
+html_theme_options = {
+    "light_css_variables": {
+        "color-brand-primary": "#179299",
+        "color-brand-content": "#179299",
+        "color-brand-visited": "#179299",
+        "color-background-border": "transparent",
+        "color-inline-code-background": "#EFF1F5",
+        "color-sidebar-search-border": "transparent",
+        "color-sidebar-background": "var(--color-background-primary)",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#94E2D5",
+        "color-brand-content": "#94E2D5",
+        "color-brand-visited": "#94E2D5",
+        "color-background-border": "transparent",
+        "color-inline-code-background": "#1E1E2E",
+        "color-sidebar-search-border": "transparent",
+        "color-sidebar-background": "var(--color-background-primary)",
+    },
+}
 
 extensions = [
     "myst_parser",

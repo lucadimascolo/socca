@@ -1,17 +1,15 @@
 # socca
 
 
-<blockquote class="epigraph">
-
-/'sɔka/ *noun*
+```{epigraph}
+/'sɔ.ka/ *noun*
 
 1. A JAX-accelerated Python library for efficiently modelling image-space astronomical data using Bayesian inference.
 
-2. A traditional flatbread made from chickpea flour, water, olive oil, and salt from Nice, France.
-</blockquote>
+2. A delicious flatbread made from chickpea flour, water, olive oil, and salt from Nice, France.
+```
 
 **``socca``** (*Source Characterization using a Composable Analysis*) is a minimal library for efficiently modelling image-space astronomical data. It is intended to be fast and flexible, taking advantage of the [`JAX`](https://github.com/google/jax) framework for performing just-in-time compilation and of state-of-the-art sampling algorithms ([`dynesty`](https://github.com/joshspeagle/dynesty), [`nautilus`](https://github.com/johannesulf/nautilus), [`pocomc`](https://github.com/minaskar/pocomc)) for the posterior exploration.
-
 
 This code is broadly inspired by the excellent [`pysersic`](https://github.com/pysersic/pysersic) and [`astrophot`](https://github.com/Autostronomy/AstroPhot) libraries. Their use is recommended if you require a more mature and thoroughly tested solution. **``socca``** is still in its infancy and many experimental features may undergo significant changes in the future. 
 
