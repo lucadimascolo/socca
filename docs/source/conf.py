@@ -7,8 +7,6 @@ https://www.sphinx-doc.org/en/master/usage/configuration.html
 import subprocess
 from pathlib import Path
 
-from torch import var
-
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
