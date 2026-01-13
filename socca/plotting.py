@@ -241,6 +241,10 @@ class Plotter:
             **kwargs,
         )
 
+        root, ext = os.path.splitext(name)
+        if ext.lower() == f".{fmt.lower()}":
+            name = root
+
         if name is None:
             plt.show()
         else:
