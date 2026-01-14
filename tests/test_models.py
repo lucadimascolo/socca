@@ -176,10 +176,10 @@ class TestComponent:
         assert "Ic" in params
         assert "beta" in params
 
-    def test_addpar(self):
+    def test_addparameter(self):
         """Test adding custom parameter."""
         beta = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5)
-        beta.addpar(
+        beta.addparameter(
             "custom", value=42.0, units="custom_unit", description="Test param"
         )
         assert hasattr(beta, "custom")
