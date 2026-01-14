@@ -11,6 +11,7 @@ import numpyro.distributions
 from . import config
 from .base import Component
 from .misc import Point, Background
+from .disk import Disk
 from .radial import (
     Profile,
     CustomProfile,
