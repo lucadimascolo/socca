@@ -66,7 +66,6 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.mathjax",
     "sphinx_autodoc_typehints",
-    "sphinx.ext.mathjax",
 ]
 
 # Napoleon settings to make attributes explicit

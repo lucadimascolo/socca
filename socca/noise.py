@@ -39,21 +39,22 @@ class Normal:
         Parameters
         ----------
         kwargs : dict
-        Keyword arguments for specifying the noise model.
-        Accepted keywordss (with aliases):
-            - sigma: float or str, optional
+            Keyword arguments for specifying the noise model.
+            Accepted keywords (with aliases):
+
+            - sigma : float or str, optional
                 Standard deviation of the noise. Default is None, in which
                 case the noise level is estimated using the median absolute
                 deviation. Accepted aliases: ``sig``, ``std``, ``rms``,
-                ``stddev``
-            - var: float or str, optional
-                Variance of the noise
-                Accepted aliases: ``var``, ``variance``
-            - wht: float or str, optional
-                Weight (inverse variance) of the noise
+                ``stddev``.
+            - var : float or str, optional
+                Variance of the noise.
+                Accepted aliases: ``var``, ``variance``.
+            - wht : float or str, optional
+                Weight (inverse variance) of the noise.
                 Accepted aliases: ``wht``, ``wgt``, ``weight``,
-                ``weights``, ``invvar``
-            - idx: int, optional
+                ``weights``, ``invvar``.
+            - idx : int, optional
                 HDU index to use when loading noise maps from FITS files.
                 Default is 0.
 
@@ -370,6 +371,7 @@ class NormalFourier:
         Boolean mask indicating which Fourier modes have non-zero noise.
     ftype : str
         Type of Fourier transform to use. Options are:
+
         - 'real' or 'rfft': real-to-complex FFT (for real input data)
         - 'full' or 'fft': complex-to-complex FFT (for complex input data)
     apod : jax.numpy.ndarray
@@ -403,6 +405,7 @@ class NormalFourier:
             of realizations. Used to compute covariance if cov is None.
         ftype : str, optional, default 'real'
             Type of Fourier transform to use. Options are:
+
             - 'real' or 'rfft': real-to-complex FFT (for real input data)
             - 'full' or 'fft': complex-to-complex FFT (for complex input data)
         **kwargs : dict

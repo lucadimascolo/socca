@@ -513,6 +513,7 @@ class Image:
         ----------
         regions : list
             List of regions to be masked. Elements can be:
+
             - str: Path to a region file (DS9/CRTF format)
             - pyregion.Shape: pyregion shape object
             - numpy.ndarray: Binary mask array (1=valid, 0=masked)
@@ -566,6 +567,7 @@ class Image:
         ----------
         img : array_like, fits.HDU, or str
             PSF image input. Can be:
+
             - numpy or jax array: PSF kernel directly
             - fits.ImageHDU or fits.PrimaryHDU: FITS HDU with PSF
             - str: Path to FITS file containing PSF

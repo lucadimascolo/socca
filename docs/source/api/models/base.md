@@ -1,4 +1,4 @@
-# Models
+# socca.models
 
 ```{eval-rst}
 .. automodule:: socca.models

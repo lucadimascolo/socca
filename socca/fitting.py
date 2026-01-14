@@ -400,6 +400,7 @@ class fitter:
         **kwargs : dict
             Additional keyword arguments passed to dynesty.NestedSampler
             and its run_nested method. Common options include:
+
             - nlive : int, number of live points (default: 1000)
             - dlogz : float, stopping criterion (default: 0.01)
 
@@ -526,6 +527,7 @@ class fitter:
         **kwargs : dict
             Additional keyword arguments passed to nautilus.Sampler and
             its run method. Common options include:
+
             - nlive/n_live : int, number of live points (default: 1000)
             - flive/f_live : float, stopping criterion (default: 0.01)
             - discard_exploration : bool, discard exploration phase
@@ -675,6 +677,7 @@ class fitter:
         **kwargs : dict
             Additional keyword arguments passed to pocomc.Sampler and
             its run method. Common options include:
+
             - nlive/n_live/n_effective : int, effective sample size
               (default: 1000)
             - n_active : int, number of active particles
@@ -810,6 +813,7 @@ class fitter:
         **kwargs : dict
             Additional keyword arguments passed to numpyro.infer.NUTS
             and numpyro.infer.MCMC. Common options include:
+
             - n_warmup/nwarmup/num_warmup : int, number of warmup
               iterations (default: 1000)
             - n_samples/nsamples/num_samples : int, number of posterior
@@ -888,6 +892,7 @@ class fitter:
         ----------
         pinits : array_like, str
             Initial parameter values. Can be:
+
             - array_like : specific initial values in parameter space
               (will be transformed to unit hypercube internally)
             - "median" : start from the median of each prior (0.5 in
@@ -896,6 +901,7 @@ class fitter:
         **kwargs : dict
             Additional keyword arguments passed to scipy.optimize.minimize.
             Common options include:
+
             - tol : float, tolerance for termination
             - options : dict, solver-specific options
 
@@ -903,6 +909,7 @@ class fitter:
         --------------
         results : scipy.optimize.OptimizeResult
             Optimization result object containing:
+
             - x : optimal parameters in unit hypercube
             - fun : negative log-likelihood at optimum
             - success : whether optimization succeeded

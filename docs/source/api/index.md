@@ -7,7 +7,7 @@ This section provides detailed documentation of the **`socca`** API, including a
 
 data
 noise
-models
+models/index
 priors
 fitting
 plotting
