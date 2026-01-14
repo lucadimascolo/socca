@@ -63,7 +63,8 @@ class Disk(Component):
 
     Examples
     --------
-    >>> from socca.models import Disk, Exponential, ExponentialHeight
+    >>> from socca.models import Disk, Exponential
+    >>> from socca.models.disk.vertical import ExponentialHeight
     >>> # Create edge-on exponential disk
     >>> radial = Exponential(xc=180.5, yc=45.2, rs=0.02, Is=100)
     >>> vertical = ExponentialHeight(zs=0.002, inc=np.pi/2)
@@ -213,7 +214,8 @@ class Disk(Component):
 
         Examples
         --------
-        >>> from socca.models import Disk, Exponential, ExponentialHeight
+        >>> from socca.models import Disk, Exponential
+        >>> from socca.models.disk.vertical import ExponentialHeight
         >>> import numpy as np
         >>> from socca.data import Image
         >>> radial = Exponential(xc=180.5, yc=45.2, rs=0.02, Is=100)
@@ -388,7 +390,8 @@ class Disk(Component):
 
         Examples
         --------
-        >>> from socca.models import Disk, Exponential, ExponentialHeight
+        >>> from socca.models import Disk, Exponential
+        >>> from socca.models.disk.vertical import ExponentialHeight
         >>> import numpy as np
         >>> radial = Exponential(xc=180.5, yc=45.2, rs=0.02, Is=100)
         >>> vertical = ExponentialHeight(zs=0.002, inc=np.pi/4)
@@ -484,7 +487,8 @@ class Disk(Component):
 
         Examples
         --------
-        >>> from socca.models import Disk, Exponential, ExponentialHeight
+        >>> from socca.models import Disk, Exponential
+        >>> from socca.models.disk.vertical import ExponentialHeight
         >>> radial = Exponential(xc=180.5, yc=45.2, rs=0.02, Is=100)
         >>> vertical = ExponentialHeight(zs=0.002, inc=0.5)
         >>> disk = Disk(radial=radial, vertical=vertical)
