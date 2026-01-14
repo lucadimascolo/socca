@@ -126,7 +126,7 @@ class Plotter:
     def corner(
         self,
         name=None,
-        comp=None,
+        component=None,
         fmt="pdf",
         sigma=10.00,
         edges=None,
@@ -146,8 +146,9 @@ class Plotter:
         name : str, optional
             Output filename (without extension). If None, displays plot
             interactively instead of saving. Default is None.
-        comp : str, int, list, or None, optional
+        component : str, int, list, or None, optional
             Component(s) to plot. Can be:
+
             - None: Plot all components (default)
             - str: Single component name (e.g., 'comp_00')
             - int: Component index
@@ -175,25 +176,25 @@ class Plotter:
         - Uses weighted samples if available from nested sampling
         - Supports truths parameter via kwargs to show true parameter values
         """
-        if comp is None:
-            comp = [f"comp_{ci:02d}" for ci in range(self.fit.mod.ncomp)]
-        elif isinstance(comp, str):
-            comp = [comp]
-        elif isinstance(comp, (list, tuple)):
-            comp_ = []
-            for c in comp:
+        if component is None:
+            component = [f"comp_{ci:02d}" for ci in range(self.fit.mod.ncomp)]
+        elif isinstance(component, str):
+            component = [component]
+        elif isinstance(component, (list, tuple)):
+            component_ = []
+            for c in component:
                 if isinstance(c, int):
-                    comp_.append(f"comp_{int(c):02d}")
+                    component_.append(f"comp_{int(c):02d}")
                 elif isinstance(c, str):
                     if "comp" not in str(c):
-                        comp_.append(f"comp_{str(c)}")
+                        component_.append(f"comp_{str(c)}")
                     else:
-                        comp_.append(str(c))
+                        component_.append(str(c))
                 elif hasattr(c, "id"):
-                    comp_.append(f"comp_{int(c.id):02d}")
+                    component_.append(f"comp_{int(c.id):02d}")
 
-            comp = comp_
-            del comp_
+            component = component_
+            del component_
 
         if edges is None:
             if sigma is None:
@@ -222,7 +223,7 @@ class Plotter:
             [
                 i
                 for i, lbl in enumerate(labels)
-                if any(lbl.startswith(c) for c in comp)
+                if any(lbl.startswith(c) for c in component)
             ]
         )
 
@@ -256,6 +257,7 @@ class Plotter:
     def comparison(
         self,
         name=None,
+        component=None,
         fmt="pdf",
         fx=1.00,
         fy=0.38,
@@ -289,6 +291,7 @@ class Plotter:
             Dots per inch for output resolution. Default is ~55.97.
         cmaps : str, list, or dict, optional
             Colormap specification. Can be:
+
             - str: Single colormap applied to all panels
             - list: [data_cmap, model_cmap, residual_cmap]
             - dict: {'data': cmap, 'model': cmap, 'residuals': cmap}
