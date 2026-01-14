@@ -66,7 +66,7 @@ As an example, consider two {ref}`Sérsic components <sersic>`, with the effecti
 >>> comp2 = Sersic()
 >>>
 >>> # ... define priors for comp1 parameters ...
->>> comp1.addpar('re_scale')
+>>> comp1.addparameter('re_scale')
 >>> comp1.re_scale = uniform(low=0.00, high=1.00)
 >>> comp1.re = lambda comp_01_re_scale, comp_02_re: comp_01_re_scale * comp_02_re
 >>>
@@ -74,7 +74,7 @@ As an example, consider two {ref}`Sérsic components <sersic>`, with the effecti
 >>> comp2.re = loguniform(low=1.00E-08, high=1.00E-02)
 ```
 
-First, we introduce a new parameter `re_scale`, which represents the ratio between the effective radii of the two components. In **``socca``**, additional parameters can be added to a model component using the `addpar` method. Once added, the new parameter behaves exactly like any pre-defined model parameter.
+First, we introduce a new parameter `re_scale`, which represents the ratio between the effective radii of the two components. In **``socca``**, additional parameters can be added to a model component using the `addparameter` method. Once added, the new parameter behaves exactly like any pre-defined model parameter.
 
 Next, we define how `comp1.re` and `comp2.re` are related via a `lambda` function. The arguments of the function have composite names: the first part (`comp_XX`) denotes the component identifier, which can be obtained by printing the `id` attribute of the model component:
 

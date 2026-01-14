@@ -244,26 +244,26 @@ The `corner()` method provides several options for customizing the output:
 |----------|-------------|
 | `name` | Output filename (without extension). If `None`, displays interactively |
 | `fmt` | Output format (default: `'pdf'`) |
-| `comp` | Components to include (see below) |
+| `component` | Components to include (see below) |
 | `sigma` | Range in sigma units around the median for axis limits (default: `10.0`) |
 | `edges` | Custom axis ranges as array of `[min, max]` pairs |
 | `quantiles` | Quantiles to display on 1D histograms (default: `[0.16, 0.50, 0.84]`) |
 | `bins` | Number of histogram bins (default: `40`) |
 | `truths` | Array of true values to overplot (if known) |
 
-The `comp` argument allows selecting which model components to include in the corner plot:
+The `component` argument allows selecting which model components to include in the corner plot:
 - `None` (default): Include all components
-- Integer: Single component index (e.g., `comp=0` for the first component)
-- List of integers: Multiple component indices (e.g., `comp=[0, 2]`)
-- String: Component name (e.g., `comp='comp_00'`)
+- Integer: Single component index (e.g., `component=0` for the first component)
+- List of integers: Multiple component indices (e.g., `component=[0, 2]`)
+- String: Component name (e.g., `component='comp_00'`)
 - Component object: The component instance itself
 
 ```python
 >>> # Corner plot for only the first component
->>> fit.plot.corner(name='corner_comp0', comp=[0])
+>>> fit.plot.corner(name='corner_comp0', component=[0])
 >>>
 >>> # Corner plot for specific components
->>> fit.plot.corner(name='corner_selected', comp=[0, 2], sigma=5.0)
+>>> fit.plot.corner(name='corner_selected', component=[0, 2], sigma=5.0)
 >>>
 >>> # With known true values for validation
 >>> fit.plot.corner(name='corner_truth', truths=[0.0, 0.0, 1e-3, 0.5, 1.0])
