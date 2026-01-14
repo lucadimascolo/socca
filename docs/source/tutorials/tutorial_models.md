@@ -371,10 +371,10 @@ When accessing a specific variable, it is important to remember that both the ra
 ```
 
 #### Vertical profiles
-The hyperparameters introduced above as well as the inclincation angle `inc` are inherited by `Disk` from the model for the vertical structures. These derived from a dedicated abstract base class, `Height`, which defines the common interface for all vertical profiles.
+The hyperparameters introduced above as well as the inclincation angle `inc` are inherited by `Disk` from the model for the vertical structures. These derived from a dedicated abstract base class, `Height`, which defines the common interface for all vertical profiles. It is stored in the `socca.models.disk.vertical` submodule:
 
 ```python
->>> from socca.models import Height
+>>> from socca.models.disk.vertical import Height
 >>> comp = Height()
 >>> comp.parameters()
 
@@ -404,7 +404,7 @@ $$
 Here, $z_s$ is the scale height of the disk, and $\alpha$ is an exponent that controls the sharpness of the vertical profile. By default, $\alpha = 2$, corresponding to the squared hyperbolic secant profile commonly used to describe the vertical structure of disk galaxies ([van der Kruit & Searle 1981](https://ui.adsabs.harvard.edu/abs/1981A&A....95..105V)).
 
 ```python
->>> from socca.models import HyperSecantHeight
+>>> from socca.models.disk.vertical import HyperSecantHeight
 >>> comp = HyperSecantHeight()
 >>> comp.parameters()
 
@@ -430,7 +430,7 @@ $$
 As in the previous case, $z_s$ is the scale height of the disk.
 
 ```python
->>> from socca.models import ExponentialHeight
+>>> from socca.models.disk.vertical import ExponentialHeight
 >>> comp = ExponentialHeight()
 
 Model parameters
@@ -448,7 +448,8 @@ losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 By default, the radial profile is modeled using a Sérsic profile, while the vertical structure is described by a squared hyperbolic secant function (`HyperSecantHeight` with $\alpha=2$). As mentioned above, both the radial and vertical profiles can however be customized by providing alternative profile classes when instantiating the `Disk` component. 
 
 ```python
->>> from socca.models import Disk, Exponential, ExponentialHeight
+>>> from socca.models import Disk, Exponential
+>>> from socca.models.disk.vertical import ExponentialHeight
 >>> comp = Disk(radial=Exponential(), vertical=ExponentialHeight())
 ```
 
