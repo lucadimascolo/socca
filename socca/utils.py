@@ -19,6 +19,7 @@ def _img_loader(img, idx=0):
     ----------
     img : fits.PrimaryHDU, fits.ImageHDU, fits.HDUList, or str
         Input image to load. Can be:
+
         - fits.PrimaryHDU or fits.ImageHDU: Returned directly
         - fits.HDUList: HDU at index `idx` is extracted
         - str: Path to FITS file, opened and HDU at index `idx` extracted
@@ -47,6 +48,8 @@ def _img_loader(img, idx=0):
         raise ValueError("img must be an ImageHDU or a string")
 
 
+# Reduce axes to 2D
+# --------------------------------------------------------
 def _reduce_axes(hdu):
     """
     Reduce multi-dimensional FITS data to 2D by removing extra axes.
