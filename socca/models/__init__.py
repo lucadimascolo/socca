@@ -403,9 +403,67 @@ class Model:
                 )
             return mraw
 
+    def _comp_filter(self, component=None):
+        """
+        Parse component identifiers into a list of integer indices.
+
+        This internal method normalizes various component identifier formats
+        into a consistent list of integer indices for use in model
+        computation and filtering.
+
+        Parameters
+        ----------
+        component : None, str, int, list, or Profile, optional
+            Component identifier(s) to parse. Can be:
+
+            - None: returns all component indices [0, 1, 2, ...]
+            - str: parsed to integer (e.g., 'comp_00' -> [0])
+            - int: returned as single-element list (e.g., 0 -> [0])
+            - list: each element converted individually (can mix types)
+            - Profile object with `id` attribute: converted using the id
+
+        Returns
+        -------
+        list of int
+            List of component indices.
+
+        Examples
+        --------
+        >>> model._comp_filter(None)  # All components
+        [0, 1, 2]
+        >>> model._comp_filter(0)  # Single index
+        [0]
+        >>> model._comp_filter([0, 2])  # Multiple indices
+        [0, 2]
+        >>> model._comp_filter('comp_01')  # String format
+        [1]
+        """
+        if component is None:
+            component = [int(ci) for ci in range(self.ncomp)]
+        elif isinstance(component, int):
+            component = [component]
+        elif isinstance(component, str):
+            component = component.replace("comp", "").replace("_", "")
+            component = [int(component)]
+        elif isinstance(component, (list, tuple)):
+            component_ = []
+            for c in component:
+                if isinstance(c, int):
+                    component_.append(c)
+                elif isinstance(c, str):
+                    c_ = c.replace("comp", "").replace("_", "")
+                    component_.append(int(c_))
+                elif hasattr(c, "id"):
+                    c_ = c.id.replace("comp", "").replace("_", "")
+                    component_.append(int(c_))
+                    del c_
+            component = component_
+            del component_
+        return component
+
     # Get the model map
     # --------------------------------------------------------
-    def getmodel(self, img, pp, doresp=False, doexp=False):
+    def getmodel(self, img, pp, doresp=False, doexp=False, component=None):
         """
         Compute the full model image with PSF convolution, response, and exposure.
 
@@ -426,6 +484,16 @@ class Model:
             Default is False.
         doexp : bool, optional
             If True, multiply by the exposure map (img.exp). Default is False.
+        component : None, str, int, list, or Profile, optional
+            Component(s) to include in the model computation. Can be:
+
+            - None: Include all components (default)
+            - str: Single component name (e.g., 'comp_00')
+            - int: Component index (e.g., 0 for first component)
+            - list: Multiple components as names, indices, or Profile objects
+            - Profile: Object with `id` attribute specifying the component
+
+            Default is None (all components).
 
         Returns
         -------
@@ -484,7 +552,9 @@ class Model:
 
         mneg = jp.zeros(img.data.shape)
 
-        for nc in range(self.ncomp):
+        comp_ = self._comp_filter(component)
+
+        for nc in comp_:
             if self.type[nc] == "Disk":
                 kwarg = {
                     key.replace(f"comp_{nc:02d}_radial.", "r_"): pars[key]

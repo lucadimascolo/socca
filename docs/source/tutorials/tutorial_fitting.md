@@ -96,6 +96,7 @@ The `getmodel()` method accepts the following arguments:
 | Argument | Description |
 |----------|-------------|
 | `what` | Which model component(s) to return (see below) |
+| `component` | Which model component(s) to include in the computation (see below) |
 | `usebest` | If `True` (default), use median posterior parameters; if `False`, compute median of model realizations |
 | `img` | Alternative `Image` object to evaluate the model on (default: use the fitted image) |
 | `doresp` | Apply response/exposure correction (default: `False`) |
@@ -116,6 +117,21 @@ Multiple components can be requested as a list:
 >>> model_raw, model_background = fit.getmodel(what=['raw', 'background'])
 ```
 
+The `component` argument allows generating the model from specific model components only, rather than the full composite model:
+- `None` (default): Include all model components
+- Integer: Single component index (e.g., `component=0` for the first component)
+- List of integers: Multiple component indices (e.g., `component=[0, 2]`)
+- String: Component name (e.g., `component='comp_00'`)
+- Component object: The component instance itself
+
+```python
+>>> # Get model for only the first component
+>>> model_raw, model_smoothed, model_background = fit.getmodel(component=0)
+>>>
+>>> # Get model for specific components
+>>> model_raw, model_smoothed, model_background = fit.getmodel(component=[0, 2])
+```
+
 When `usebest=True` (default), the model is computed using the weighted median of the posterior samples for each parameter. When `usebest=False`, the method instead computes the model for each posterior sample individually and returns the median of the resulting model realizations. The latter approach can be useful for capturing non-linear effects in the model, but is significantly slower.
 
 For the optimizer method, `getmodel()` uses the optimal parameters found during optimization (`fit.results.x`), regardless of the `usebest` setting.
@@ -128,7 +144,12 @@ Generating raw model
 Saved to raw_model.fits
 ```
 
-The `savemodel()` method accepts the same arguments as `getmodel()` (such as `what`, `usebest`, `doresp`, `doexp`), and writes the resulting model image to a FITS file with the WCS header from the input image.
+The `savemodel()` method accepts the same arguments as `getmodel()` (such as `what`, `component`, `usebest`, `doresp`, `doexp`), and writes the resulting model image to a FITS file with the WCS header from the input image.
+
+```python
+>>> # Save only the first component's model
+>>> fit.savemodel('component_0.fits', component=0)
+```
 
 When saving a single model type, the FITS header includes a `MODEL` keyword indicating it. When saving multiple types as a list, the output is a multi-slice FITS file with header keywords `NSLICES` (total number of slices) and `SLICE1`, `SLICE2`, etc. identifying the specific model in each slice.
 
@@ -208,6 +229,7 @@ The `comparison()` method accepts several customization options:
 | Argument | Description |
 |----------|-------------|
 | `name` | Output filename (without extension). If `None`, displays interactively |
+| `component` | Model component(s) to include (see below) |
 | `fmt` | Output format (default: `'pdf'`) |
 | `fx`, `fy` | Figure scaling factors for width and height |
 | `dpi` | Output resolution in dots per inch |
@@ -217,6 +239,18 @@ The `comparison()` method accepts several customization options:
 | `cmap_residual` | Colormap for the residuals panel (default: `'RdBu_r'`) |
 | `gs_kwargs` | Dictionary of gridspec options (spacing, margins) |
 | `model_kwargs` | Additional arguments passed to `fit.getmodel()` |
+
+The `component` argument allows comparing the data against specific model components only:
+- `None` (default): Include all model components
+- Integer: Single component index (e.g., `component=0` for the first component)
+- List of integers: Multiple component indices (e.g., `component=[0, 2]`)
+- String: Component name (e.g., `component='comp_00'`)
+- Component object: The component instance itself
+
+```python
+>>> # Compare data against only the first component
+>>> fit.plot.comparison(name='comparison_comp0', component=0)
+```
 
 Colormaps can be specified in multiple ways via the `cmaps` argument:
 - A single colormap name applied to all panels

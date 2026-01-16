@@ -176,25 +176,8 @@ class Plotter:
         - Uses weighted samples if available from nested sampling
         - Supports truths parameter via kwargs to show true parameter values
         """
-        if component is None:
-            component = [f"comp_{ci:02d}" for ci in range(self.fit.mod.ncomp)]
-        elif isinstance(component, str):
-            component = [component]
-        elif isinstance(component, (list, tuple)):
-            component_ = []
-            for c in component:
-                if isinstance(c, int):
-                    component_.append(f"comp_{int(c):02d}")
-                elif isinstance(c, str):
-                    if "comp" not in str(c):
-                        component_.append(f"comp_{str(c)}")
-                    else:
-                        component_.append(str(c))
-                elif hasattr(c, "id"):
-                    component_.append(f"comp_{int(c.id):02d}")
-
-            component = component_
-            del component_
+        component = self.fit.mod._comp_filter(component)
+        component = [f"comp_{ci:02d}" for ci in component]
 
         if edges is None:
             if sigma is None:
@@ -281,6 +264,17 @@ class Plotter:
         name : str, optional
             Output filename (with or without extension). Required for saving;
             if None, plot is saved with a default name.
+        component : None, str, int, list, or Profile, optional
+            Model component(s) to include in the comparison. Can be:
+
+            - None: Include all model components (default)
+            - str: Single component name (e.g., 'comp_00')
+            - int: Component index (e.g., 0 for the first component)
+            - list: Multiple components as names, indices, or Profile objects
+            - Profile: Object with `id` attribute specifying the component
+
+            This is useful for comparing data against individual model
+            components. Default is None (all components).
         fmt : str, optional
             Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
         fx : float, optional
@@ -316,13 +310,22 @@ class Plotter:
         - Uses APLpy for WCS-aware plotting
         - Automatically includes colorbars for data and residual panels
         - Output is saved at 300 DPI regardless of input dpi (used for sizing)
+
+        Examples
+        --------
+        >>> # Standard comparison with all components
+        >>> fit.plot.comparison('comparison.pdf')
+        >>> # Compare data against a single component
+        >>> fit.plot.comparison('component_0.pdf', component=0)
         """
         if "what" in model_kwargs:
             warnings.warn('"what" argument in model_kwargs is ignored.')
             del model_kwargs["what"]
 
         imgdata = np.asarray(self.fit.img.data)
-        moddata = self.fit.getmodel(what="smoothed", **model_kwargs)
+        moddata = self.fit.getmodel(
+            what="smoothed", component=component, **model_kwargs
+        )
 
         figsize = (fx * 504.00 / dpi, fy * 504.00 / dpi)
 

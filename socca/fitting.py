@@ -175,7 +175,9 @@ class fitter:
         """
         doresp = ~np.all(np.array(self.img.resp) == 1.00)  # True
         doexp = ~np.all(np.array(self.img.exp) == 1.00)  # True
-        return self.mod.getmodel(self.img, pp, doresp=doresp, doexp=doexp)
+        return self.mod.getmodel(
+            self.img, pp, doresp=doresp, doexp=doexp, component=None
+        )
 
     #   Compute log-likelihood
     #   --------------------------------------------------------
@@ -1084,7 +1086,13 @@ class fitter:
     #   Generate best-fit/median model
     #   --------------------------------------------------------
     def getmodel(
-        self, what="all", usebest=True, img=None, doresp=False, doexp=False
+        self,
+        what="all",
+        component=None,
+        usebest=True,
+        img=None,
+        doresp=False,
+        doexp=False,
     ):
         """
         Generate best-fit or median model from sampling results.
@@ -1104,6 +1112,17 @@ class fitter:
             - "bkg"/"background" : background component
 
             Default is "all".
+        component : None, str, int, list, or Profile, optional
+            Model component(s) to include in the computation. Can be:
+
+            - None: Include all model components (default)
+            - str: Single component name (e.g., 'comp_00')
+            - int: Component index (e.g., 0 for the first component)
+            - list: Multiple components as names, indices, or Profile objects
+            - Profile: Object with `id` attribute specifying the component
+
+            This is useful for generating images of individual model
+            components. Default is None (all components).
         usebest : bool, optional
             If True, compute model at weighted median parameters.
             If False, compute median model by marginalizing over all
@@ -1139,6 +1158,15 @@ class fitter:
         results. When usebest=False, the method marginalizes over all
         posterior samples to compute the median model, which can be
         computationally expensive for large sample sets.
+
+        Examples
+        --------
+        >>> # Get full model with all components
+        >>> mraw, msmo, mbkg = fit.getmodel()
+        >>> # Get only the first component
+        >>> mraw, msmo, mbkg = fit.getmodel(component=0)
+        >>> # Get specific components by name
+        >>> mraw, msmo, mbkg = fit.getmodel(component=['comp_00', 'comp_02'])
         """
         name_map = {
             "raw": "raw",
@@ -1166,7 +1194,7 @@ class fitter:
 
         def gm(pp):
             return self.mod.getmodel(
-                self.img if img is None else img, pp, doresp, doexp
+                self.img if img is None else img, pp, doresp, doexp, component
             )
 
         if self.method == "optimizer":
@@ -1249,7 +1277,7 @@ class fitter:
 
     #   Save best-fit/median model to file
     #   --------------------------------------------------------
-    def savemodel(self, name, **kwargs):
+    def savemodel(self, name, component=None, **kwargs):
         """
         Save best-fit or median model to a FITS file.
 
@@ -1261,6 +1289,17 @@ class fitter:
         name : str or Path
             Output FITS filename. The '.fits' extension is added
             automatically if not present.
+        component : None, str, int, list, or Profile, optional
+            Model component(s) to include in the saved image. Can be:
+
+            - None: Include all model components (default)
+            - str: Single component name (e.g., 'comp_00')
+            - int: Component index (e.g., 0 for the first component)
+            - list: Multiple components as names, indices, or Profile objects
+            - Profile: Object with `id` attribute specifying the component
+
+            This is useful for saving images of individual model
+            components. Default is None (all components).
         **kwargs : dict
             Additional keyword arguments passed to `getmodel()`.
             Common options include:
@@ -1294,9 +1333,12 @@ class fitter:
         >>>
         >>> # Save multiple components as a multi-slice FITS
         >>> fit.savemodel('all_components.fits', what=['raw', 'convolved'])
+        >>>
+        >>> # Save only the first component
+        >>> fit.savemodel('component_0.fits', component=0)
         """
         what = kwargs.pop("what", "convolved")
-        mod = self.getmodel(what=what, **kwargs)
+        mod = self.getmodel(what=what, component=component, **kwargs)
 
         # Normalize component names for header
         name_map = {
