@@ -16,7 +16,7 @@ This quickstart will walk you through a minimal end-to-end example of how to use
 :class: only-dark
 ```
 
-You can access all the files you need to run this tutorial [here](https://github.com/lucadimascolo/socca/tree/doc/data/tutorial).
+You can access all the files you need to run this tutorial [here](https://github.com/lucadimascolo/socca/tree/main/data/tutorial).
 
 Before getting into the nuts and bolts of using **``socca``** to model your favourite image, we first need to load **``socca``**:
 
