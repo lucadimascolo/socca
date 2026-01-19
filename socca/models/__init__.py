@@ -700,3 +700,8 @@ class Model:
         msmo = msmo + mbkg
 
         return mraw + mpts, msmo, mbkg, mneg
+
+
+# Reset component counter after module initialization
+# (default arguments in Disk.__init__ create instances at import time)
+Component.idcls = 0

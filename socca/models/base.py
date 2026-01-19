@@ -54,8 +54,8 @@ class Component:
         new instance. This ensures unique identification when multiple components
         are combined in a model.
         """
-        self.id = f"comp_{type(self).idcls:02d}"
-        type(self).idcls += 1
+        self.id = f"comp_{Component.idcls:02d}"
+        Component.idcls += 1
 
         self.positive = kwargs.get("positive", config.Component.positive)
         self.okeys = ["id", "positive", "hyper", "units", "description"]
