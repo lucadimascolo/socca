@@ -336,7 +336,8 @@ class fitter:
         self.logz_prior = None
 
         if isinstance(checkpoint, str) and self.method != "pocomc":
-            checkpoint_glob = glob.glob(f"{checkpoint}*")
+            checkpoint_glob = glob.glob(f"{checkpoint}*.h*5")
+            print(checkpoint_glob)
             if len(checkpoint_glob) > 0:
                 checkpoint = sorted(checkpoint_glob)[-1]
                 warnings.warn(
