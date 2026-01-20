@@ -161,6 +161,8 @@ All sampling methods support saving the sampler state during the run, allowing i
 >>> fit.run(checkpoint='my_fit_checkpoint')
 ```
 
+For `nautilus` and `dynesty`, this will save the sampler state synchronously into an HDF5 file named `my_fit_checkpoint.hdf5` in the current working directory. In the case of `pocomc`, the sampler state is saved to a directory named `my_fit_checkpoint_pocomc_dump` at regular intervals (by default, every 10 iterations).
+
 By default, if a checkpoint file matching the provided name is found, **``socca``** will resume sampling from the last saved state. To force a fresh run:
 
 ```python
