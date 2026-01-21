@@ -336,16 +336,10 @@ class fitter:
         self.logz_prior = None
 
         if isinstance(checkpoint, str) and self.method != "pocomc":
-            checkpoint_glob = glob.glob(f"{checkpoint}*.h*5")
-            print(checkpoint_glob)
-            if len(checkpoint_glob) > 0:
-                checkpoint = sorted(checkpoint_glob)[-1]
-                warnings.warn(
-                    f"Found existing checkpoint file '{checkpoint}'. "
-                    "Resuming from this file. If this is not intended, "
-                    "please delete or rename the checkpoint "
-                    "file before running."
-                )
+            for ext in [".hdf5", ".h5"]:
+                if os.path.exists(f"{checkpoint}{ext}"):
+                    checkpoint = f"{checkpoint}{ext}"
+                    break
 
             if not checkpoint.endswith((".hdf5", ".h5")):
                 checkpoint = f"{checkpoint}.hdf5"
