@@ -22,8 +22,11 @@ from astropy.coordinates import (
 )
 from astropy.visualization import ImageNormalize
 
-matplotlib.rcParams["font.family"] = "sans-serif"
-matplotlib.rcParams["font.sans-serif"] = ["Helvetica"]
+try:
+    matplotlib.rcParams["font.family"] = "sans-serif"
+    matplotlib.rcParams["font.sans-serif"] = ["Helvetica"]
+except Exception:
+    pass
 
 
 # Get axis labels from WCS frame
@@ -218,20 +221,19 @@ class Plotter:
             data=self.fit.samples[:, indices],
             weights=self.fit.weights,
             labels=labels[indices],
-            range=edges[indices],
+            range=edges[indices] if edges is not None else None,
             quantiles=quantiles,
             truths=truths,
             bins=bins,
             **kwargs,
         )
 
-        root, ext = os.path.splitext(name)
-        if ext.lower() == f".{fmt.lower()}":
-            name = root
-
         if name is None:
             plt.show()
         else:
+            root, ext = os.path.splitext(name)
+            if ext.lower() == f".{fmt.lower()}":
+                name = root
             plt.savefig(f"{name}.{fmt}", format=fmt, dpi=300)
         plt.close()
 
@@ -249,8 +251,8 @@ class Plotter:
         cmap_data=None,
         cmap_model=None,
         cmap_residual=None,
-        gs_kwargs={},
-        model_kwargs={},
+        gs_kwargs=None,
+        model_kwargs=None,
     ):
         """
         Create a three-panel comparison plot: data, model, and residuals.
@@ -318,6 +320,9 @@ class Plotter:
         >>> # Compare data against a single component
         >>> fit.plot.comparison('component_0.pdf', component=0)
         """
+        gs_kwargs = gs_kwargs or {}
+        model_kwargs = model_kwargs or {}
+
         if "what" in model_kwargs:
             warnings.warn('"what" argument in model_kwargs is ignored.')
             del model_kwargs["what"]
@@ -432,9 +437,11 @@ class Plotter:
         axs[1].coords[1].set_ticklabel_visible(False)
         axs[2].coords[1].set_ticklabel_visible(False)
 
-        root, ext = os.path.splitext(name)
-        if ext.lower() == f".{fmt.lower()}":
-            name = root
-
-        plt.savefig(f"{name}.{fmt}", format=fmt, dpi=300)
+        if name is None:
+            plt.show()
+        else:
+            root, ext = os.path.splitext(name)
+            if ext.lower() == f".{fmt.lower()}":
+                name = root
+            plt.savefig(f"{name}.{fmt}", format=fmt, dpi=300)
         plt.close()
