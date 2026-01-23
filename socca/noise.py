@@ -116,7 +116,7 @@ class Normal:
             if self.select in self.options["var"]:
                 sigma = np.sqrt(sigma)
             elif self.select in self.options["wht"]:
-                self.mask.at[sigma == 0.00].set(0)
+                self.mask = self.mask.at[sigma == 0.00].set(0)
                 if isinstance(sigma, (float, int)) and sigma != 0.00:
                     sigma = 1.00 / np.sqrt(sigma)
                 else:
@@ -129,7 +129,8 @@ class Normal:
 
         sigma[np.isinf(sigma)] = 0.00
         sigma[np.isnan(sigma)] = 0.00
-        self.mask.at[sigma == 0.00].set(0)
+
+        self.mask = self.mask.at[sigma == 0.00].set(0)
 
         return jp.array(sigma)
 
