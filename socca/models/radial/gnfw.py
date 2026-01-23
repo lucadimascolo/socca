@@ -105,8 +105,8 @@ class gNFW(Profile):
 
         References
         ----------
-        Navarro, J. F., Frenk, C. S., & White, S. D. M. 1996, ApJ, 462, 563
-        Zhao, H. 1996, MNRAS, 278, 488
+        Nagai, D., Kravtsov, A. V., & Vikhlinin, A., ApJ, 668, 1 (2007)
+        Mroczkowski, T., et al., ApJ, 694, 1034 (2009)
         """
 
         def radial(u, alpha, beta, gamma):
