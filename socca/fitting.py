@@ -339,6 +339,7 @@ class fitter:
             for ext in [".hdf5", ".h5"]:
                 if os.path.exists(f"{checkpoint}{ext}"):
                     checkpoint = f"{checkpoint}{ext}"
+                    print(f"Resuming from checkpoint: {checkpoint}")
                     break
 
             if not checkpoint.endswith((".hdf5", ".h5")):
