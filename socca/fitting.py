@@ -1383,6 +1383,69 @@ class fitter:
         hdu.writeto(name, overwrite=True)
         print(f"Saved to {name}")
 
+    #   Print best-fit parameters
+    #   --------------------------------------------------------
+    def parameters(self):
+        """
+        Print best-fit parameters with uncertainties.
+
+        Computes and prints the weighted median (50th percentile) and
+        asymmetric uncertainties (16th and 84th percentiles) for each
+        fitted parameter, grouped by model component.
+
+        The output format is:
+            comp_00
+            -------
+            param : best-fit [+upper/-lower]
+
+        where upper = 84th percentile - median and lower = median - 16th
+        percentile.
+
+        Notes
+        -----
+        Requires that the sampler has been run and samples are available.
+        Uses importance weights for nested sampling results.
+        """
+        print("\nBest-fit parameters")
+        print("=" * 40)
+
+        # Group parameters by component
+        components = {}
+        for pi, label in enumerate(self.labels):
+            parts = label.rsplit("_", 1)
+            if len(parts) == 2:
+                comp, param = "_".join(label.split("_")[:-1]), parts[-1]
+            else:
+                comp, param = "model", label
+            if comp not in components:
+                components[comp] = []
+            components[comp].append((pi, param))
+
+        # Print grouped by component
+        for comp, params in components.items():
+            print(f"\n{comp}")
+            print("-" * len(comp))
+
+            # Find max param name length for alignment
+            max_len = max(len(p[1]) for p in params)
+
+            for pi, param in params:
+                samp = self.samples[:, pi]
+
+                p16, p50, p84 = np.quantile(
+                    samp,
+                    q=[0.16, 0.50, 0.84],
+                    method="inverted_cdf",
+                    weights=self.weights,
+                )
+
+                upper = p84 - p50
+                lower = p50 - p16
+
+                print(
+                    f"{param:<{max_len}} : {p50:11.4E} [+{upper:10.4E}/-{lower:10.4E}]"
+                )
+
 
 #   Load results
 #   --------------------------------------------------------
