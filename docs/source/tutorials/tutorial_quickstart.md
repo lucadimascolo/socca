@@ -235,4 +235,28 @@ Additionally, it is possible to generate a corner plot of the posterior distribu
 
 This is mostly a simple wrapper around [corner.py](https://github.com/dfm/corner.py) that automatically configures the labels and ranges based on the model parameters and prior distributions. It is also possible to use it for visualising only a subset of the model components by passing a list of component names to the `component` argument as a list of strings (e.g. `component=['comp_00']` to show only the first component added to the model), integer indices (e.g. `component=[0]`), or directly referring to the individual components (e.g. `component=[point]`).
 
-Finally, by default, both the `comparison` and `corner` plots are displayed on screen. Passing the argument `name="your/file/name/prefix"` however allows for saving the figures to disk.
+By default, both the `comparison` and `corner` plots are displayed on screen. Passing the argument `name="your/file/name/prefix"` however allows for saving the figures to disk.
+
+Finally, for a quick summary of the best-fit parameters and their uncertainties, you can use the `parameters()` method:
+
+```python
+>>> fit.parameters()
+
+Best-fit parameters
+========================================
+
+comp_00
+-------
+xc :  2.0000E+01 [+8.1399E-07/-8.0507E-07]
+yc : -1.0000E+01 [+7.4631E-07/-7.2487E-07]
+Ic :  9.7130E+00 [+3.5537E-01/-3.6794E-01]
+
+comp_01
+-------
+theta :  8.7389E-01 [+4.4078E-03/-4.2317E-03]
+e     :  6.0286E-01 [+3.7462E-03/-3.6892E-03]
+re    :  4.1755E-04 [+3.3501E-06/-3.2982E-06]
+Ie    :  3.0145E-01 [+2.9658E-03/-2.9120E-03]
+```
+
+The output shows the weighted median (50th percentile) as the best-fit value for each parameter of the combined model, along with the associated uncertainties derived from the 16th and 84th percentiles.

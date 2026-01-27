@@ -27,7 +27,11 @@ The `fitter` object handles all the necessary bookkeeping, including the constru
 An additional sampling backend based on [`numpyro`](https://num.pyro.ai/) NUTS ([No-U-Turn Sampler](https://num.pyro.ai/en/latest/mcmc.html#numpyro.infer.hmc.NUTS)) is included in the codebase but has not been thoroughly tested. It is left available for experimental use and development purposes only. Users interested in trying the `numpyro` backend should be aware that its behavior and results may not be fully validated.
 ```
 
-## Available sampling methods
+## Fitting methods
+
+There are several methods available for performing the model inference, including nested sampling, Monte Carlo sampling, and maximum a posteriori optimization. The choice of method can be specified via the `method` argument of the `run()` method. The following sections describe the available options and their configuration.
+
+### Available samplers
 
 **``socca``** supports multiple backends for performing the model inference via Bayesian posterior sampling, which can be selected via the `method` argument when calling the `run()` method. The available options are:
 
@@ -153,6 +157,7 @@ The `savemodel()` method accepts the same arguments as `getmodel()` (such as `wh
 
 When saving a single model type, the FITS header includes a `MODEL` keyword indicating it. When saving multiple types as a list, the output is a multi-slice FITS file with header keywords `NSLICES` (total number of slices) and `SLICE1`, `SLICE2`, etc. identifying the specific model in each slice.
 
+
 ## Checkpointing and resuming
 
 All sampling methods support saving the sampler state during the run, allowing interrupted runs to be resumed:
@@ -214,11 +219,42 @@ This serializes the entire `fit` object, including the model, data, and all samp
 >>> fit = socca.load('my_fit_results.pickle')
 ```
 
-## Visualization
+## Checking the results
 
+### Printing best-fit parameters
+
+For a quick summary of the inferred parameters, the `parameters()` method prints the best-fit values along with their associated uncertainties (computed from the 16th and 84th percentiles of the posterior distributions). For instance, for the model in the "[Getting started](./tutorial_quickstart.md)" tutorial, you would get:
+
+```python
+>>> fit.parameters()
+
+Best-fit parameters
+========================================
+
+comp_00
+-------
+xc :  2.0000E+01 [+8.1399E-07/-8.0507E-07]
+yc : -1.0000E+01 [+7.4631E-07/-7.2487E-07]
+Ic :  9.7130E+00 [+3.5537E-01/-3.6794E-01]
+
+comp_01
+-------
+theta :  8.7389E-01 [+4.4078E-03/-4.2317E-03]
+e     :  6.0286E-01 [+3.7462E-03/-3.6892E-03]
+re    :  4.1755E-04 [+3.3501E-06/-3.2982E-06]
+Ie    :  3.0145E-01 [+2.9658E-03/-2.9120E-03]
+```
+
+Both median value and uncertainties for each parameter are computed from the weighted posterior samples stored in `fit.samples` and `fit.weights`.
+
+```{warning}
+The uncertainties reported by `parameters()` are marginal uncertainties derived from the 1D posterior distributions. For parameters with significant correlations, the full covariance structure should be examined using the corner plot or by directly analyzing `fit.samples`.
+```
+
+### Visualization
 Finally, **``socca``** provides built-in plotting utilities accessible via `fit.plot`.
 
-### Comparison plot
+#### Comparison plot
 
 Generate a side-by-side comparison of data, model, and residuals using [APLpy](https://aplpy.github.io/):
 
@@ -266,7 +302,7 @@ Colormaps can be specified in multiple ways via the `cmaps` argument:
 ...                                           'residuals': 'coolwarm'})
 ```
 
-### Corner plot
+#### Corner plot
 
 Visualize the posterior distributions using the [corner](https://corner.readthedocs.io/) library:
 
