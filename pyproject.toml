@@ -74,7 +74,15 @@ ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
+[project.scripts]
+gnfw-emulator = "socca.models.radial.gnfw.emulate.__main__:main"
+
 [project.optional-dependencies]
+emulator = [
+    "flax",
+    "optax",
+    "tqdm",
+]
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
