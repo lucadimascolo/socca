@@ -180,4 +180,4 @@ class MesaBridge:
 
     r_alpha: float = 8.00
     r_beta: float = 1.00
-    z_beta: float = 8.00
+    z_alpha: float = 8.00
