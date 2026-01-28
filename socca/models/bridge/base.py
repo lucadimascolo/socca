@@ -570,6 +570,11 @@ class MesaBridge(Bridge):
     >>> bridge = MesaBridge()
     >>> bridge.parameters()
 
+    References
+    ----------
+    Hincks, A. D., et al., MRANS, 510, 3335 (2022)
+    https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract
+
     Model parameters
     ================
     xc              [deg] : None       | Right ascension of bridge centroid

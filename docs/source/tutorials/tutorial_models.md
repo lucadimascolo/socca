@@ -524,6 +524,86 @@ By default, the radial profile is modeled using a Sérsic profile, while the ver
 >>> comp = Disk(radial=Exponential(), vertical=ExponentialHeight())
 ```
 
+### Bridge/Filament models
+The bridge models in **``socca``** are designed for modeling elongated emission structures such as intracluster bridges and filaments connecting galaxy clusters. These models describe the surface brightness distribution by combining a radial profile (perpendicular to the bridge axis) with a parallel profile (along the bridge axis), allowing for flexible modeling of asymmetric, elongated emission.
+
+All bridge models share a common set of geometric parameters inherited from the `Bridge` base class:
+
+- `xc`, `yc`: Centroid coordinates of the bridge in degrees
+- `rs`: Scale radius shared by both radial and parallel profiles
+- `Is`: Scale intensity of the bridge
+- `theta`: Position angle of the bridge major axis (measured east from north)
+- `e`: Axis ratio controlling the relative extent of radial vs. parallel profiles
+
+The scale radius `rs` is applied directly to the parallel profile, while the radial profile uses `rs * (1 - e)` to create an elongated structure.
+
+#### SimpleBridge
+The `SimpleBridge` class combines radial and parallel profiles multiplicatively, producing a surface brightness distribution of the form:
+
+$$
+I(r, z) = f_{\mathrm{radial}}(r) \times f_{\mathrm{parallel}}(z)
+$$
+
+This creates structures where the emission is the product of the two independent profile functions. By default, the radial profile is a `Beta` model and the parallel profile is a `TopHat`, producing a uniform distribution along the bridge length with a smooth transverse profile.
+
+```python
+>>> from socca.models import SimpleBridge
+>>> comp = SimpleBridge()
+>>> comp.parameters()
+
+Model parameters
+================
+xc              [deg] : None       | Right ascension of the bridge centroid
+yc              [deg] : None       | Declination of the bridge centroid
+rs              [deg] : None       | Scale radius of the bridge profiles
+Is            [image] : None       | Scale intensity of the bridge profiles
+theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
+e                  [] : 5.0000E-01 | Axis ratio of the bridge profiles
+radial.alpha       [] : 2.0000E+00 | Radial exponent
+radial.beta        [] : 5.5000E-01 | Slope parameter
+```
+
+#### MesaBridge
+The `MesaBridge` class combines radial and parallel profiles using a harmonic mean, producing a mesa-like (flat-topped) surface brightness distribution:
+
+$$
+I(r, z) = \frac{1}{\frac{1}{f_{\mathrm{radial}}(r)} + \frac{1}{f_{\mathrm{parallel}}(z)}}
+$$
+
+This creates smooth transitions between a flat central region and declining edges, resembling a mesa or table-top shape. The default configuration uses a Beta profile for the radial direction and a Power law profile for the parallel direction, with steep slopes chosen to produce characteristic mesa-like edges.
+
+```python
+>>> from socca.models import MesaBridge
+>>> comp = MesaBridge()
+>>> comp.parameters()
+
+Model parameters
+================
+xc              [deg] : None       | Right ascension of the bridge centroid
+yc              [deg] : None       | Declination of the bridge centroid
+rs              [deg] : None       | Scale radius of the bridge profiles
+Is            [image] : None       | Scale intensity of the bridge profiles
+theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
+e                  [] : 5.0000E-01 | Axis ratio of the bridge profiles
+radial.alpha       [] : 8.0000E+00 | Radial exponent
+radial.beta        [] : 1.0000E+00 | Slope parameter
+parallel.alpha     [] : 8.0000E+00 | Power law slope
+```
+
+This model is an adaptation of the intracluster bridge parameterization introduced by [Hincks et al. (2022)](https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract).
+
+#### Customizing bridge profiles
+Both `SimpleBridge` and `MesaBridge` allow customization of the radial and parallel profiles by providing alternative profile classes at instantiation:
+
+```python
+>>> from socca.models import SimpleBridge, Gaussian, Exponential
+>>> comp = SimpleBridge(radial=Gaussian(), parallel=Exponential())
+```
+
+```{note}
+The `PolyExpoRefact`, `Background`, and `Point` profiles are not supported as bridge components due to their special parameter handling requirements.
+```
+
 ### Other components
 **``socca``** also includes a few additional model components that do not fall into the radial profile category or its finite-thickness disk generalization.
 
