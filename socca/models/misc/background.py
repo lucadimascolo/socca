@@ -106,6 +106,7 @@ class Background(Component):
                 a3yyy="Polynomial coefficient 3 in y·y·y",
             )
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit

@@ -75,6 +75,7 @@ class Point(Component):
                 Ic="Peak surface brightness",
             )
         )
+        self._initialized = True
 
     @staticmethod
     def profile(xc, yc, Ic):

@@ -58,10 +58,28 @@ class Component:
         Component.idcls += 1
 
         self.positive = kwargs.get("positive", config.Component.positive)
-        self.okeys = ["id", "positive", "hyper", "units", "description"]
+        self.okeys = [
+            "id",
+            "positive",
+            "hyper",
+            "units",
+            "description",
+            "_initialized",
+        ]
         self.hyper = []
         self.units = {}
         self.description = {}
+        self._initialized = False
+
+    def __setattr__(self, name, value):
+        """Prevent adding undefined attributes after initialization."""
+        if getattr(self, "_initialized", False) and not hasattr(self, name):
+            raise AttributeError(
+                f"Cannot add new attribute '{name}' to "
+                f"{self.__class__.__name__}. "
+                f"Use addparameter() to add new parameters."
+            )
+        super().__setattr__(name, value)
 
     #   Print model parameters
     #   --------------------------------------------------------
@@ -224,6 +242,8 @@ class Component:
         >>> comp.units['amplitude']
         'Jy'
         """
+        self._initialized = False
         setattr(self, name, value)
+        self._initialized = True
         self.units.update({name: units})
         self.description.update({name: description})

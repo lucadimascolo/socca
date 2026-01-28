@@ -158,6 +158,7 @@ class HyperSecantHeight(Height):
         self.description.update(
             dict(zs="Scale height", alpha="Exponent to the hyperbolic secant")
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit
@@ -240,6 +241,7 @@ class ExponentialHeight(Height):
         self.zs = kwargs.get("zs", config.ExponentialHeight.zs)
         self.units.update(dict(zs="deg"))
         self.description.update(dict(zs="Scale height"))
+        self._initialized = True
 
     @staticmethod
     @jax.jit
