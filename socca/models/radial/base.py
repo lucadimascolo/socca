@@ -56,6 +56,9 @@ class Profile(Component):
     defines the radial surface brightness distribution.
     """
 
+    _scale_radius = None
+    _scale_amp = None
+
     def __init__(self, **kwargs):
         """
         Initialize a profile with standard coordinate and shape parameters.
@@ -67,6 +70,8 @@ class Profile(Component):
             See class docstring for parameter descriptions.
         """
         super().__init__(**kwargs)
+        self.okeys.append("_scale_radius")
+        self.okeys.append("_scale_amp")
         self.xc = kwargs.get("xc", config.Profile.xc)
         self.yc = kwargs.get("yc", config.Profile.yc)
 

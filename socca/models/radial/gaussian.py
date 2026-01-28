@@ -16,6 +16,9 @@ class Gaussian(Profile):
     This profile is equivalent to a Sersic profile with index n=0.5.
     """
 
+    _scale_radius = "rs"
+    _scale_amp = "Is"
+
     def __init__(self, **kwargs):
         """
         Initialize a Gaussian profile component.
@@ -46,6 +49,7 @@ class Gaussian(Profile):
         self.description.update(
             dict(rs="Scale radius", Is="Central surface brightness")
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit

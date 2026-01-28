@@ -16,6 +16,9 @@ class Exponential(Profile):
     exponentially with radius: I(r) = Is * exp(-r/rs).
     """
 
+    _scale_radius = "rs"
+    _scale_amp = "Is"
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.rs = kwargs.get("rs", config.Exponential.rs)
@@ -25,6 +28,7 @@ class Exponential(Profile):
         self.description.update(
             dict(rs="Scale radius", Is="Central surface brightness")
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit
@@ -111,6 +115,7 @@ class PolyExponential(Exponential):
                 rc="Reference radius for polynomial terms",
             )
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit
@@ -212,6 +217,7 @@ class PolyExpoRefact(Exponential):
                 rc="Reference radius for polynomial terms",
             )
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit
@@ -325,6 +331,7 @@ class ModExponential(Exponential):
         self.description.update(
             dict(rm="Modification radius", alpha="Modification exponent")
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit

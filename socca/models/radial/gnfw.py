@@ -18,6 +18,9 @@ class gNFW(Profile):
     (alpha), and outer (beta) slopes.
     """
 
+    _scale_radius = "rc"
+    _scale_amp = "Ic"
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.rc = kwargs.get("rc", config.gNFW.rc)
@@ -53,6 +56,7 @@ class gNFW(Profile):
             )
 
         self.profile = jax.jit(_profile)
+        self._initialized = True
 
     @staticmethod
     def _profile(r, Ic, rc, alpha, beta, gamma, rz, eps=1.00e-08):

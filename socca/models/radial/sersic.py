@@ -27,6 +27,9 @@ class Sersic(Profile):
     exponential disk and ns=4 to a de Vaucouleurs profile.
     """
 
+    _scale_radius = "re"
+    _scale_amp = "Ie"
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.re = kwargs.get("re", config.Sersic.re)
@@ -42,6 +45,7 @@ class Sersic(Profile):
                 ns="Sersic index",
             )
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit
