@@ -27,6 +27,7 @@ class Beta:
 
     rc: float = None
     Ic: float = None
+    alpha: float = 2.00
     beta: float = 0.70 * 1.50 - 0.50
 
 
@@ -39,6 +40,15 @@ class gNFW:
     alpha: float = 1.0510e00
     beta: float = 5.4905e00
     gamma: float = 3.0810e-01
+
+
+@dataclass(frozen=True)
+class Power:
+    """Default parameters for Power law profile."""
+
+    rc: float = None
+    Ic: float = None
+    alpha: float = 2.00
 
 
 @dataclass(frozen=True)
@@ -103,6 +113,14 @@ class Point:
 
 
 @dataclass(frozen=True)
+class TopHat:
+    """Default parameters for top-hat profile."""
+
+    rc: float = None
+    Ic: float = None
+
+
+@dataclass(frozen=True)
 class Background:
     """Default parameters for polynomial Background model."""
 
@@ -142,3 +160,24 @@ class ExponentialHeight:
     """Default parameters for Exponential height profile."""
 
     zs: float = None
+
+
+@dataclass(frozen=True)
+class Bridge:
+    """Default parameters for Bridge model."""
+
+    xc: float = None
+    yc: float = None
+    rs: float = None
+    Is: float = None
+    theta: float = 0.00
+    e: float = 0.50
+
+
+@dataclass(frozen=True)
+class MesaBridge:
+    """Default parameters for Mesa Bridge model."""
+
+    r_alpha: float = 8.00
+    r_beta: float = 1.00
+    z_beta: float = 8.00
