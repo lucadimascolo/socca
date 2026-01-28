@@ -174,6 +174,7 @@ class TestComponent:
         assert "yc" in params
         assert "rc" in params
         assert "Ic" in params
+        assert "alpha" in params
         assert "beta" in params
 
     def test_addparameter(self):
@@ -213,7 +214,7 @@ class TestBeta:
     def test_profile_function(self):
         """Test Beta profile function."""
         r = jp.array([0.0, 0.01, 0.02, 0.05])
-        result = models.Beta.profile(r, Ic=1.0, rc=0.01, beta=0.5)
+        result = models.Beta.profile(r, Ic=1.0, rc=0.01, alpha=2.0, beta=0.5)
         assert result.shape == r.shape
         assert float(result[0]) == 1.0
         assert float(result[1]) < 1.0
@@ -222,13 +223,13 @@ class TestBeta:
         """Test that profile is maximized at center."""
         r = jp.array([0.0])
         Ic = 10.0
-        result = models.Beta.profile(r, Ic=Ic, rc=0.01, beta=0.5)
+        result = models.Beta.profile(r, Ic=Ic, rc=0.01, alpha=2.0, beta=0.5)
         assert float(result[0]) == pytest.approx(Ic)
 
     def test_profile_decreases_with_radius(self):
         """Test that profile decreases with radius."""
         r = jp.array([0.0, 0.01, 0.02, 0.05, 0.1])
-        result = models.Beta.profile(r, Ic=1.0, rc=0.01, beta=0.5)
+        result = models.Beta.profile(r, Ic=1.0, rc=0.01, alpha=2.0, beta=0.5)
         for i in range(len(r) - 1):
             assert float(result[i]) >= float(result[i + 1])
 
@@ -371,6 +372,9 @@ class TestZoo:
         models.zoo()
         captured = capsys.readouterr()
         assert "Beta" in captured.out
+        assert "gNFW" in captured.out
+        assert "Power" in captured.out
+        assert "TopHat" in captured.out
         assert "Sersic" in captured.out
         assert "Point" in captured.out
         assert "Background" in captured.out
@@ -389,6 +393,69 @@ class TestgNFW:
         assert gnfw.alpha == 1.0
         assert gnfw.beta == 3.0
         assert gnfw.gamma == 1.0
+
+
+class TestPower:
+    """Tests for Power profile."""
+
+    def test_initialization(self):
+        """Test Power profile initialization."""
+        power = models.Power(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, alpha=2.0)
+        assert power.xc == 180.0
+        assert power.yc == 45.0
+        assert power.rc == 0.01
+        assert power.Ic == 1.0
+        assert power.alpha == 2.0
+
+    def test_profile_function(self):
+        """Test Power profile function."""
+        r = jp.array([0.005, 0.01, 0.02, 0.05])
+        result = models.Power.profile(r, Ic=1.0, rc=0.01, alpha=2.0)
+        assert result.shape == r.shape
+
+    def test_profile_at_scale_radius(self):
+        """Test that profile equals Ic at scale radius."""
+        rc = 0.01
+        r = jp.array([rc])
+        Ic = 5.0
+        result = models.Power.profile(r, Ic=Ic, rc=rc, alpha=2.0)
+        assert float(result[0]) == pytest.approx(Ic)
+
+    def test_profile_decreases_with_radius(self):
+        """Test that profile decreases with radius for positive alpha."""
+        r = jp.array([0.005, 0.01, 0.02, 0.05, 0.1])
+        result = models.Power.profile(r, Ic=1.0, rc=0.01, alpha=2.0)
+        for i in range(len(r) - 1):
+            assert float(result[i]) >= float(result[i + 1])
+
+
+class TestTopHat:
+    """Tests for TopHat profile."""
+
+    def test_initialization(self):
+        """Test TopHat profile initialization."""
+        tophat = models.TopHat(rc=0.01)
+        assert tophat.rc == 0.01
+
+    def test_profile_function(self):
+        """Test TopHat profile function."""
+        r = jp.array([0.0, 0.005, 0.01, 0.02])
+        result = models.TopHat.profile(r, rc=0.01)
+        assert result.shape == r.shape
+
+    def test_profile_inside_cutoff(self):
+        """Test that profile is 1 inside cutoff radius."""
+        r = jp.array([0.0, 0.005, 0.009])
+        result = models.TopHat.profile(r, rc=0.01)
+        for val in result:
+            assert float(val) == pytest.approx(1.0)
+
+    def test_profile_outside_cutoff(self):
+        """Test that profile is 0 outside cutoff radius."""
+        r = jp.array([0.011, 0.02, 0.05])
+        result = models.TopHat.profile(r, rc=0.01)
+        for val in result:
+            assert float(val) == pytest.approx(0.0)
 
 
 class TestModelComposition:
