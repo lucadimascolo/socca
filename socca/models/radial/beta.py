@@ -16,25 +16,31 @@ class Beta(Profile):
     I(r) = Ic * (1 + (r/rc)^2)^(-beta).
     """
 
+    _scale_radius = "rc"
+    _scale_amp = "Ic"
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.rc = kwargs.get("rc", config.Beta.rc)
         self.Ic = kwargs.get("Ic", config.Beta.Ic)
+        self.alpha = kwargs.get("alpha", config.Beta.alpha)
         self.beta = kwargs.get("beta", config.Beta.beta)
 
-        self.units.update(dict(rc="deg", beta="", Ic="image"))
+        self.units.update(dict(rc="deg", alpha="", beta="", Ic="image"))
 
         self.description.update(
             dict(
                 rc="Core radius",
                 Ic="Central surface brightness",
+                alpha="Radial exponent",
                 beta="Slope parameter",
             )
         )
+        self._initialized = True
 
     @staticmethod
     @jax.jit
-    def profile(r, Ic, rc, beta):
+    def profile(r, Ic, rc, alpha, beta):
         """
         Beta profile surface brightness distribution.
 
@@ -49,6 +55,8 @@ class Beta(Profile):
             Central surface brightness (same units as image).
         rc : float
             Core radius in degrees.
+        alpha : float
+            Radial exponent parameter (default 2.0 for standard Beta profile).
         beta : float
             Slope parameter (typically 0.4-1.0 for galaxy clusters).
 
@@ -59,12 +67,11 @@ class Beta(Profile):
 
         Notes
         -----
-        The Beta profile is defined as:
-        I(r) = Ic * [1 + (r/rc)^2]^(-beta)
+        The generalized Beta profile is defined as:
+        I(r) = Ic * [1 + (r/rc)^alpha]^(-beta)
 
-        This profile is widely used in X-ray astronomy for modeling hot gas
-        in galaxy clusters. The parameter beta controls the slope of the
-        outer profile.
+        With alpha=2, this reduces to the standard Beta profile commonly
+        used in X-ray astronomy for modeling hot gas in galaxy clusters.
 
         References
         ----------
@@ -75,6 +82,6 @@ class Beta(Profile):
         >>> import jax.numpy as jp
         >>> from socca.models import Beta
         >>> r = jp.linspace(0, 0.1, 100)
-        >>> I = Beta.profile(r, Ic=100.0, rc=0.01, beta=0.5)
+        >>> I = Beta.profile(r, Ic=100.0, rc=0.01, alpha=2.0, beta=0.5)
         """
-        return Ic * jp.power(1.00 + (r / rc) ** 2, -beta)
+        return Ic * jp.power(1.00 + (r / rc) ** alpha, -beta)
