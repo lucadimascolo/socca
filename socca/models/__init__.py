@@ -12,6 +12,7 @@ from . import config
 from .base import Component
 from .misc import Point, Background
 from .disk import Disk
+from .bridge import SharpBridge, MesaBridge
 from .radial import (
     Profile,
     CustomProfile,
@@ -19,6 +20,8 @@ from .radial import (
     Gaussian,
     Beta,
     gNFW,
+    Power,
+    TopHat,
     Exponential,
     PolyExponential,
     PolyExpoRefact,
@@ -44,6 +47,8 @@ def zoo():
 
     - Beta: Beta profile (power-law density)
     - gNFW: Generalized Navarro-Frenk-White profile
+    - Power: Power-law profile
+    - TopHat: Uniform top-hat profile
     - Sersic: Sersic profile for elliptical galaxies
     - Gaussian: Gaussian profile
     - Exponential: Exponential disk profile
@@ -60,6 +65,8 @@ def zoo():
     >>> models.zoo()
     Beta
     gNFW
+    Power
+    TopHat
     Sersic
     Gaussian
     Exponential
@@ -70,19 +77,46 @@ def zoo():
     Background
     Disk
     """
+    print("\nRadial models")
+    print("=============")
+
     models = [
         "Beta",
         "gNFW",
+        "Power",
+        "TopHat",
         "Sersic",
         "Gaussian",
         "Exponential",
         "PolyExponential",
         "PolyExpoRefact",
         "ModExponential",
+    ]
+
+    for mi, m in enumerate(models):
+        print(m)
+
+    print("\nFilaments")
+    print("============")
+    models = [
+        "SharpBridge",
+        "MesaBridge",
+    ]
+
+    for mi, m in enumerate(models):
+        print(m)
+
+    print("\nDisk-like model")
+    print("===============")
+    print("Disk")
+
+    print("\nOther models")
+    print("============")
+    models = [
         "Point",
         "Background",
-        "Disk",
     ]
+
     for mi, m in enumerate(models):
         print(m)
 
