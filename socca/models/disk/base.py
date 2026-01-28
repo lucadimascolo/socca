@@ -241,11 +241,11 @@ class Disk(Component):
                     sig = inspect.signature(val)
                     params = list(sig.parameters.keys())
                     if params:
-                        # Extract attribute name from lambda param
-                        # e.g., 'comp_00_rs' -> 'rs'
-                        param_name = params[0]
-                        attr_name = param_name.replace(f"{self.id}_", "")
-                        val = val(getattr(self, attr_name))
+                        args = [
+                            getattr(self, p.replace(f"{self.id}_", ""))
+                            for p in params
+                        ]
+                        val = val(*args)
 
                 kwarg[key] = val
 
