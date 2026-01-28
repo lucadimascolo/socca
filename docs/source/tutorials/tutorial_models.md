@@ -9,7 +9,7 @@ This section provides a brief overview of all the model components currently imp
 >>> # ... add more components as needed ...
 ```
 
-A more extensive example of how to build and fit composite models to imaging data can be found in the "[Getting started](./tutorial_quickstart.md)" tutorial.
+A more extensive example of how to build and fit composite models to image-space data can be found in the "[Getting started](./tutorial_quickstart.md)" tutorial.
 
 ## Available model components
 
@@ -18,17 +18,33 @@ A quick list of all available model components can be obtained by calling the `z
 ```python
 >>> from socca.models import zoo
 >>> zoo()
+
+Radial models
+=============
 Beta
 gNFW
+Power
+TopHat
 Sersic
 Gaussian
 Exponential
 PolyExponential
 PolyExpoRefact
 ModExponential
+
+Filaments
+============
+SharpBridge
+MesaBridge
+
+Disk-like model
+===============
+Disk
+
+Other models
+============
 Point
 Background
-Disk
 ```
 
 ### Radial profiles
@@ -81,11 +97,13 @@ This formulation ensures that the rotation is correctly applied in spherical coo
 ```
 
 #### Beta
-The `Beta` class implements the $\beta$ model ([Cavaliere &  Fusco-Femiano 1976](https://ui.adsabs.harvard.edu/abs/1976A%26A....49..137C/abstract)) commonly used to describe the projected surface brightness profile of galaxy clusters under the assumption of an isothermal intracluster medium. The functional form of the profile is given by:
+The `Beta` class implements a generalized version of the $\beta$ model ([Cavaliere &  Fusco-Femiano 1976](https://ui.adsabs.harvard.edu/abs/1976A%26A....49..137C/abstract)) commonly used to describe the projected surface brightness profile of galaxy clusters under the assumption of an isothermal intracluster medium. The functional form of the profile is given by:
 
 $$
-I(r) = I_c \left(1 + \frac{r^2}{r_c^2}\right)^{-\beta}
+I(r) = I_c \left(1 + \left(\frac{r}{r_c}\right)^{\alpha}\right)^{-\beta}
 $$
+
+The parameter $\alpha$ controls the radial exponent, with $\alpha = 2$ corresponding to the standard $\beta$ model.
 
 ```python
 >>> from socca.models import Beta
@@ -101,6 +119,7 @@ e        [] : 0.0000E+00 | Projected axis ratio
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Core radius
 Ic  [image] : None       | Central surface brightness
+alpha    [] : 2.0000E+00 | Radial exponent
 beta     [] : 5.5000E-01 | Slope parameter
 ```
 
@@ -132,6 +151,58 @@ Ic  [image] : None       | Characteristic surface brightness
 alpha    [] : 1.0510E+00 | Intermediate slope
 beta     [] : 5.4905E+00 | Outer slope
 gamma    [] : 3.0810E-01 | Inner slope
+```
+
+#### Power
+The `Power` class implements a simple power-law surface brightness profile. The functional form of the profile is given by:
+
+$$
+I(r) = I_c \left(\frac{r}{r_c}\right)^{-\alpha}
+$$
+
+where $I_c$ is the characteristic surface brightness at the scale radius $r_c$, and $\alpha$ is the power-law slope. For positive $\alpha$ values, the profile decreases with radius.
+
+```python
+>>> from socca.models import Power
+>>> comp = Power()
+>>> comp.parameters()
+
+Model parameters
+================
+xc    [deg] : None       | Right ascension of centroid
+yc    [deg] : None       | Declination of centroid
+theta [rad] : 0.0000E+00 | Position angle (east from north)
+e        [] : 0.0000E+00 | Projected axis ratio
+cbox     [] : 0.0000E+00 | Projected boxiness
+rc    [deg] : None       | Scale radius
+Ic  [image] : None       | Characteristic surface brightness
+alpha    [] : 2.0000E+00 | Power law slope
+```
+
+#### TopHat
+The `TopHat` class implements a uniform (boxcar) surface brightness profile within a cutoff radius. The functional form of the profile is given by:
+
+$$
+I(r) = \begin{cases}
+1 & \text{if } |r| < r_c \\
+0 & \text{otherwise}
+\end{cases}
+$$
+
+This profile is useful for modeling flat-topped emission regions or as a simple masking function. Note that unlike other radial profiles, the `TopHat` does not have an amplitude parameter — it simply returns unity within the cutoff radius.
+
+```python
+>>> from socca.models import TopHat
+>>> comp = TopHat()
+>>> comp.parameters()
+
+Model parameters
+================
+rc    [deg] : None       | Cutoff distance
+```
+
+```{note}
+The `TopHat` profile does not inherit the standard geometric parameters (`xc`, `yc`, `theta`, `e`, `cbox`) from the `Profile` base class. It only defines the cutoff radius `rc`.
 ```
 
 (sersic)=
