@@ -2,6 +2,7 @@
 
 from functools import partial
 import inspect
+import types
 
 import warnings
 
@@ -122,17 +123,17 @@ class Disk(Component):
             if key not in ["r", "z"]
         ]
 
-        profile_ = [
+        _profile = [
             "rfoo.profile(r,{0})".format(",".join(rkw)),
             "zfoo.profile(z,{0})".format(",".join(zkw)),
         ]
-        profile_ = "*".join(profile_)
-        profile_ = "lambda rfoo,zfoo,r,z,{0},{1}: {2}".format(
-            ",".join(rkw), ",".join(zkw), profile_
+        _profile = "*".join(_profile)
+        _profile = "lambda rfoo,zfoo,r,z,{0},{1}: {2}".format(
+            ",".join(rkw), ",".join(zkw), _profile
         )
 
         self.profile = jax.jit(
-            partial(eval(profile_), self.radial, self.vertical)
+            partial(eval(_profile), self.radial, self.vertical)
         )
 
         for key in self.radial.hyper:
@@ -166,6 +167,7 @@ class Disk(Component):
                 for key in self.vertical.description.keys()
             }
         )
+        self._initialized = True
 
     def getmap(self, img, convolve=False):
         """
@@ -228,9 +230,24 @@ class Disk(Component):
         for key in list(inspect.signature(self.profile).parameters.keys()):
             if key not in ["r", "z"]:
                 if key.startswith("r_"):
-                    kwarg[key] = getattr(self.radial, key.replace("r_", ""))
+                    val = getattr(self.radial, key.replace("r_", ""))
                 elif key.startswith("z_"):
-                    kwarg[key] = getattr(self.vertical, key.replace("z_", ""))
+                    val = getattr(self.vertical, key.replace("z_", ""))
+                else:
+                    continue
+
+                # Evaluate tied parameters (lambda functions)
+                if callable(val):
+                    sig = inspect.signature(val)
+                    params = list(sig.parameters.keys())
+                    if params:
+                        # Extract attribute name from lambda param
+                        # e.g., 'comp_00_rs' -> 'rs'
+                        param_name = params[0]
+                        attr_name = param_name.replace(f"{self.id}_", "")
+                        val = val(getattr(self, attr_name))
+
+                kwarg[key] = val
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
@@ -433,12 +450,26 @@ class Disk(Component):
             print("=" * 16)
             for key in keyout:
                 keylen = maxlen - len(f" [{self.units[key]}]")
-                kvalue = (
-                    self.radial.__dict__[key.replace("radial.", "")]
-                    if "radial" in key
-                    else self.vertical.__dict__[key.replace("vertical.", "")]
-                )
-                kvalue = None if kvalue is None else f"{kvalue:.4E}"
+                if key.startswith("radial."):
+                    kvalue = self.radial.__dict__[key.replace("radial.", "")]
+                elif key.startswith("vertical."):
+                    kvalue = self.vertical.__dict__[
+                        key.replace("vertical.", "")
+                    ]
+                else:
+                    kvalue = self.__dict__[key]
+
+                if kvalue is None:
+                    kvalue = None
+                elif isinstance(kvalue, numpyro.distributions.Distribution):
+                    kvalue = f"Distribution: {kvalue.__class__.__name__}"
+                elif isinstance(
+                    kvalue, (types.LambdaType, types.FunctionType)
+                ):
+                    kvalue = "Tied parameter"
+                else:
+                    kvalue = f"{kvalue:.4E}"
+
                 print(
                     f"{key:<{keylen}} [{self.units[key]}] : "
                     + f"{kvalue}".ljust(10)
@@ -450,14 +481,30 @@ class Disk(Component):
                 print("=" * 15)
                 for key in self.hyper:
                     keylen = maxlen - len(f" [{self.units[key]}]")
-                    kvalue = (
-                        self.radial.__dict__[key.replace("radial.", "")]
-                        if "radial" in key
-                        else self.vertical.__dict__[
+                    if key.startswith("radial."):
+                        kvalue = self.radial.__dict__[
+                            key.replace("radial.", "")
+                        ]
+                    elif key.startswith("vertical."):
+                        kvalue = self.vertical.__dict__[
                             key.replace("vertical.", "")
                         ]
-                    )
-                    kvalue = None if kvalue is None else f"{kvalue:.4E}"
+                    else:
+                        kvalue = self.__dict__[key]
+
+                    if kvalue is None:
+                        kvalue = None
+                    elif isinstance(
+                        kvalue, numpyro.distributions.Distribution
+                    ):
+                        kvalue = f"Distribution: {kvalue.__class__.__name__}"
+                    elif isinstance(
+                        kvalue, (types.LambdaType, types.FunctionType)
+                    ):
+                        kvalue = "Tied parameter"
+                    else:
+                        kvalue = f"{kvalue:.4E}"
+
                     print(
                         f"{key:<{keylen}} [{self.units[key]}] : "
                         + f"{kvalue}".ljust(10)
