@@ -156,7 +156,9 @@ class Profile(Component):
             if key != "r"
         }
 
-        rgrid = self.getgrid(img.grid, self.xc, self.yc, self.theta, self.e)
+        rgrid = self.getgrid(
+            img.grid, self.xc, self.yc, self.theta, self.e, self.cbox
+        )
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
