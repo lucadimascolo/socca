@@ -34,7 +34,7 @@ ModExponential
 
 Filaments
 ============
-SharpBridge
+SimpleBridge
 MesaBridge
 
 Disk-like model
@@ -541,7 +541,7 @@ The scale radius `rs` is applied directly to the parallel profile, while the rad
 The `SimpleBridge` class combines radial and parallel profiles multiplicatively, producing a surface brightness distribution of the form:
 
 $$
-I(r, z) = f_{\mathrm{radial}}(r) \times f_{\mathrm{parallel}}(z)
+I(r, z) = I_s ~ f_{\mathrm{radial}}(r) ~ f_{\mathrm{parallel}}(z)
 $$
 
 This creates structures where the emission is the product of the two independent profile functions. By default, the radial profile is a `Beta` model and the parallel profile is a `TopHat`, producing a uniform distribution along the bridge length with a smooth transverse profile.
@@ -567,7 +567,7 @@ radial.beta        [] : 5.5000E-01 | Slope parameter
 The `MesaBridge` class combines radial and parallel profiles using a harmonic mean, producing a mesa-like (flat-topped) surface brightness distribution:
 
 $$
-I(r, z) = \frac{1}{\frac{1}{f_{\mathrm{radial}}(r)} + \frac{1}{f_{\mathrm{parallel}}(z)}}
+I(r, z) = \frac{I_s}{\frac{1}{f_{\mathrm{radial}}(r)} + \frac{1}{f_{\mathrm{parallel}}(z)}}
 $$
 
 This creates smooth transitions between a flat central region and declining edges, resembling a mesa or table-top shape. The default configuration uses a Beta profile for the radial direction and a Power law profile for the parallel direction, with steep slopes chosen to produce characteristic mesa-like edges.

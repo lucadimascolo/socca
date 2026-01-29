@@ -5,6 +5,7 @@
 
 base
 radial
+bridge
 disk
 misc
 ```
