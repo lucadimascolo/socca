@@ -434,28 +434,348 @@ class TestTopHat:
 
     def test_initialization(self):
         """Test TopHat profile initialization."""
-        tophat = models.TopHat(rc=0.01)
+        tophat = models.TopHat(rc=0.01, Ic=5.0)
         assert tophat.rc == 0.01
+        assert tophat.Ic == 5.0
 
     def test_profile_function(self):
         """Test TopHat profile function."""
         r = jp.array([0.0, 0.005, 0.01, 0.02])
-        result = models.TopHat.profile(r, rc=0.01)
+        result = models.TopHat.profile(r, rc=0.01, Ic=1.0)
         assert result.shape == r.shape
 
     def test_profile_inside_cutoff(self):
-        """Test that profile is 1 inside cutoff radius."""
+        """Test that profile equals Ic inside cutoff radius."""
         r = jp.array([0.0, 0.005, 0.009])
-        result = models.TopHat.profile(r, rc=0.01)
+        Ic = 5.0
+        result = models.TopHat.profile(r, rc=0.01, Ic=Ic)
         for val in result:
-            assert float(val) == pytest.approx(1.0)
+            assert float(val) == pytest.approx(Ic)
 
     def test_profile_outside_cutoff(self):
         """Test that profile is 0 outside cutoff radius."""
         r = jp.array([0.011, 0.02, 0.05])
-        result = models.TopHat.profile(r, rc=0.01)
+        result = models.TopHat.profile(r, rc=0.01, Ic=1.0)
         for val in result:
             assert float(val) == pytest.approx(0.0)
+
+
+class TestSimpleBridge:
+    """Tests for SimpleBridge model."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    def test_initialization(self):
+        """Test SimpleBridge default initialization."""
+        bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        assert bridge.xc == 180.0
+        assert bridge.yc == 45.0
+        assert bridge.rs == 0.01
+        assert bridge.Is == 1.0
+        assert bridge.theta == 0.0
+
+    def test_parlist(self):
+        """Test SimpleBridge parameter list."""
+        bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        params = bridge.parlist()
+        assert "xc" in params
+        assert "yc" in params
+        assert "rs" in params
+        assert "Is" in params
+        assert "theta" in params
+        assert "e" in params
+        assert any("alpha" in p for p in params)
+        assert any("beta" in p for p in params)
+
+    def test_type_stored_in_model(self):
+        """Test that bridge type is stored correctly in Model."""
+        bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        mod = models.Model(bridge)
+        assert mod.type[0] == "SimpleBridge"
+
+    def test_unsupported_point_type(self):
+        """Test that Point raises TypeError."""
+        with pytest.raises(TypeError, match="Point"):
+            models.SimpleBridge(
+                radial=models.Point(xc=180.0, yc=45.0, Ic=1.0),
+                xc=180.0,
+                yc=45.0,
+                rs=0.01,
+                Is=1.0,
+            )
+
+    def test_unsupported_background_type(self):
+        """Test that Background raises TypeError."""
+        with pytest.raises(TypeError, match="Background"):
+            models.SimpleBridge(
+                radial=models.Background(),
+                xc=180.0,
+                yc=45.0,
+                rs=0.01,
+                Is=1.0,
+            )
+
+
+class TestMesaBridge:
+    """Tests for MesaBridge model."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    def test_initialization(self):
+        """Test MesaBridge default initialization."""
+        bridge = models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        assert bridge.xc == 180.0
+        assert bridge.yc == 45.0
+        assert bridge.rs == 0.01
+        assert bridge.Is == 1.0
+
+    def test_parlist(self):
+        """Test MesaBridge parameter list."""
+        bridge = models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        params = bridge.parlist()
+        assert "xc" in params
+        assert "yc" in params
+        assert "rs" in params
+        assert "Is" in params
+        assert any("alpha" in p for p in params)
+
+    def test_type_stored_in_model(self):
+        """Test that bridge type is stored correctly in Model."""
+        bridge = models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        mod = models.Model(bridge)
+        assert mod.type[0] == "MesaBridge"
+
+
+class TestBuildKwargsEvaluate:
+    """Tests for _build_kwargs and _evaluate methods."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    @pytest.fixture
+    def simple_img(self, simple_hdu, gaussian_psf):
+        """Create a simple Image for evaluation tests."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        img.addpsf(gaussian_psf)
+        return img
+
+    def test_beta_build_kwargs(self, simple_hdu):
+        """Test Beta._build_kwargs extracts correct parameters."""
+        beta = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5)
+        pars = {
+            "comp_00_xc": 180.0,
+            "comp_00_yc": 45.0,
+            "comp_00_theta": 0.0,
+            "comp_00_e": 0.0,
+            "comp_00_cbox": 0.0,
+            "comp_00_rc": 0.01,
+            "comp_00_Ic": 1.0,
+            "comp_00_alpha": 2.0,
+            "comp_00_beta": 0.5,
+        }
+        kwarg = beta._build_kwargs(pars, "comp_00")
+        assert "xc" in kwarg
+        assert "yc" in kwarg
+        assert "rc" in kwarg
+        assert "Ic" in kwarg
+        assert "beta" in kwarg
+        assert kwarg["xc"] == 180.0
+        assert kwarg["rc"] == 0.01
+
+    def test_beta_evaluate(self, simple_img):
+        """Test Beta._evaluate produces correct shape."""
+        beta = models.Beta(
+            xc=simple_img.hdu.header["CRVAL1"],
+            yc=simple_img.hdu.header["CRVAL2"],
+            rc=0.005,
+            Ic=1.0,
+            beta=0.5,
+        )
+        kwarg = {
+            "xc": simple_img.hdu.header["CRVAL1"],
+            "yc": simple_img.hdu.header["CRVAL2"],
+            "theta": 0.0,
+            "e": 0.0,
+            "cbox": 0.0,
+            "rc": 0.005,
+            "Ic": 1.0,
+            "alpha": 2.0,
+            "beta": 0.5,
+        }
+        result = beta._evaluate(simple_img, **kwarg)
+        assert result.shape == simple_img.data.shape
+
+    def test_point_build_kwargs(self):
+        """Test Point._build_kwargs extracts correct parameters."""
+        point = models.Point(xc=180.0, yc=45.0, Ic=100.0)
+        pars = {
+            "comp_00_xc": 180.0,
+            "comp_00_yc": 45.0,
+            "comp_00_Ic": 100.0,
+        }
+        kwarg = point._build_kwargs(pars, "comp_00")
+        assert kwarg["xc"] == 180.0
+        assert kwarg["yc"] == 45.0
+        assert kwarg["Ic"] == 100.0
+
+    def test_point_evaluate(self, simple_img):
+        """Test Point._evaluate returns complex Fourier array."""
+        point = models.Point(
+            xc=simple_img.hdu.header["CRVAL1"],
+            yc=simple_img.hdu.header["CRVAL2"],
+            Ic=100.0,
+        )
+        kwarg = {
+            "xc": simple_img.hdu.header["CRVAL1"],
+            "yc": simple_img.hdu.header["CRVAL2"],
+            "Ic": 100.0,
+        }
+        result = point._evaluate(simple_img, **kwarg)
+        expected_shape = (
+            simple_img.data.shape[0],
+            simple_img.data.shape[1] // 2 + 1,
+        )
+        assert result.shape == expected_shape
+
+    def test_background_build_kwargs(self):
+        """Test Background._build_kwargs extracts parameters."""
+        bkg = models.Background(a0=5.0)
+        pars = {
+            "comp_00_a0": 5.0,
+            "comp_00_a1x": 0.0,
+            "comp_00_a1y": 0.0,
+            "comp_00_a2xx": 0.0,
+            "comp_00_a2xy": 0.0,
+            "comp_00_a2yy": 0.0,
+            "comp_00_a3xxx": 0.0,
+            "comp_00_a3xxy": 0.0,
+            "comp_00_a3xyy": 0.0,
+            "comp_00_a3yyy": 0.0,
+            "comp_00_rs": 1.0,
+        }
+        kwarg = bkg._build_kwargs(pars, "comp_00")
+        assert kwarg["a0"] == 5.0
+        assert kwarg["rs"] == 1.0
+
+    def test_background_evaluate(self, simple_img):
+        """Test Background._evaluate produces correct shape."""
+        bkg = models.Background(a0=5.0, rs=1.0)
+        kwarg = {
+            "a0": 5.0,
+            "a1x": 0.0,
+            "a1y": 0.0,
+            "a2xx": 0.0,
+            "a2xy": 0.0,
+            "a2yy": 0.0,
+            "a3xxx": 0.0,
+            "a3xxy": 0.0,
+            "a3xyy": 0.0,
+            "a3yyy": 0.0,
+            "rs": 1.0,
+        }
+        result = bkg._evaluate(simple_img, **kwarg)
+        assert result.shape == simple_img.data.shape
+
+    def test_bridge_build_kwargs_fallback(self):
+        """Test Bridge._build_kwargs falls back for scale params."""
+        bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        cid = bridge.id
+        pars = {
+            f"{cid}_xc": 180.0,
+            f"{cid}_yc": 45.0,
+            f"{cid}_theta": 0.0,
+            f"{cid}_Is": 1.0,
+            f"{cid}_rs": 0.01,
+            f"{cid}_e": 0.5,
+            f"{cid}_radial.alpha": 2.0,
+            f"{cid}_radial.beta": 0.5,
+        }
+        kwarg = bridge._build_kwargs(pars, cid)
+        assert kwarg["xc"] == 180.0
+        assert kwarg["yc"] == 45.0
+        assert kwarg["Is"] == 1.0
+        assert "r_Ic" in kwarg
+        assert "r_rc" in kwarg
+        assert "r_alpha" in kwarg
+        assert "r_beta" in kwarg
+        assert "z_Ic" in kwarg
+        assert "z_rc" in kwarg
+
+    def test_bridge_evaluate(self, simple_img):
+        """Test Bridge._evaluate produces correct shape."""
+        bridge = models.SimpleBridge(
+            xc=simple_img.hdu.header["CRVAL1"],
+            yc=simple_img.hdu.header["CRVAL2"],
+            rs=0.005,
+            Is=1.0,
+        )
+        cid = bridge.id
+        pars = {
+            f"{cid}_xc": simple_img.hdu.header["CRVAL1"],
+            f"{cid}_yc": simple_img.hdu.header["CRVAL2"],
+            f"{cid}_theta": 0.0,
+            f"{cid}_Is": 1.0,
+            f"{cid}_rs": 0.005,
+            f"{cid}_e": 0.5,
+            f"{cid}_radial.alpha": 2.0,
+            f"{cid}_radial.beta": 0.5,
+        }
+        kwarg = bridge._build_kwargs(pars, cid)
+        result = bridge._evaluate(simple_img, **kwarg)
+        assert result.shape == simple_img.data.shape
+
+
+class TestGetmodelWithBridge:
+    """Tests for Model.getmodel with Bridge components."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    @pytest.fixture
+    def bridge_model_and_image(self, simple_hdu, gaussian_psf):
+        """Create a Bridge model and image for testing."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        img.addpsf(gaussian_psf)
+
+        xc = simple_hdu.header["CRVAL1"]
+        yc = simple_hdu.header["CRVAL2"]
+
+        bridge = models.SimpleBridge(
+            xc=xc,
+            yc=yc,
+            rs=0.005,
+            Is=priors.loguniform(0.1, 10.0),
+            theta=0.0,
+        )
+        mod = models.Model(bridge)
+        return mod, img
+
+    def test_getmodel_returns_tuple(self, bridge_model_and_image):
+        """Test that getmodel returns 4-tuple with Bridge."""
+        mod, img = bridge_model_and_image
+        pp = [1.0]
+        result = mod.getmodel(img, pp)
+        assert len(result) == 4
+
+    def test_getmodel_shapes(self, bridge_model_and_image):
+        """Test that getmodel outputs have correct shapes."""
+        mod, img = bridge_model_and_image
+        pp = [1.0]
+        mraw, msmo, mbkg, mneg = mod.getmodel(img, pp)
+        assert mraw.shape == img.data.shape
+        assert msmo.shape == img.data.shape
+        assert mbkg.shape == img.data.shape
+        assert mneg.shape == img.data.shape
 
 
 class TestModelComposition:
