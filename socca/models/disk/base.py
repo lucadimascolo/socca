@@ -93,7 +93,7 @@ class Disk(Component):
         components to ensure consistent parameter naming in composite models.
         """
         super().__init__(**kwargs)
-        for key in ["radial", "vertical", "profile"]:
+        for key in ["radial", "vertical", "profile", "_rkw", "_zkw"]:
             self.okeys.append(key)
 
         self.radial = radial
@@ -108,14 +108,14 @@ class Disk(Component):
             self.id = f"comp_{idmin:02d}"
             self.radial.id = self.id
 
-        rkw = [
+        self._rkw = [
             f"r_{key}"
             for key in list(
                 inspect.signature(self.radial.profile).parameters.keys()
             )
             if key not in ["r", "z"]
         ]
-        zkw = [
+        self._zkw = [
             f"z_{key}"
             for key in list(
                 inspect.signature(self.vertical.profile).parameters.keys()
@@ -124,12 +124,12 @@ class Disk(Component):
         ]
 
         _profile = [
-            "rfoo.profile(r,{0})".format(",".join(rkw)),
-            "zfoo.profile(z,{0})".format(",".join(zkw)),
+            "rfoo.profile(r,{0})".format(",".join(self._rkw)),
+            "zfoo.profile(z,{0})".format(",".join(self._zkw)),
         ]
         _profile = "*".join(_profile)
         _profile = "lambda rfoo,zfoo,r,z,{0},{1}: {2}".format(
-            ",".join(rkw), ",".join(zkw), _profile
+            ",".join(self._rkw), ",".join(self._zkw), _profile
         )
 
         self.profile = jax.jit(
@@ -249,6 +249,14 @@ class Disk(Component):
 
                 kwarg[key] = val
 
+        # Add geometric parameters
+        kwarg["xc"] = self.radial.xc
+        kwarg["yc"] = self.radial.yc
+        kwarg["theta"] = self.radial.theta
+        kwarg["inc"] = self.vertical.inc
+        kwarg["losdepth"] = self.vertical.losdepth
+        kwarg["losbins"] = self.vertical.losbins
+
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
                 raise ValueError(
@@ -260,21 +268,7 @@ class Disk(Component):
                     f"Please provide a valid value."
                 )
 
-        rcube, zcube = self.getgrid(
-            img.grid,
-            self.radial.xc,
-            self.radial.yc,
-            self.vertical.losdepth,
-            self.vertical.losbins,
-            self.radial.theta,
-            self.vertical.inc,
-        )
-
-        dx = 2.00 * self.vertical.losdepth / (self.vertical.losbins - 1)
-
-        mgrid = self.profile(rcube, zcube, **kwarg)
-        mgrid = jp.trapezoid(mgrid, dx=dx, axis=1)
-        mgrid = jp.mean(mgrid, axis=0)
+        mgrid = self._evaluate(img, **kwarg)
 
         if convolve:
             if img.psf is None:
@@ -290,6 +284,88 @@ class Disk(Component):
                     jp.fft.irfft2(mgrid, s=img.data.shape)
                 ).real
         return mgrid
+
+    def _build_kwargs(self, pars, comp_prefix):
+        """
+        Build keyword arguments for _evaluate from the full parameters dict.
+
+        Parameters
+        ----------
+        pars : dict
+            Full parameters dictionary with prefixed keys.
+        comp_prefix : str
+            Component prefix (e.g., 'comp_00').
+
+        Returns
+        -------
+        dict
+            Keyword arguments for _evaluate including geometric and profile
+            parameters with r_ and z_ prefixes.
+        """
+        # Build profile parameters with r_ and z_ prefixes
+        # Use self._rkw and self._zkw instead of inspect.signature since
+        # the profile is a jax.jit(partial(...)) which doesn't preserve signature
+        kwarg = {
+            key.replace(f"{comp_prefix}_radial.", "r_"): pars[key]
+            for key in pars
+            if key.startswith(f"{comp_prefix}_radial.")
+            and key.replace(f"{comp_prefix}_radial.", "r_") in self._rkw
+        }
+        kwarg.update(
+            {
+                key.replace(f"{comp_prefix}_vertical.", "z_"): pars[key]
+                for key in pars
+                if key.startswith(f"{comp_prefix}_vertical.")
+                and key.replace(f"{comp_prefix}_vertical.", "z_") in self._zkw
+            }
+        )
+
+        # Add geometric parameters
+        kwarg["xc"] = pars[f"{comp_prefix}_radial.xc"]
+        kwarg["yc"] = pars[f"{comp_prefix}_radial.yc"]
+        kwarg["theta"] = pars[f"{comp_prefix}_radial.theta"]
+        kwarg["inc"] = pars[f"{comp_prefix}_vertical.inc"]
+        kwarg["losdepth"] = pars[f"{comp_prefix}_vertical.losdepth"]
+        kwarg["losbins"] = pars[f"{comp_prefix}_vertical.losbins"]
+
+        return kwarg
+
+    def _evaluate(self, img, **kwarg):
+        """
+        Evaluate disk model on the given grid with explicit parameters.
+
+        This internal method computes the projected disk surface brightness
+        via line-of-sight integration using the provided geometric and profile
+        parameters. It is used by both getmap() and Model.getmodel() to avoid
+        code duplication.
+
+        Parameters
+        ----------
+        img : Image
+            Image object containing grid and WCS information.
+        **kwarg : dict
+            All parameters including geometric (xc, yc, theta, inc, losdepth,
+            losbins) and profile-specific parameters with r_ and z_ prefixes.
+
+        Returns
+        -------
+        ndarray
+            2D array of projected surface brightness, averaged over subpixels.
+        """
+        xc = kwarg.pop("xc")
+        yc = kwarg.pop("yc")
+        theta = kwarg.pop("theta")
+        inc = kwarg.pop("inc")
+        losdepth = kwarg.pop("losdepth")
+        losbins = kwarg.pop("losbins")
+
+        rcube, zcube = self.getgrid(
+            img.grid, xc, yc, losdepth, losbins, theta, inc
+        )
+        dx = 2.00 * losdepth / (losbins - 1)
+        mgrid = self.profile(rcube, zcube, **kwarg)
+        mgrid = jp.trapezoid(mgrid, dx=dx, axis=1)
+        return jp.mean(mgrid, axis=0)
 
     @staticmethod
     @partial(jax.jit, static_argnames=["grid", "losbins"])

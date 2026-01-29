@@ -115,6 +115,54 @@ class Point(Component):
         """
         pass
 
+    def _build_kwargs(self, pars, comp_prefix):
+        """
+        Build keyword arguments for _evaluate from the full parameters dict.
+
+        Parameters
+        ----------
+        pars : dict
+            Full parameters dictionary with prefixed keys.
+        comp_prefix : str
+            Component prefix (e.g., 'comp_00').
+
+        Returns
+        -------
+        dict
+            Keyword arguments for _evaluate.
+        """
+        return {
+            key.replace(f"{comp_prefix}_", ""): pars[key]
+            for key in pars
+            if key.startswith(f"{comp_prefix}_")
+        }
+
+    def _evaluate(self, img, **kwarg):
+        """
+        Evaluate point source in Fourier space with explicit parameters.
+
+        This internal method computes the Fourier-space representation of a
+        point source using phase shifts. It is used by both getmap() and
+        Model.getmodel() to avoid code duplication.
+
+        Parameters
+        ----------
+        img : Image
+            Image object containing FFT information.
+        **kwarg : dict
+            Parameters including xc, yc, Ic.
+
+        Returns
+        -------
+        ndarray
+            Fourier-space representation of the point source (complex array).
+        """
+        xc = kwarg["xc"]
+        yc = kwarg["yc"]
+        Ic = kwarg["Ic"]
+        uphase, vphase = img.fft.shift(xc, yc)
+        return Ic * img.fft.pulse * jp.exp(-(uphase + vphase))
+
     def getmap(self, img, convolve=False):
         """
         Generate point source image via Fourier space phase shifts.
@@ -178,8 +226,7 @@ class Point(Component):
                     f"Please provide a valid value."
                 )
 
-        uphase, vphase = img.fft.shift(self.xc, self.yc)
-        mgrid = self.Ic * img.fft.pulse * jp.exp(-(uphase + vphase))
+        mgrid = self._evaluate(img, **kwarg)
 
         if convolve:
             if img.psf is None:

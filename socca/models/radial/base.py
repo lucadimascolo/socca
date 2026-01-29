@@ -86,7 +86,7 @@ class Profile(Component):
                 xc="Right ascension of centroid",
                 yc="Declination of centroid",
                 theta="Position angle (east from north)",
-                e="Projected axis ratio",
+                e="Projected eccentricity (1 - axis ratio)",
                 cbox="Projected boxiness",
             )
         )
@@ -158,12 +158,9 @@ class Profile(Component):
         kwarg = {
             key: getattr(self, key)
             for key in list(inspect.signature(self.profile).parameters.keys())
+            + ["xc", "yc", "theta", "e", "cbox"]
             if key != "r"
         }
-
-        rgrid = self.getgrid(
-            img.grid, self.xc, self.yc, self.theta, self.e, self.cbox
-        )
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
@@ -176,8 +173,7 @@ class Profile(Component):
                     f"Please provide a valid value."
                 )
 
-        mgrid = self.profile(rgrid, **kwarg)
-        mgrid = jp.mean(mgrid, axis=0)
+        mgrid = self._evaluate(img, **kwarg)
 
         if convolve:
             if img.psf is None:
@@ -193,6 +189,61 @@ class Profile(Component):
                     jp.fft.irfft2(mgrid, s=img.data.shape)
                 ).real
         return mgrid
+
+    def _build_kwargs(self, pars, comp_prefix):
+        """
+        Build keyword arguments for _evaluate from the full parameters dict.
+
+        Parameters
+        ----------
+        pars : dict
+            Full parameters dictionary with prefixed keys.
+        comp_prefix : str
+            Component prefix (e.g., 'comp_00').
+
+        Returns
+        -------
+        dict
+            Keyword arguments for _evaluate.
+        """
+        return {
+            key.replace(f"{comp_prefix}_", ""): pars[key]
+            for key in pars
+            if key.startswith(f"{comp_prefix}_")
+            and key.replace(f"{comp_prefix}_", "")
+            in list(inspect.signature(self.profile).parameters.keys())
+            + ["xc", "yc", "theta", "e", "cbox"]
+        }
+
+    def _evaluate(self, img, **kwarg):
+        """
+        Evaluate the profile on the image grid with explicit parameters.
+
+        This internal method computes the profile on a coordinate grid using
+        the provided geometric and profile-specific parameters. It is used by
+        both getmap() and Model.getmodel() to avoid code duplication.
+
+        Parameters
+        ----------
+        img : Image
+            Image object containing grid, PSF, and WCS information.
+        **kwarg : dict
+            All parameters including xc, yc, theta, e, cbox and profile-specific
+            parameters (e.g., rc, Ic, beta for Beta profile).
+
+        Returns
+        -------
+        ndarray
+            2D array of surface brightness values, averaged over subpixels.
+        """
+        xc = kwarg.pop("xc")
+        yc = kwarg.pop("yc")
+        theta = kwarg.pop("theta")
+        e = kwarg.pop("e")
+        cbox = kwarg.pop("cbox")
+        rgrid = self.getgrid(img.grid, xc, yc, theta, e, cbox)
+        mgrid = self.profile(rgrid, **kwarg)
+        return jp.mean(mgrid, axis=0)
 
     @staticmethod
     @partial(jax.jit, static_argnames=["grid"])

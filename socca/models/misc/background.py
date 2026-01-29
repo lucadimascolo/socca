@@ -192,6 +192,53 @@ class Background(Component):
         """
         return (grid.x - xc) * jp.cos(jp.deg2rad(yc)), grid.y - yc
 
+    def _build_kwargs(self, pars, comp_prefix):
+        """
+        Build keyword arguments for _evaluate from the full parameters dict.
+
+        Parameters
+        ----------
+        pars : dict
+            Full parameters dictionary with prefixed keys.
+        comp_prefix : str
+            Component prefix (e.g., 'comp_00').
+
+        Returns
+        -------
+        dict
+            Keyword arguments for _evaluate.
+        """
+        return {
+            key.replace(f"{comp_prefix}_", ""): pars[key]
+            for key in pars
+            if key.startswith(f"{comp_prefix}_")
+        }
+
+    def _evaluate(self, img, **kwarg):
+        """
+        Evaluate background on the image grid with explicit parameters.
+
+        This internal method computes the polynomial background using the
+        provided coefficients. It is used by both getmap() and Model.getmodel()
+        to avoid code duplication.
+
+        Parameters
+        ----------
+        img : Image
+            Image object containing grid and WCS information.
+        **kwarg : dict
+            Polynomial coefficients (a0, a1x, a1y, ..., rs).
+
+        Returns
+        -------
+        ndarray
+            Background map on the image grid.
+        """
+        yr = jp.mean(img.grid.y, axis=0) - img.hdu.header["CRVAL2"]
+        xr = jp.mean(img.grid.x, axis=0) - img.hdu.header["CRVAL1"]
+        xr = xr * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"]))
+        return self.profile(xr, yr, **kwarg)
+
     def getmap(self, img, **kwargs):
         """
         Generate background map on the image grid.
@@ -240,13 +287,11 @@ class Background(Component):
                 "Ignoring `convolve` argument."
             )
 
-        xc, yc = self.img.wcs.crval
-        xgrid, ygrid = self.getgrid(img.grid, xc, yc)
         klist = [
             key
             for key in self.__dict__.keys()
             if key not in self.okeys and key[0] == "a"
-        ] + ["rc"]
+        ] + ["rs"]
         kwarg = {key: getattr(self, key) for key in klist}
 
         for key in kwarg.keys():
@@ -260,4 +305,4 @@ class Background(Component):
                     f"Please provide a valid value."
                 )
 
-        return self.profile(xgrid, ygrid, **kwarg)
+        return self._evaluate(img, **kwarg)

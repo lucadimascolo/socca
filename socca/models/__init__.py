@@ -161,10 +161,6 @@ class Model:
             Indices of parameters with prior distributions (free parameters).
         positive : list of bool
             Positivity constraints for each component.
-        profile : list of callable
-            Profile functions for each component.
-        gridder : list of callable
-            Grid generation functions for each component.
         tied : list of bool
             Indicates which parameters are tied to other parameters.
         type : list of str
@@ -186,8 +182,7 @@ class Model:
         self.params = []
         self.paridx = []
         self.positive = []
-        self.profile = []
-        self.gridder = []
+        self.components = []
         self.tied = []
         self.type = []
         self.units = {}
@@ -262,8 +257,7 @@ class Model:
 
             self.units.update({f"comp_{self.ncomp:02d}_{p}": prof.units[p]})
 
-        self.profile.append(prof.profile)
-        self.gridder.append(prof.getgrid)
+        self.components.append(prof)
         self.ncomp += 1
 
     def parameters(self, freeonly=False):
@@ -589,128 +583,43 @@ class Model:
         comp_ = self._comp_filter(component)
 
         for nc in comp_:
-            if self.type[nc] == "Disk":
-                kwarg = {
-                    key.replace(f"comp_{nc:02d}_radial.", "r_"): pars[key]
-                    for key in self.params
-                    if key.startswith(f"comp_{nc:02d}")
-                    and key.replace(f"comp_{nc:02d}_radial.", "r_")
-                    in list(
-                        inspect.signature(self.profile[nc]).parameters.keys()
+            kwarg = self.components[nc]._build_kwargs(pars, f"comp_{nc:02d}")
+            mone = self.components[nc]._evaluate(img, **kwarg)
+
+            if self.positive[nc] and self.type[nc] != "Point":
+                mneg = jp.where(mone < 0.00, 1.00, mneg)
+
+            if self.type[nc] == "Point":
+                if doresp:
+                    xpts = (kwarg["xc"] - img.hdu.header["CRVAL1"]) / jp.abs(
+                        img.hdu.header["CDELT1"]
                     )
-                }
-                kwarg.update(
-                    {
-                        key.replace(f"comp_{nc:02d}_vertical.", "z_"): pars[
-                            key
-                        ]
-                        for key in self.params
-                        if key.startswith(f"comp_{nc:02d}")
-                        and key.replace(f"comp_{nc:02d}_vertical.", "z_")
-                        in list(
-                            inspect.signature(
-                                self.profile[nc]
-                            ).parameters.keys()
-                        )
-                    }
-                )
+                    ypts = (kwarg["yc"] - img.hdu.header["CRVAL2"]) / jp.abs(
+                        img.hdu.header["CDELT2"]
+                    )
 
-                rcube, zcube = self.gridder[nc](
-                    img.grid,
-                    pars[f"comp_{nc:02d}_radial.xc"],
-                    pars[f"comp_{nc:02d}_radial.yc"],
-                    pars[f"comp_{nc:02d}_vertical.losdepth"],
-                    pars[f"comp_{nc:02d}_vertical.losbins"],
-                    pars[f"comp_{nc:02d}_radial.theta"],
-                    pars[f"comp_{nc:02d}_vertical.inc"],
-                )
+                    xpts = (
+                        img.hdu.header["CRPIX1"]
+                        - 1
+                        + xpts * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"]))
+                    )
+                    ypts = img.hdu.header["CRPIX2"] - 1 + ypts
+                    mone *= jax.scipy.ndimage.map_coordinates(
+                        img.resp,
+                        [jp.array([ypts]), jp.array([xpts])],
+                        order=1,
+                        mode="nearest",
+                    )[0]
 
-                dx = (
-                    2.00
-                    * pars[f"comp_{nc:02d}_vertical.losdepth"]
-                    / (pars[f"comp_{nc:02d}_vertical.losbins"] - 1)
-                )
-                mone = self.profile[nc](rcube, zcube, **kwarg)
-                mone = jp.trapezoid(mone, dx=dx, axis=1)
-                mone = jp.mean(mone, axis=0)
+                mpts += mone.copy()
+
+            elif self.type[nc] == "Background":
+                mbkg += mone.copy()
+
+            else:  # Profile, Disk, etc.
                 mraw += mone.copy()
-                del mone
-            else:
-                kwarg = {
-                    key.replace(f"comp_{nc:02d}_", ""): pars[key]
-                    for key in self.params
-                    if key.startswith(f"comp_{nc:02d}")
-                    and key.replace(f"comp_{nc:02d}_", "")
-                    in list(
-                        inspect.signature(self.profile[nc]).parameters.keys()
-                    )
-                }
 
-                if self.type[nc] == "Point":
-                    uphase, vphase = img.fft.shift(kwarg["xc"], kwarg["yc"])
-
-                    mone = (
-                        kwarg["Ic"]
-                        * img.fft.pulse
-                        * jp.exp(-(uphase + vphase))
-                    )
-                    if self.positive[nc]:
-                        mneg = jp.where(mone < 0.00, 1.00, mneg)
-
-                    if doresp:
-                        xpts = (
-                            kwarg["xc"] - img.hdu.header["CRVAL1"]
-                        ) / jp.abs(img.hdu.header["CDELT1"])
-                        ypts = (
-                            kwarg["yc"] - img.hdu.header["CRVAL2"]
-                        ) / jp.abs(img.hdu.header["CDELT2"])
-
-                        xpts = (
-                            img.hdu.header["CRPIX1"]
-                            - 1
-                            + xpts
-                            * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"]))
-                        )
-                        ypts = img.hdu.header["CRPIX2"] - 1 + ypts
-                        mone *= jax.scipy.ndimage.map_coordinates(
-                            img.resp,
-                            [jp.array([ypts]), jp.array([xpts])],
-                            order=1,
-                            mode="nearest",
-                        )[0]
-
-                    mpts += mone.copy()
-                    del mone
-
-                elif self.type[nc] == "Background":
-                    yr = jp.mean(img.grid.y, axis=0) - img.hdu.header["CRVAL2"]
-                    xr = jp.mean(img.grid.x, axis=0) - img.hdu.header["CRVAL1"]
-                    xr = xr * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"]))
-
-                    mone = self.profile[nc](xr, yr, **kwarg)
-                    if self.positive[nc]:
-                        mneg = jp.where(mone < 0.00, 1.00, mneg)
-
-                    mbkg += mone.copy()
-                    del mone
-
-                else:
-                    rgrid = self.gridder[nc](
-                        img.grid,
-                        pars[f"comp_{nc:02d}_xc"],
-                        pars[f"comp_{nc:02d}_yc"],
-                        pars[f"comp_{nc:02d}_theta"],
-                        pars[f"comp_{nc:02d}_e"],
-                        pars[f"comp_{nc:02d}_cbox"],
-                    )
-
-                    mone = self.profile[nc](rgrid, **kwarg)
-                    mone = jp.mean(mone, axis=0)
-                    if self.positive[nc]:
-                        mneg = jp.where(mone < 0.00, 1.00, mneg)
-
-                    mraw += mone.copy()
-                    del mone
+            del mone
 
         msmo = mraw.copy()
         if doresp:
@@ -736,6 +645,4 @@ class Model:
         return mraw + mpts, msmo, mbkg, mneg
 
 
-# Reset component counter after module initialization
-# (default arguments in Disk.__init__ create instances at import time)
 Component.idcls = 0

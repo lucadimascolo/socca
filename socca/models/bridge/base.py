@@ -113,9 +113,6 @@ class Bridge(Component):
             )
         )
 
-        # Inherited parameters
-        # ------------------------------
-
         self.radial = radial
         self.parallel = parallel
 
@@ -271,6 +268,11 @@ class Bridge(Component):
 
                 kwarg[key] = val
 
+        kwarg["xc"] = self.xc
+        kwarg["yc"] = self.yc
+        kwarg["Is"] = self.Is
+        kwarg["theta"] = self.theta
+
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
                 raise ValueError(
@@ -282,10 +284,7 @@ class Bridge(Component):
                     f"Please provide a valid value."
                 )
 
-        rgrid, zgrid = self.getgrid(img.grid, self.xc, self.yc, self.theta)
-
-        mgrid = self.profile(rgrid, zgrid, **kwarg)
-        mgrid = jp.mean(mgrid, axis=0)
+        mgrid = self._evaluate(img, **kwarg)
 
         if convolve:
             if img.psf is None:
@@ -343,6 +342,90 @@ class Bridge(Component):
         ) * sint
 
         return rgrid, zgrid
+
+    def _build_kwargs(self, pars, comp_prefix):
+        """
+        Build keyword arguments for _evaluate from the full parameters dict.
+
+        Parameters
+        ----------
+        pars : dict
+            Full parameters dictionary with prefixed keys.
+        comp_prefix : str
+            Component prefix (e.g., 'comp_00').
+
+        Returns
+        -------
+        dict
+            Keyword arguments for _evaluate including geometric and profile
+            parameters with r_ and z_ prefixes.
+        """
+        kwarg = {}
+        for key in self._rkw:
+            attr_name = key.replace("r_", "")
+            pars_key = f"{comp_prefix}_radial.{attr_name}"
+            if pars_key in pars:
+                kwarg[key] = pars[pars_key]
+            else:
+                val = getattr(self.radial, attr_name)
+                if callable(val):
+                    sig = inspect.signature(val)
+                    params = list(sig.parameters.keys())
+                    if params:
+                        args = [pars[p] for p in params]
+                        val = val(*args)
+                kwarg[key] = val
+
+        for key in self._zkw:
+            attr_name = key.replace("z_", "")
+            pars_key = f"{comp_prefix}_parallel.{attr_name}"
+            if pars_key in pars:
+                kwarg[key] = pars[pars_key]
+            else:
+                val = getattr(self.parallel, attr_name)
+                if callable(val):
+                    sig = inspect.signature(val)
+                    params = list(sig.parameters.keys())
+                    if params:
+                        args = [pars[p] for p in params]
+                        val = val(*args)
+                kwarg[key] = val
+
+        kwarg["xc"] = pars[f"{comp_prefix}_xc"]
+        kwarg["yc"] = pars[f"{comp_prefix}_yc"]
+        kwarg["theta"] = pars[f"{comp_prefix}_theta"]
+        kwarg["Is"] = pars[f"{comp_prefix}_Is"]
+
+        return kwarg
+
+    def _evaluate(self, img, **kwarg):
+        """
+        Evaluate bridge model on the given grid with explicit parameters.
+
+        This internal method computes the bridge surface brightness using
+        the provided geometric and profile parameters. It is used by both
+        getmap() and Model.getmodel() to avoid code duplication.
+
+        Parameters
+        ----------
+        img : Image
+            Image object containing grid and WCS information.
+        **kwarg : dict
+            All parameters including geometric (xc, yc, theta) and
+            profile-specific parameters with r_ and z_ prefixes.
+
+        Returns
+        -------
+        ndarray
+            2D array of surface brightness values, averaged over subpixels.
+        """
+        xc = kwarg.pop("xc")
+        yc = kwarg.pop("yc")
+        theta = kwarg.pop("theta")
+
+        rgrid, zgrid = self.getgrid(img.grid, xc, yc, theta)
+        mgrid = self.profile(rgrid, zgrid, **kwarg)
+        return jp.mean(mgrid, axis=0)
 
     def parameters(self):
         """
@@ -452,16 +535,25 @@ class Bridge(Component):
         list of str
             Parameter names including base, radial, and parallel parameters.
         """
-        pars_ = [key for key in self.__dict__.keys() if key not in self.okeys]
+        pars_ = [
+            key
+            for key in self.__dict__.keys()
+            if key not in self.okeys and key != "okeys"
+        ]
         pars_ += [
             f"radial.{key}"
             for key in self.radial.__dict__.keys()
-            if key not in self.okeys and key != "okeys"
+            if key not in self.okeys
+            and key != "okeys"
+            and key not in [self.radial._scale_radius, self.radial._scale_amp]
         ]
         pars_ += [
             f"parallel.{key}"
             for key in self.parallel.__dict__.keys()
-            if key not in self.okeys and key != "okeys"
+            if key not in self.okeys
+            and key != "okeys"
+            and key
+            not in [self.parallel._scale_radius, self.parallel._scale_amp]
         ]
         return pars_
 
@@ -473,7 +565,7 @@ class SimpleBridge(Bridge):
     The SimpleBridge combines radial and parallel profiles multiplicatively,
     producing a surface brightness distribution of the form:
 
-        I(r, z) = f_radial(r) * f_parallel(z)
+        I(r, z) = Is * f_radial(r) * f_parallel(z)
 
     This creates structures where the emission is the product of the two
     independent profile functions.
@@ -521,7 +613,7 @@ class SimpleBridge(Bridge):
             "zfoo.profile(z,{0})".format(",".join(self._zkw)),
         ]
         _profile = "*".join(_profile)
-        _profile = "lambda rfoo,zfoo,r,z,{0},{1}: {2}".format(
+        _profile = "lambda rfoo,zfoo,r,z,Is,{0},{1}: Is*{2}".format(
             ",".join(self._rkw), ",".join(self._zkw), _profile
         )
         self.profile = jax.jit(
@@ -537,7 +629,7 @@ class MesaBridge(Bridge):
     The MesaBridge combines radial and parallel profiles using a harmonic
     mean, producing a mesa-like (flat-topped) surface brightness distribution:
 
-        I(r, z) = 1 / (1/f_radial(r) + 1/f_parallel(z))
+        I(r, z) = Is / (1/f_radial(r) + 1/f_parallel(z))
 
     This creates smooth transitions between the flat central region and
     the declining edges, resembling a mesa or table-top shape.
