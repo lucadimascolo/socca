@@ -210,8 +210,15 @@ class Plotter:
                 i
                 for i, lbl in enumerate(labels)
                 if any(lbl.startswith(c) for c in component)
-            ]
+            ],
+            dtype=int,
         )
+
+        if len(indices) == 0:
+            raise ValueError(
+                f"No parameters found for component(s) {component}. "
+                f"Check that the component index exists."
+            )
 
         truths = kwargs.pop("truths", None)
         if truths is not None:
