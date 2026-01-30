@@ -7,6 +7,7 @@ from astropy.io import fits
 
 import socca.data as data
 import socca.fitting as fitting
+from socca.fitting.methods.utils import get_imp_weights
 import socca.models as models
 import socca.noise as noise
 import socca.priors as priors
@@ -18,7 +19,7 @@ class TestGetImpWeights:
     def test_basic_computation(self):
         """Test basic importance weight computation."""
         logw = np.array([0.0, -1.0, -2.0])
-        weights = fitting.get_imp_weights(logw)
+        weights = get_imp_weights(logw)
         assert weights.shape == logw.shape
         assert np.isclose(weights.sum(), 1.0)
 
@@ -26,7 +27,7 @@ class TestGetImpWeights:
         """Test with explicit log-evidence."""
         logw = np.array([0.0, -1.0, -2.0])
         logz = 0.0
-        weights = fitting.get_imp_weights(logw, logz=logz)
+        weights = get_imp_weights(logw, logz=logz)
         assert weights.shape == logw.shape
         assert np.isclose(weights.sum(), 1.0)
 
@@ -34,21 +35,21 @@ class TestGetImpWeights:
         """Test with log-evidence as list."""
         logw = np.array([0.0, -1.0, -2.0])
         logz = [0.0, 0.1]
-        weights = fitting.get_imp_weights(logw, logz=logz)
+        weights = get_imp_weights(logw, logz=logz)
         assert weights.shape == logw.shape
         assert np.isclose(weights.sum(), 1.0)
 
     def test_uniform_weights(self):
         """Test that equal log-weights give uniform weights."""
         logw = np.array([0.0, 0.0, 0.0])
-        weights = fitting.get_imp_weights(logw)
+        weights = get_imp_weights(logw)
         np.testing.assert_allclose(weights, 1 / 3, rtol=1e-5)
 
     def test_weights_sum_to_one(self):
         """Test that weights sum to 1.0."""
         np.random.seed(42)
         logw = np.random.randn(100)
-        weights = fitting.get_imp_weights(logw)
+        weights = get_imp_weights(logw)
         assert np.isclose(weights.sum(), 1.0)
 
 
