@@ -9,7 +9,7 @@ data
 noise
 models/index
 priors
-fitting
+fitting/index
 plotting
 utils
 ```
