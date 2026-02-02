@@ -84,6 +84,8 @@ def _run_nautilus(
     for key in ["flive", "f_live"]:
         flive = kwargs.pop(key, flive)
 
+    pool = kwargs.get("pool", None)
+
     sampler_kwargs = {}
     for key in inspect.signature(nautilus.Sampler).parameters.keys():
         if key not in [
@@ -93,6 +95,7 @@ def _run_nautilus(
             "n_live",
             "filepath",
             "resume",
+            "pool",
         ]:
             if key in kwargs:
                 sampler_kwargs[key] = kwargs.pop(key)
@@ -111,6 +114,7 @@ def _run_nautilus(
         n_live=nlive,
         filepath=checkpoint,
         resume=resume,
+        pool=pool,
         **sampler_kwargs,
     )
 
