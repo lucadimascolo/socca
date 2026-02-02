@@ -8,6 +8,8 @@ import numpy as np
 
 import inspect
 
+from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
+
 
 #   Fitting method - optimizer
 #   --------------------------------------------------------
@@ -59,6 +61,18 @@ def _run_optimizer(self, pinits, **kwargs):
     automatically using JAX. The L-BFGS-B method is used for
     box-constrained optimization.
     """
+    if MPI_SIZE > 1:
+        MPI_COMM.bcast(None, root=0)
+        if MPI_RANK != 0:
+            raise SystemExit(0)
+        raise ValueError("Optimizer does not support MPI parallelization.\n ")
+
+    for key in ["pool", "ncores", "n_cores", "num_chains"]:
+        if key in kwargs:
+            raise ValueError(
+                "Optimizer does not support multiprocessing (yet).\n "
+            )
+
     opt_kwargs = {}
     for key in inspect.signature(scipy.optimize.minimize).parameters.keys():
         if key not in ["fun", "x0", "jac", "bounds", "method"]:

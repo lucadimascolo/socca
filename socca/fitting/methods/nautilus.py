@@ -7,6 +7,12 @@ import time
 
 from .utils import get_imp_weights
 
+from ...pool.mpi import FunctionTag, MPIPool
+from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
+from ...pool.mpi import KWCAST
+
+from ...pool.mp import MultiPool
+
 
 #   Fitting method - Nautilus sampler
 #   --------------------------------------------------------
@@ -84,7 +90,17 @@ def _run_nautilus(
     for key in ["flive", "f_live"]:
         flive = kwargs.pop(key, flive)
 
-    pool = kwargs.get("pool", None)
+    if "ncores" in kwargs and "pool" in kwargs:
+        raise ValueError("Cannot specify both 'ncores' and 'pool' arguments.")
+
+    pool = None
+    for key in ["ncores", "pool"]:
+        pool = kwargs.pop(key, pool)
+
+    ncores = None
+    if isinstance(pool, int):
+        ncores = pool
+        pool = None
 
     sampler_kwargs = {}
     for key in inspect.signature(nautilus.Sampler).parameters.keys():
@@ -106,7 +122,28 @@ def _run_nautilus(
             if key in kwargs:
                 run_kwargs[key] = kwargs.pop(key)
 
+    if MPI_SIZE > 1:
+        FunctionTag._func = log_likelihood
+
+        pool = MPIPool()
+
+        if not pool.is_master():
+            pool.wait()
+
+            results = MPI_COMM.bcast(None, root=0)
+            for key in KWCAST:
+                setattr(self, key, results[key])
+            return
+
+    if ncores is not None and pool is None:
+        pool = MultiPool(ncores, log_likelihood)
+
     print("\n* Running the main sampling step")
+    if isinstance(pool, MPIPool):
+        log_likelihood = FunctionTag()
+    elif isinstance(pool, MultiPool):
+        log_likelihood = pool.likelihood
+
     self.sampler = nautilus.Sampler(
         prior=prior_transform,
         likelihood=log_likelihood,
@@ -120,22 +157,26 @@ def _run_nautilus(
 
     discard_exploration = kwargs.pop("discard_exploration", True)
 
-    toc = time.time()
+    if MPI_RANK == 0:
+        toc = time.time()
+
     self.sampler.run(
         f_live=flive,
         verbose=True,
         discard_exploration=discard_exploration,
         **run_kwargs,
     )
-    tic = time.time()
 
-    dt = tic - toc
-    dt = (
-        "{0:.2f} s".format(dt)
-        if dt < 60.00
-        else "{0:.2f} m".format(dt / 60.00)
-    )
-    print(f"Elapsed time: {dt}")
+    if MPI_RANK == 0:
+        tic = time.time()
+
+        dt = tic - toc
+        dt = (
+            "{0:.2f} s".format(dt)
+            if dt < 60.00
+            else "{0:.2f} m".format(dt / 60.00)
+        )
+        print(f"Elapsed time: {dt}")
 
     self.samples, self.logw, _ = self.sampler.posterior()
     self.logz = self.sampler.log_z
@@ -161,3 +202,9 @@ def _run_nautilus(
     else:
         self.sampler_prior = None
         self.logz_prior = None
+
+    if pool is not None:
+        pool.close()
+
+    if MPI_SIZE > 1:
+        MPI_COMM.bcast({key: getattr(self, key) for key in KWCAST}, root=0)
