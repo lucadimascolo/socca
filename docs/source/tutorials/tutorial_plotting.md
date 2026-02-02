@@ -1,6 +1,6 @@
 # Visualizing the results
 
-**``socca``** provides built-in plotting utilities accessible via `fit.plot`.
+**``socca``** provides built-in plotting utilities accessible via `fit.plot`. These are specifically intended for visualizing the results of the fitting process, and thus require a completed `fit` object (see "[Running the model inference](./tutorial_fitting.md)").
 
 ## Comparison plot
 
