@@ -58,6 +58,7 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 ./tutorials/tutorial_models.md
 ./tutorials/tutorial_priors.md
 ./tutorials/tutorial_fitting.md
+./tutorials/tutorial_plotting.md
 ```
 
 ```{toctree}
