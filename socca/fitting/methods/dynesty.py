@@ -1,14 +1,15 @@
 """Dynesty nested sampling backend."""
 
-import dill
-
 import dynesty
-import dynesty.utils
-
-dynesty.utils.pickle_module = dill
 
 import inspect
 import os
+
+from ...pool.mpi import FunctionTag, MPIPool
+from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
+from ...pool.mpi import KWCAST
+
+from ...pool.mp import MultiPool
 
 
 #   Fitting method - Dynesty sampler
@@ -81,6 +82,18 @@ def _run_dynesty(
     nlive = kwargs.pop("nlive", 1000)
     dlogz = kwargs.pop("dlogz", 0.01)
 
+    if "ncores" in kwargs and "pool" in kwargs:
+        raise ValueError("Cannot specify both 'ncores' and 'pool' arguments.")
+
+    pool = None
+    for key in ["ncores", "pool"]:
+        pool = kwargs.pop(key, pool)
+
+    ncores = None
+    if isinstance(pool, int):
+        ncores = pool
+        pool = None
+
     sampler_kwargs = {}
     for key in inspect.signature(dynesty.NestedSampler).parameters.keys():
         if key not in [
@@ -88,6 +101,7 @@ def _run_dynesty(
             "prior_transform",
             "ndim",
             "nlive",
+            "pool",
         ]:
             if key in kwargs:
                 sampler_kwargs[key] = kwargs.pop(key)
@@ -100,41 +114,75 @@ def _run_dynesty(
             if key in kwargs:
                 run_kwargs[key] = kwargs.pop(key)
 
+    if MPI_SIZE > 1:
+        if MPI_RANK == 0:
+            print(
+                "\nDynesty does not benefit from MPI "
+                "parallelization due to its sequential "
+                "point proposal.\nConsider using "
+                "method='nautilus' for MPI runs."
+            )
+
+        FunctionTag._func = log_likelihood
+
+        pool = MPIPool()
+
+        if not pool.is_master():
+            pool.wait()
+
+            results = MPI_COMM.bcast(None, root=0)
+            for key in KWCAST:
+                setattr(self, key, results[key])
+            return
+
+    if ncores is not None and pool is None:
+        pool = MultiPool(ncores, log_likelihood)
+
     print("\n* Running the main sampling step")
-    if ~resume or not os.path.exists(checkpoint):
+    if isinstance(pool, MPIPool):
+        log_likelihood = FunctionTag()
+    elif isinstance(pool, MultiPool):
+        log_likelihood = pool.likelihood
+
+    if not resume or not os.path.exists(checkpoint):
         sampler = dynesty.NestedSampler(
             loglikelihood=log_likelihood,
             prior_transform=prior_transform,
             ndim=ndims,
             nlive=nlive,
+            pool=pool,
             **sampler_kwargs,
         )
         sampler.run_nested(
             dlogz=dlogz, checkpoint_file=checkpoint, **run_kwargs
         )
     else:
-        sampler = dynesty.NestedSampler.restore(checkpoint)
+        sampler = dynesty.NestedSampler.restore(checkpoint, pool=pool)
         sampler.run_nested(resume=True)
-
-    self.sampler = sampler
 
     results = sampler.results
 
     self.samples = results["samples"].copy()
     self.weights = results.importance_weights().copy()
+    self.logw = results["logwt"].copy()
     self.logz = results["logz"][-1]
 
     if getzprior:
         print("\n* Sampling the prior probability")
-        self.sampler_prior = dynesty.NestedSampler(
+        sampler_prior = dynesty.NestedSampler(
             log_prior,
             prior_transform,
             ndim=ndims,
             nlive=nlive,
             **sampler_kwargs,
         )
-        self.sampler_prior.run_nested(dlogz=dlogz)
-        self.logz_prior = self.sampler_prior.results["logz"][-1]
+        sampler_prior.run_nested(dlogz=dlogz)
+        self.logz_prior = sampler_prior.results["logz"][-1]
     else:
-        self.sampler_prior = None
         self.logz_prior = None
+
+    if pool is not None:
+        pool.close()
+
+    if MPI_SIZE > 1:
+        MPI_COMM.bcast({key: getattr(self, key) for key in KWCAST}, root=0)

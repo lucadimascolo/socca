@@ -31,6 +31,9 @@ from .methods import (
     _run_optimizer,
 )
 
+from ..pool.mpi import MPI_RANK
+from ..pool.mpi import root_only
+
 
 # Fitter constructor
 # ========================================================
@@ -297,6 +300,9 @@ class fitter:
             "numpyro": self._run_numpyro,
         }
 
+        if self.method not in sampler_methods:
+            raise ValueError(f"Unknown sampling method: {self.method}")
+
         self.logz_prior = None
 
         if isinstance(checkpoint, str) and self.method != "pocomc":
@@ -340,6 +346,7 @@ class fitter:
 
     #   Compute standard Bayesian Model Selection estimators
     #   --------------------------------------------------------
+    @root_only
     def bmc(self, verbose=True):
         """
         Compute Bayesian model comparison estimators.
@@ -413,6 +420,7 @@ class fitter:
 
     #   Dump results
     #   --------------------------------------------------------
+    @root_only
     def dump(self, filename):
         """
         Save the fitter object to a pickle file.
@@ -544,17 +552,18 @@ class fitter:
             "all": "all",
         }
 
-        if isinstance(what, str):
-            label = name_map.get(what.lower(), what)
-            print(f"Generating {label} model")
-        else:
-            labels = [name_map.get(w.lower(), w) for w in what]
-            if len(labels) == 2:
-                print(f"Generating {' and '.join(labels)} models")
+        if MPI_RANK == 0:
+            if isinstance(what, str):
+                label = name_map.get(what.lower(), what)
+                print(f"Generating {label} model")
             else:
-                print(
-                    f"Generating {', '.join(labels[:-1])} and {labels[-1]} models"
-                )
+                labels = [name_map.get(w.lower(), w) for w in what]
+                if len(labels) == 2:
+                    print(f"Generating {' and '.join(labels)} models")
+                else:
+                    print(
+                        f"Generating {', '.join(labels[:-1])} and {labels[-1]} models"
+                    )
 
         def gm(pp):
             return self.mod.getmodel(
@@ -641,6 +650,7 @@ class fitter:
 
     #   Save best-fit/median model to file
     #   --------------------------------------------------------
+    @root_only
     def savemodel(self, name, component=None, **kwargs):
         """
         Save best-fit or median model to a FITS file.
@@ -739,6 +749,7 @@ class fitter:
 
     #   Print best-fit parameters
     #   --------------------------------------------------------
+    @root_only
     def parameters(self):
         """
         Print best-fit parameters with uncertainties.

@@ -7,6 +7,8 @@ import numpy as np
 
 import inspect
 
+from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
+
 
 #   Fitting method - Numpyro NUTS
 #   --------------------------------------------------------
@@ -46,6 +48,18 @@ def _run_numpyro(self, log_likelihood, **kwargs):
     so it cannot be used for Bayesian model comparison. The method
     requires parameter priors to be NumPyro distributions.
     """
+    if MPI_SIZE > 1:
+        MPI_COMM.bcast(None, root=0)
+        if MPI_RANK != 0:
+            raise SystemExit(0)
+        raise ValueError(
+            "NumPyro NUTS does not support MPI parallelization.\n "
+        )
+
+    num_chains = 1
+    for key in ["pool", "ncores", "n_cores", "num_chains"]:
+        num_chains = kwargs.pop(key, num_chains)
+
     nwarmup = 1000
     for key in ["n_warmup", "nwarmup", "num_warmup"]:
         nwarmup = kwargs.pop(key, nwarmup)
@@ -73,13 +87,17 @@ def _run_numpyro(self, log_likelihood, **kwargs):
 
     mcmc_kwargs = {}
     for key in inspect.signature(numpyro.infer.MCMC).parameters.keys():
-        if key not in ["nuts", "num_warmup", "num_samples"]:
+        if key not in ["nuts", "num_warmup", "num_samples", "num_chains"]:
             if key in kwargs:
                 mcmc_kwargs[key] = kwargs.pop(key)
 
     nuts = numpyro.infer.NUTS(model, **nuts_kwargs)
     mcmc = numpyro.infer.MCMC(
-        nuts, num_warmup=nwarmup, num_samples=nsamples, **mcmc_kwargs
+        nuts,
+        num_warmup=nwarmup,
+        num_samples=nsamples,
+        num_chains=num_chains,
+        **mcmc_kwargs,
     )
     mcmc.run(seed, **kwargs)
 

@@ -11,6 +11,8 @@ import warnings
 from astropy.convolution import convolve, CustomKernel
 from scipy.stats import median_abs_deviation
 
+from .pool.mpi import MPI_RANK
+
 
 # Multi-variate normal noise (no correlation)
 # ========================================================
@@ -95,7 +97,6 @@ class Normal:
             (same shape as ``self.data``).
         """
         if self.select is None:
-            print("Using MAD for estimating noise level")
             sigma = median_abs_deviation(
                 x=self.data.at[self.mask].get(),
                 scale="normal",
@@ -103,7 +104,12 @@ class Normal:
                 axis=None,
             )
             sigma = float(sigma)
-            print(f"- noise level: {sigma:.2E} [image units]")
+
+            if MPI_RANK == 0:
+                print(
+                    "Using MAD for estimating noise level\n"
+                    f"- noise level: {sigma:.2E} [image units]"
+                )
         elif isinstance(self.select, str):
             if isinstance(self.kwargs[self.select], (float, int)):
                 sigma = self.kwargs[self.select]
