@@ -61,7 +61,7 @@ If `mpi4py` is not installed but the process is launched under an MPI environmen
 While all three backends support MPI, `nautilus` is the recommended choice for distributed runs. Dynesty's sequential point proposal does not benefit as much from MPI parallelization, and a warning is printed when this combination is detected:
 
 ```
-Dynesty does not benefit from MPI parallelization due to its sequential
+Dynesty might not benefit from MPI parallelization due to its sequential
 point proposal. Consider using method='nautilus' for MPI runs.
 ```
 
