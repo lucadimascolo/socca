@@ -36,7 +36,8 @@ dependencies = [
     "pocomc",
     "corner",
     "dill",
-    "h5py"
+    "h5py",
+    "loky"
 ]
 
 [project.urls]
