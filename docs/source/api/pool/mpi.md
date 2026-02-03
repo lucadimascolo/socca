@@ -1,7 +1,7 @@
-# socca.fitting
+# MPI
 
 ```{eval-rst}
-.. automodule:: socca.fitting
+.. automodule:: socca.pool.mpi
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,7 +1,7 @@
-# socca.fitting
+# Multiprocessing
 
 ```{eval-rst}
-.. automodule:: socca.fitting
+.. automodule:: socca.pool.mp
    :members:
    :undoc-members:
    :show-inheritance:

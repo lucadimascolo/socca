@@ -12,7 +12,7 @@ class TopHat(Profile):
     Top-hat surface brightness profile.
 
     The Top-hat profile describes a uniform surface brightness distribution
-    within a cutoff radius: I(r) = 1 for |r| < rc, and I(r) = 0 otherwise.
+    within a cutoff radius: I(r) = 1 for ``|r|`` < rc, and I(r) = 0 otherwise.
     This profile is useful for modeling flat-topped emission regions.
     """
 
@@ -53,7 +53,7 @@ class TopHat(Profile):
         -----
         The Top-hat profile is defined as:
 
-        I(r) = 1 for |r| < rc, and I(r) = 0 otherwise
+        I(r) = 1 for ``|r|`` < rc, and I(r) = 0 otherwise
 
         This profile produces a flat, uniform emission within the cutoff
         radius and zero emission outside.

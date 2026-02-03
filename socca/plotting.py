@@ -298,6 +298,7 @@ class Plotter:
             - str: Single colormap applied to all panels
             - list: [data_cmap, model_cmap, residual_cmap]
             - dict: {'data': cmap, 'model': cmap, 'residuals': cmap}
+
             Defaults to ['magma', 'magma', 'RdBu_r'].
         cmap_data : str, optional
             Colormap for data panel (overrides cmaps). Default is 'magma'.

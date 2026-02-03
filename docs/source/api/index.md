@@ -10,6 +10,7 @@ noise
 models/index
 priors
 fitting/index
+pool/index
 plotting
 utils
 ```
