@@ -112,7 +112,7 @@ class fitter:
 
     #   Compute total model
     #   --------------------------------------------------------
-    def _get_model(self, pp):
+    def _getmodel(self, pp):
         """
         Compute the total model with response and exposure corrections.
 
@@ -175,7 +175,7 @@ class fitter:
         The noise PDF is evaluated using the parameters xs (model data)
         and xr (raw model data) extracted from pdfkwarg.
         """
-        xr, xs, _, neg = self._get_model(pp)
+        xr, xs, _, neg = self._getmodel(pp)
 
         xs = xs.at[self.mask].get()
         xr = xr.at[self.mask].get()
@@ -186,7 +186,7 @@ class fitter:
     #   Prior probability distribution
     #   --------------------------------------------------------
     @partial(jax.jit, static_argnames=["self"])
-    def _log_prior(self, theta):
+    def _log_prior(self, pp):
         """
         Compute the log-prior probability for given parameters.
 
@@ -195,7 +195,7 @@ class fitter:
 
         Parameters
         ----------
-        theta : dict or array_like
+        pp : dict or array_like
             Parameter values. Can be a dictionary with parameter names
             as keys, or an array-like object indexed by parameter names.
 
@@ -212,9 +212,9 @@ class fitter:
         prior distribution defined in self.mod.priors.
         """
         prob = 0.00
-        for idx in self.mod.paridx:
-            key = self.mod.params[idx]
-            prob += self.mod.priors[key].log_prob(theta[key])
+        for pi, p in enumerate(pp):
+            key = self.mod.params[self.mod.paridx[pi]]
+            prob += self.mod.priors[key].log_prob(p)
         return prob
 
     #   Transform prior hypercube
