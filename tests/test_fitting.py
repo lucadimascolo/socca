@@ -97,13 +97,13 @@ class TestFitter:
 
         assert isinstance(simple_fitter.plot, Plotter)
 
-    def test_get_model(self, simple_fitter):
-        """Test _get_model method."""
+    def test_getmodel(self, simple_fitter):
+        """Test _getmodel method."""
         pp = [
             simple_fitter.img.hdu.header["CRVAL1"],
             simple_fitter.img.hdu.header["CRVAL2"],
         ]
-        result = simple_fitter._get_model(pp)
+        result = simple_fitter._getmodel(pp)
         assert len(result) == 4
         mraw, msmo, mbkg, mneg = result
         assert mraw.shape == simple_fitter.img.data.shape
@@ -357,10 +357,10 @@ class TestFitterResponseAndExposure:
         """Test that exposure is considered in model evaluation."""
         assert not np.all(np.array(fitter_with_resp_exp.img.exp) == 1.0)
 
-    def test_get_model_with_resp_exp(self, fitter_with_resp_exp):
-        """Test _get_model with response and exposure."""
+    def test_getmodel_with_resp_exp(self, fitter_with_resp_exp):
+        """Test _getmodel with response and exposure."""
         pp = [fitter_with_resp_exp.img.hdu.header["CRVAL1"]]
-        result = fitter_with_resp_exp._get_model(pp)
+        result = fitter_with_resp_exp._getmodel(pp)
         assert len(result) == 4
 
 
