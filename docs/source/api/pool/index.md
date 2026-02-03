@@ -1,8 +1,8 @@
-# Fitting
+# Pool
 
 ```{toctree}
 :maxdepth: 1
 
-base
-methods
+mp
+mpi
 ```
