@@ -117,7 +117,7 @@ def _run_dynesty(
     if MPI_SIZE > 1:
         if MPI_RANK == 0:
             print(
-                "\nDynesty does not benefit from MPI "
+                "\nDynesty might not benefit from MPI "
                 "parallelization due to its sequential "
                 "point proposal.\nConsider using "
                 "method='nautilus' for MPI runs."
