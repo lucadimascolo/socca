@@ -8,6 +8,25 @@ import glob
 
 import time
 
+import tqdm.utils
+
+
+# Patch tqdm ObjectWrapper to prevent RecursionError during
+# dill unpickling of pocomc checkpoint files. When dill
+# deserializes a tqdm progress bar, _wrapped may not yet be
+# set, causing __getattr__ to recurse infinitely.
+def _safe_ow_getattr(self, name):
+    if name == "_wrapped":
+        raise AttributeError(name)
+    try:
+        wrapped = object.__getattribute__(self, "_wrapped")
+    except AttributeError:
+        raise AttributeError(name)
+    return getattr(wrapped, name)
+
+
+tqdm.utils.ObjectWrapper.__getattr__ = _safe_ow_getattr
+
 from .utils import get_imp_weights
 
 from ...priors import pocomcPrior
@@ -178,7 +197,7 @@ def _run_pocomc(
         n_effective=nlive,
         n_active=n_active,
         vectorize=False,
-        output_dir=pocodir if resume else None,
+        output_dir=pocodir if checkpoint is not None else None,
         pool=pool,
         **sampler_kwargs,
     )
