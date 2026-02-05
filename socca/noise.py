@@ -325,9 +325,8 @@ class NormalCorrelated:
         self.data = data.at[self.mask].get()
 
         self.norm = -float(jp.linalg.slogdet(self.icov / 2.00 / jp.pi)[1])
-        self.logpdf = (
-            lambda xs: self._logpdf(xs, self.data, self.icov)
-            - 0.50 * self.norm
+        self.logpdf = lambda xs: (
+            self._logpdf(xs, self.data, self.icov) - 0.50 * self.norm
         )
 
     #   Noise log-pdf/likelihood function
