@@ -170,6 +170,13 @@ def _run_pocomc(
     prior = pocomcPrior(prior, seed=kwargs.pop("seed", 0))
 
     if MPI_SIZE > 1:
+        if MPI_RANK == 0:
+            print(
+                "\npocomc might not benefit signicantly "
+                " from MPI parallelization.\nConsider using "
+                "method='nautilus' for MPI runs."
+            )
+
         FunctionTag._func = log_likelihood
 
         pool = MPIPool()
