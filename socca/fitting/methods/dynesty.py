@@ -1,6 +1,11 @@
 """Dynesty nested sampling backend."""
 
+import dill
+
 import dynesty
+import dynesty.utils
+
+dynesty.utils.pickle_module = dill
 
 import inspect
 import os
