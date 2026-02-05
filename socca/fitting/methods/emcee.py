@@ -176,7 +176,6 @@ def _run_emcee(
         **sampler_kwargs,
     )
 
-    # Initialize walkers from the prior or resume
     if resume and backend is not None and backend.iteration > 0:
         initial_state = None
         nsteps = max(0, nsteps - backend.iteration)

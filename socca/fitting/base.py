@@ -216,7 +216,11 @@ class fitter:
         prob = 0.00
         for pi, p in enumerate(pp):
             key = self.mod.params[self.mod.paridx[pi]]
-            prob += self.mod.priors[key].log_prob(p)
+            prob_ = self.mod.priors[key].log_prob(p)
+            prob_ = jp.where(
+                self.mod.priors[key].support.check(p), prob_, -jp.inf
+            )
+            prob += jp.where(jp.isfinite(prob_), prob_, -jp.inf)
         return prob
 
     #   Transform prior hypercube
