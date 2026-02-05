@@ -398,6 +398,11 @@ class fitter:
         in terms of Gaussian standard deviations using the Wilks' theorem
         approximation: ``sigma_eff = sign(ln BF) * sqrt(2 * |ln BF|)``.
         """
+        if self.method in ["emcee", "numpyro", "optimizer"]:
+            raise ValueError(
+                f"Bayesian model comparison is not applicable for {self.method} results."
+            )
+
         lnBF_raw = self.logz - self.logz_data
         seff_raw = np.sign(lnBF_raw) * np.sqrt(2.00 * np.abs(lnBF_raw))
 
