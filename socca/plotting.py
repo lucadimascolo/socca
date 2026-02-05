@@ -453,3 +453,100 @@ class Plotter:
                 name = root
             plt.savefig(f"{name}.{fmt}", format=fmt, dpi=300)
         plt.close()
+
+    # Autocorrelation time convergence plot
+    # --------------------------------------------------------
+    def autocorrelation(
+        self,
+        name=None,
+        fmt="pdf",
+        fx=0.50,
+        fy=0.50,
+        dpi=72.27 * 390.00 / 504.00,
+        tau_factor=50,
+        show_params=False,
+    ):
+        """
+        Plot autocorrelation time convergence diagnostic for emcee runs.
+
+        Creates a log-log plot showing how the integrated autocorrelation
+        time estimates evolved during convergence-mode sampling. Useful for
+        diagnosing whether the chain has converged.
+
+        Parameters
+        ----------
+        name : str, optional
+            Output filename (without extension). If None, displays plot
+            interactively instead of saving. Default is None.
+        fmt : str, optional
+            Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
+        fx : float, optional
+            Figure width scaling factor. Default is 0.50.
+        fy : float, optional
+            Figure height scaling factor. Default is 0.50.
+        dpi : float, optional
+            Dots per inch for output resolution. Default is ~55.97.
+        tau_factor : float, optional
+            Factor used for convergence criterion (chain length > tau_factor
+            * tau). A dashed line at N/tau_factor is shown. Default is 50.
+        show_params : bool, optional
+            If True, plot tau for each parameter individually. If False,
+            only plot max(tau) across parameters. Default is False.
+
+        Raises
+        ------
+        ValueError
+            If tau_history is empty (run was not in convergence mode or
+            tau never became reliable).
+
+        Notes
+        -----
+        This plot is only available after running emcee with converge=True.
+        The tau estimates become reliable when they cross below the dashed
+        N/tau_factor line.
+        """
+        if (
+            not hasattr(self.fit, "tau_history")
+            or len(self.fit.tau_history) == 0
+        ):
+            raise ValueError(
+                "No tau history available. Run with converge=True and "
+                "ensure chain is long enough for tau estimates."
+            )
+
+        iterations = np.array([h[0] for h in self.fit.tau_history])
+        tau_arrays = np.array([h[1] for h in self.fit.tau_history])
+
+        figsize = (fx * 504.00 / dpi, fy * 504.00 / dpi)
+        fig, ax = plt.subplots(figsize=figsize)
+
+        if show_params:
+            for pi in range(tau_arrays.shape[1]):
+                label = self.fit.mod.params[self.fit.mod.paridx[pi]]
+                ax.loglog(
+                    iterations, tau_arrays[:, pi], "o-", label=label, ms=4
+                )
+        else:
+            max_tau = np.max(tau_arrays, axis=1)
+            ax.loglog(iterations, max_tau, "o-", label=r"max($\tau$)", ms=4)
+
+        n_range = np.array([iterations.min(), iterations.max()])
+        ax.plot(
+            n_range,
+            n_range / tau_factor,
+            "--k",
+            label=rf"$\tau = N/{tau_factor}$",
+        )
+
+        ax.set_xlabel("number of samples, $N$")
+        ax.set_ylabel(r"$\tau$ estimates")
+        ax.legend(fontsize=10)
+
+        if name is None:
+            plt.show()
+        else:
+            root, ext = os.path.splitext(name)
+            if ext.lower() == f".{fmt.lower()}":
+                name = root
+            plt.savefig(f"{name}.{fmt}", format=fmt, dpi=300)
+        plt.close()
