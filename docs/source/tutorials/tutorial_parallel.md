@@ -2,6 +2,12 @@
 
 **``socca``** supports parallel likelihood evaluation to speed up sampling runs. Two parallelization modes are available: **multi-process** parallelization on a single machine, and **MPI-based** distributed parallelization across multiple nodes. Both modes are supported by the `nautilus`, `dynesty`, and `pocomc` sampling backends.
 
+```{important}
+Parallelization is most beneficial when the likelihood evaluation is computationally expensive (e.g., involving large images, complex models, or PSF convolution on fine grids). If the likelihood is fast to evaluate, the overhead of inter-process communication can outweigh the speedup, resulting in *slower* runs than serial execution. This is especially true for `dynesty` and `pocomc`, where the sampler frequently synchronizes with the worker pool. `nautilus` is less affected due to its batch-oriented point proposal, but even in that case the gains diminish for cheap likelihoods, resulting in a sub-linear scaling with the number of processes/cores. 
+
+As a rule of thumb, parallelization pays off when a single likelihood call takes at least a few milliseconds.
+```
+
 ## Multi-process parallelization
 
 The simplest way to parallelize a sampling run is to pass the `ncores` argument to the `run()` method. This spawns a pool of worker processes on the local machine, each evaluating the likelihood function independently:
@@ -29,10 +35,6 @@ Alternatively, you can pass a pre-built pool object via the `pool` argument. An 
 
 Please note that specifying `ncores` and `pool` at the same time will raise a `ValueError`.
 
-
-```{important}
-Parallelization is most beneficial when the likelihood evaluation is computationally expensive (e.g., involving large images, complex models, or PSF convolution on fine grids). If the likelihood is fast to evaluate, the overhead of inter-process communication can outweigh the speedup, resulting in *slower* runs than serial execution. This is especially true for `dynesty` and `pocomc`, where the sampler frequently synchronizes with the worker pool. `nautilus` is less affected due to its batch-oriented point proposal, but even in that case the gains diminish for cheap likelihoods. As a rule of thumb, parallelization pays off when a single likelihood call takes at least a few milliseconds.
-```
 
 ## MPI parallelization
 
@@ -82,7 +84,7 @@ When running under MPI, several post-processing methods are restricted to rank 0
 | Method | Multi-process | MPI | Notes |
 |:------:|:-------------:|:---:|-------|
 | `'nautilus'` | `ncores` / `pool` | automatic | Recommended for MPI runs |
-| `'dynesty'` | `ncores` / `pool` | automatic | MPI supported but less efficient |
-| `'pocomc'` | `ncores` / `pool` | automatic | |
+| `'dynesty'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient |
+| `'pocomc'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient |
 | `'numpyro'` | `ncores` (chains) | not supported | `ncores` sets number of chains |
 | `'optimizer'` | not supported | not supported | Single-process only |
