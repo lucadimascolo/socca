@@ -1,6 +1,6 @@
 [project]
 name = "socca"
-version = "0.1.0"
+version = "1.0.0"
 description = "Source Characterization using a Composable Analysis"
 authors = [{name="Luca Di Mascolo",email="lucadimascolo@gmail.com"}]
 license = {"file" = "LICENSE"}
