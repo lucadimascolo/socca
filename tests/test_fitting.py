@@ -147,10 +147,12 @@ class TestFitter:
 
     def test_log_prior(self, simple_fitter):
         """Test _log_prior method."""
-        theta = {
-            simple_fitter.labels[0]: simple_fitter.img.hdu.header["CRVAL1"],
-            simple_fitter.labels[1]: simple_fitter.img.hdu.header["CRVAL2"],
-        }
+        theta = jp.array(
+            [
+                simple_fitter.img.hdu.header["CRVAL1"],
+                simple_fitter.img.hdu.header["CRVAL2"],
+            ]
+        )
         log_prob = simple_fitter._log_prior(theta)
         assert jp.isfinite(log_prob)
 
@@ -461,6 +463,96 @@ class TestSamplerIntegration:
         )
         assert np.isfinite(multi_param_fitter.logz)
 
+    def test_emcee_sampler(self, multi_param_fitter, tmp_path):
+        """Test that emcee sampler runs and produces valid output."""
+        checkpoint = tmp_path / "emcee_test.hdf5"
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=20,
+            nsteps=500,
+            discard=100,
+            thin=1,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        assert hasattr(multi_param_fitter, "samples")
+        assert hasattr(multi_param_fitter, "weights")
+        assert hasattr(multi_param_fitter, "sampler")
+        assert multi_param_fitter.samples.shape[0] > 0
+        assert multi_param_fitter.samples.shape[1] == 2
+        assert (
+            len(multi_param_fitter.weights)
+            == multi_param_fitter.samples.shape[0]
+        )
+        assert np.allclose(multi_param_fitter.weights, 1.0)
+
+    def test_emcee_with_convergence(self, multi_param_fitter, tmp_path):
+        """Test emcee with convergence checking enabled."""
+        checkpoint = tmp_path / "emcee_converge_test.hdf5"
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=20,
+            nsteps=1000,
+            converge=True,
+            check_every=100,
+            tau_factor=10,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        assert hasattr(multi_param_fitter, "samples")
+        assert hasattr(multi_param_fitter, "tau_history")
+        assert multi_param_fitter.samples.shape[0] > 0
+
+    def test_emcee_resume(self, multi_param_fitter, tmp_path):
+        """Test emcee checkpoint and resume functionality."""
+        checkpoint = tmp_path / "emcee_resume_test.hdf5"
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=20,
+            nsteps=200,
+            discard=0,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+        initial_iterations = multi_param_fitter.sampler.iteration
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=20,
+            nsteps=400,
+            discard=0,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=True,
+        )
+        final_iterations = multi_param_fitter.sampler.iteration
+
+        assert final_iterations > initial_iterations
+        assert final_iterations == 400
+
+    def test_emcee_nwalkers_minimum(self, multi_param_fitter, tmp_path):
+        """Test that emcee enforces minimum nwalkers = 2 * ndim."""
+        checkpoint = tmp_path / "emcee_nwalkers_test.hdf5"
+        ndim = 2
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=1,
+            nsteps=100,
+            discard=0,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        assert multi_param_fitter.sampler.nwalkers >= 2 * ndim
+
     def test_sampler_results_reasonable(
         self, simple_hdu, gaussian_psf, tmp_path
     ):
@@ -495,3 +587,155 @@ class TestSamplerIntegration:
         yc_mean = np.average(fit.samples[:, 1], weights=fit.weights)
         assert abs(xc_mean - xc_true) < 0.01
         assert abs(yc_mean - yc_true) < 0.01
+
+
+@pytest.mark.slow
+class TestEmceeSpecific:
+    """Specific tests for emcee sampler functionality."""
+
+    @pytest.fixture
+    def multi_param_fitter(self, simple_hdu, gaussian_psf):
+        """Create a fitter with 2+ parameters for sampler testing."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+        xc = simple_hdu.header["CRVAL1"]
+        yc = simple_hdu.header["CRVAL2"]
+
+        gaussian = models.Gaussian(
+            xc=priors.uniform(xc - 0.01, xc + 0.01),
+            yc=priors.uniform(yc - 0.01, yc + 0.01),
+            rs=0.005,
+            Is=10.0,
+        )
+        mod = models.Model(gaussian)
+        return fitting.fitter(img=img, mod=mod)
+
+    def test_emcee_seed_reproducibility(self, multi_param_fitter, tmp_path):
+        """Test that emcee produces reproducible results with same seed."""
+        checkpoint1 = tmp_path / "emcee_seed1.hdf5"
+        checkpoint2 = tmp_path / "emcee_seed2.hdf5"
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=10,
+            nsteps=100,
+            discard=0,
+            seed=42,
+            checkpoint=str(checkpoint1),
+            progress=False,
+            resume=False,
+        )
+        samples1 = multi_param_fitter.samples.copy()
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=10,
+            nsteps=100,
+            discard=0,
+            seed=42,
+            checkpoint=str(checkpoint2),
+            progress=False,
+            resume=False,
+        )
+        samples2 = multi_param_fitter.samples.copy()
+
+        np.testing.assert_allclose(samples1, samples2, rtol=1e-10)
+
+    def test_emcee_discard_thin_params(self, multi_param_fitter, tmp_path):
+        """Test emcee discard and thin parameters."""
+        checkpoint = tmp_path / "emcee_discard_thin.hdf5"
+
+        nwalkers = 20
+        nsteps = 500
+        discard = 100
+        thin = 5
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=nwalkers,
+            nsteps=nsteps,
+            discard=discard,
+            thin=thin,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        expected_samples = nwalkers * ((nsteps - discard) // thin)
+        assert multi_param_fitter.samples.shape[0] == expected_samples
+
+    def test_emcee_auto_thin_discard_with_converge(
+        self, multi_param_fitter, tmp_path
+    ):
+        """Test emcee auto-sets thin and discard with converge=True."""
+        checkpoint = tmp_path / "emcee_auto_thin.hdf5"
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=20,
+            nsteps=2000,
+            converge=True,
+            check_every=200,
+            tau_factor=10,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        assert hasattr(multi_param_fitter, "tau")
+        assert hasattr(multi_param_fitter, "tau_history")
+
+    def test_emcee_alternative_param_names(self, multi_param_fitter, tmp_path):
+        """Test emcee accepts alternative parameter names."""
+        checkpoint = tmp_path / "emcee_alt_params.hdf5"
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=10,
+            n_steps=200,
+            n_burn=50,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        assert multi_param_fitter.samples.shape[0] > 0
+
+    def test_emcee_uniform_weights(self, multi_param_fitter, tmp_path):
+        """Test that emcee produces uniform weights (all ones)."""
+        checkpoint = tmp_path / "emcee_weights.hdf5"
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=10,
+            nsteps=200,
+            discard=50,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        assert np.all(multi_param_fitter.weights == 1.0)
+        assert len(multi_param_fitter.weights) == len(
+            multi_param_fitter.samples
+        )
+
+    def test_emcee_sampler_attribute(self, multi_param_fitter, tmp_path):
+        """Test that emcee sampler object is stored."""
+        import emcee
+
+        checkpoint = tmp_path / "emcee_sampler_attr.hdf5"
+
+        multi_param_fitter.run(
+            method="emcee",
+            nwalkers=10,
+            nsteps=100,
+            discard=0,
+            checkpoint=str(checkpoint),
+            progress=False,
+            resume=False,
+        )
+
+        assert isinstance(multi_param_fitter.sampler, emcee.EnsembleSampler)
+        assert multi_param_fitter.sampler.iteration == 100
+        assert multi_param_fitter.sampler.nwalkers == 10
