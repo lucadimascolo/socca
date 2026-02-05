@@ -19,7 +19,7 @@ from ...pool.mp import MultiPool
 
 #   Fitting method - Dynesty sampler
 #   --------------------------------------------------------
-def _run_dynesty(
+def run_dynesty(
     self,
     log_likelihood,
     log_prior,
@@ -78,6 +78,11 @@ def _run_dynesty(
     -----
     The method automatically extracts valid kwargs for NestedSampler
     and run_nested based on their function signatures.
+
+    References
+    ----------
+    Speagle, J. S., MNRAS, 493, 3132 (2020)
+    Dynesty documentation: https://dynesty.readthedocs.io/en/v3.0.0/
     """
     if checkpoint is None:
         resume = False

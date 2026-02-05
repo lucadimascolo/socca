@@ -24,12 +24,12 @@ from astropy.io import fits
 
 from .methods.utils import get_imp_weights
 from .methods import (
-    _run_nautilus,
-    _run_dynesty,
-    _run_pocomc,
-    _run_numpyro,
-    _run_emcee,
-    _run_optimizer,
+    run_nautilus,
+    run_dynesty,
+    run_pocomc,
+    run_numpyro,
+    run_emcee,
+    run_optimizer,
 )
 
 from ..pool.mpi import MPI_RANK
@@ -49,12 +49,12 @@ class fitter:
     computation, prior transformations, and sampler execution.
     """
 
-    _run_nautilus = _run_nautilus
-    _run_dynesty = _run_dynesty
-    _run_pocomc = _run_pocomc
-    _run_numpyro = _run_numpyro
-    _run_emcee = _run_emcee
-    _run_optimizer = _run_optimizer
+    _run_nautilus = run_nautilus
+    _run_dynesty = run_dynesty
+    _run_pocomc = run_pocomc
+    _run_numpyro = run_numpyro
+    _run_emcee = run_emcee
+    _run_optimizer = run_optimizer
 
     def __init__(self, img, mod):
         """

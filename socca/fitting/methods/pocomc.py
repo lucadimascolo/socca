@@ -40,7 +40,7 @@ from ...pool.mp import MultiPool
 
 #   Fitting method - PocoMC sampler
 #   --------------------------------------------------------
-def _run_pocomc(
+def run_pocomc(
     self,
     log_likelihood,
     log_prior,
@@ -106,6 +106,12 @@ def _run_pocomc(
     pocoMC uses normalizing flows for preconditioned sampling,
     making it efficient for complex, multimodal posteriors.
     Prior distributions must be NumPyro distributions.
+
+    References
+    ----------
+    Karamanis, M., Beutler, F., Peacock, J. A., Nabergoj, D., Seljak, U., MNRAS, 516, 1644 (2022)
+    Karamanis, M., Nabergoj, D., Beutler, F., Peacock, J. A., Seljak, U., arXiv:2207.05660 (2022)
+    pocoMC documentation: https://pocomc.readthedocs.io/en/latest/
     """
     if checkpoint is None and resume:
         checkpoint = "run"

@@ -2,7 +2,7 @@
   "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
   "@type": "SoftwareSourceCode",
   "name": "socca",
-  "description": "Source Characterization using a Composable Analysis: a Python library for efficiently modeling image-space astronomical data using JAX and Bayesian inference.",
+  "description": "Source Characterization using a Composable Analysis",
   "identifier": "socca",
   "version": "1.0.0",
   "license": "https://spdx.org/licenses/MIT",

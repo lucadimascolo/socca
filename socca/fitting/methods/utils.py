@@ -19,7 +19,7 @@ def get_imp_weights(logw, logz=None):
     Parameters
     ----------
     logw : array_like
-        Log-weights from nested sampling.
+        Log-weights from importance-weighted sampling.
     logz : float or array_like, optional
         Log-evidence value(s). If None, uses the maximum log-weight.
         If not None and not iterable, converts to a single-element list.
@@ -35,7 +35,7 @@ def get_imp_weights(logw, logz=None):
     The importance weights are computed as:
 
     .. math::
-        w_i = \exp(\log w_i - \log Z - \log\sum_j \exp(\log w_j - \log Z))
+        w_i = \exp[(\log w_i - \log Z) - \log\sum_j \exp(\log w_j - \log Z)]
 
     where :math:`\log Z` is the log-evidence (logz[-1]).
     """

@@ -17,7 +17,7 @@ from ...pool.mp import MultiPool
 
 #   Fitting method - emcee sampler
 #   --------------------------------------------------------
-def _run_emcee(
+def run_emcee(
     self,
     log_likelihood,
     log_prior,
@@ -92,6 +92,11 @@ def _run_emcee(
     for all parameters, and (2) the tau estimate has stabilized
     (relative change < tau_rtol). The burn-in (discard) is then
     auto-set to 2 * max(tau) unless explicitly provided.
+
+    References
+    ----------
+    Foreman-Mackey, D., Hogg, D. W., Lang, D., Goodman, J., PASP, 125, 306 (2013)
+    emcee documentation: https://emcee.readthedocs.io/en/stable/
     """
     if checkpoint is None and resume:
         checkpoint = "run"

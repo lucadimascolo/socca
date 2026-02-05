@@ -12,7 +12,7 @@ from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
 
 #   Fitting method - Numpyro NUTS
 #   --------------------------------------------------------
-def _run_numpyro(self, log_likelihood, **kwargs):
+def run_numpyro(self, log_likelihood, **kwargs):
     """
     Run Hamiltonian Monte Carlo sampling using NumPyro's NUTS.
 
@@ -47,6 +47,10 @@ def _run_numpyro(self, log_likelihood, **kwargs):
     during the warmup phase. This method does not compute evidence,
     so it cannot be used for Bayesian model comparison. The method
     requires parameter priors to be NumPyro distributions.
+
+    References
+    ----------
+    numpyro documentation: https://num.pyro.ai/en/stable/
     """
     if MPI_SIZE > 1:
         MPI_COMM.bcast(None, root=0)

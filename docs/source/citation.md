@@ -3,11 +3,11 @@
 If you are going to include in a publication any results obtained using **``socca``**, please consider adding an hyperlink to the [GitHub repository](https://github.com/lucadimascolo/socca) or citing it as follows:
 
 ```bibtex
-@misc{socca2025,
+@misc{socca2026,
   author = {Di Mascolo, Luca},
    title = {socca: Source Characterization using a Composable Analysis},
-    year = {2025},
-   month = {12},
+    year = {2026},
+   month = {2},
      url = {https://github.com/lucadimascolo/socca}
 }
 ```

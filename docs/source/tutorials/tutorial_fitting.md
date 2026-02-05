@@ -40,24 +40,44 @@ There are several methods available for performing the model inference, includin
 | `'nautilus'`<br>(default) | Neural network-accelerated nested sampling | [↗](https://github.com/johannesulf/nautilus) |
 | `'dynesty'`   | Dynamic nested sampling | [↗](https://github.com/joshspeagle/dynesty) |
 | `'pocomc'`    | Preconditioned Monte Carlo sampling | [↗](https://github.com/minaskar/pocomc) |
+| `'emcee'`     | Affine-invariant ensemble MCMC | [↗](https://github.com/dfm/emcee) |
 
 Any of the options above can be selected by passing the corresponding string to the `method` argument of the `run()` method. To customize the behavior of each sampling method, any of the keyword arguments accepted by the respective sampler class can be passed to the `run()` method. These are automatically forwarded to the underlying sampler implementation. For a complete list of available options for each method, please refer to the respective documentation linked in the table above.
+
+```{note}
+The first three methods (`nautilus`, `dynesty`, `pocomc`) take advantage of nested sampling or precondition Monte Carlo algorithms to sample the posterior distributions and compute the Bayesian evidence. The `emcee` method, instead, is an MCMC sampler that does not provide evidence estimates, so it cannot be used for Bayesian model comparison. Alternative model selection criteria will be implemented in the future.
+```
+
 For instance, to use the `dynesty` sampler with 500 live points, one would do:
 
-```python 
+```python
 >>> fit.run(method='dynesty', nlive=500)
 ```
+
+To use the `emcee` sampler with 32 walkers running for 5000 steps:
+
+```python
+>>> fit.run(method='emcee', nwalkers=32, nsteps=5000, discard=1000, thin=10)
+```
+
+The `emcee` sampler also supports automatic convergence checking based on the integrated autocorrelation time:
+
+```python
+>>> fit.run(method='emcee', nwalkers=32, nsteps=10000, converge=True)
+```
+
+When `converge=True`, the sampler monitors the autocorrelation time and stops when the chain has converged. The burn-in (`discard`) and thinning (`thin`) are then automatically determined from the final autocorrelation time estimates.
 
 After the sampling is completed, the key results are stored in the following attributes of the `fitter` object:
 
 | Attribute     | Description |
 |---------------|-------------|
 | `fit.samples` | Array of posterior samples with shape `(n_samples, n_params)` |
-| `fit.weights` | Importance weights for each sample (normalized) |
-| `fit.logz`    | Log-evidence estimate |
+| `fit.weights` | Importance weights for each sample (uniform for `emcee`) |
+| `fit.logz`    | Log-evidence estimate (not available for `emcee`) |
 
 ```{note}
-The `fit.sampler` attribute provides direct access to the underlying sampler object (e.g., `nautilus.Sampler`, `dynesty.NestedSampler`, or `pocomc.Sampler`), which can be useful for accessing additional diagnostics or methods specific to each sampling library.
+The `fit.sampler` attribute provides direct access to the underlying sampler object (e.g., `nautilus.Sampler`, `dynesty.NestedSampler`, `pocomc.Sampler`, or `emcee.EnsembleSampler`), which can be useful for accessing additional diagnostics or methods specific to each sampling library. For `emcee`, additional attributes include `fit.tau` (integrated autocorrelation time per parameter) and `fit.tau_history` (convergence history).
 ```
 
 ### Maximum a posteriori estimation
@@ -166,7 +186,7 @@ All sampling methods support saving the sampler state during the run, allowing i
 >>> fit.run(checkpoint='my_fit_checkpoint')
 ```
 
-For `nautilus` and `dynesty`, this will save the sampler state synchronously into an HDF5 file named `my_fit_checkpoint.hdf5` in the current working directory. In the case of `pocomc`, the sampler state is saved to a directory named `my_fit_checkpoint_pocomc_dump` at regular intervals (by default, every 10 iterations).
+For `nautilus`, `dynesty`, and `emcee`, this will save the sampler state synchronously into an HDF5 file named `my_fit_checkpoint.hdf5` in the current working directory. In the case of `pocomc`, the sampler state is saved to a directory named `my_fit_checkpoint_pocomc_dump` at regular intervals (by default, every 10 iterations).
 
 By default, if a checkpoint file matching the provided name is found, **``socca``** will resume sampling from the last saved state. To force a fresh run:
 
@@ -175,12 +195,12 @@ By default, if a checkpoint file matching the provided name is found, **``socca`
 ```
 
 ```{note}
-The checkpoint file format and location depend on the sampling backend. For `nautilus`, the sampler state is saved synchronously. For `dynesty` and `pocomc`, states are saved at regular intervals.
+The checkpoint file format and location depend on the sampling backend. For `nautilus` and `emcee`, the sampler state is saved synchronously via an HDF5 backend. For `dynesty` and `pocomc`, states are saved at regular intervals.
 ```
 
 ## Bayesian model comparison
 
-For nested sampling methods, **``socca``** can compute Bayesian model comparison statistics:
+For the `nautilus`, `dynesty`, and `pocomc` sampling methods, **``socca``** can compute Bayesian model comparison statistics. Note that `emcee` does not compute evidence estimates and therefore cannot be used for performing Bayesian model comparison.
 
 ```python
 >>> fit.run(getzprior=True)  # Enable prior evidence estimation

@@ -16,7 +16,7 @@ from ...pool.mp import MultiPool
 
 #   Fitting method - Nautilus sampler
 #   --------------------------------------------------------
-def _run_nautilus(
+def run_nautilus(
     self,
     log_likelihood,
     log_prior,
@@ -79,6 +79,11 @@ def _run_nautilus(
     Nautilus uses neural networks to learn the iso-likelihood
     contours, making it efficient for high-dimensional problems.
     The method prints elapsed time after completion.
+
+    References
+    ----------
+    Lange, J. U., MNRAS, 525, 3181 (2023)
+    Nautilus documentation: https://nautilus-sampler.readthedocs.io/en/latest/
     """
     ndims = len(self.mod.paridx)
 
