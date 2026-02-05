@@ -28,6 +28,7 @@ from .methods import (
     _run_dynesty,
     _run_pocomc,
     _run_numpyro,
+    _run_emcee,
     _run_optimizer,
 )
 
@@ -52,6 +53,7 @@ class fitter:
     _run_dynesty = _run_dynesty
     _run_pocomc = _run_pocomc
     _run_numpyro = _run_numpyro
+    _run_emcee = _run_emcee
     _run_optimizer = _run_optimizer
 
     def __init__(self, img, mod):
@@ -298,6 +300,7 @@ class fitter:
             "pocomc": self._run_pocomc,
             "optimizer": self._run_optimizer,
             "numpyro": self._run_numpyro,
+            "emcee": self._run_emcee,
         }
 
         if self.method not in sampler_methods:

@@ -30,6 +30,7 @@ dependencies = [
     "jax",
     "jaxlib",
     "quadax",
+    "emcee",
     "numpyro",
     "dynesty",
     "nautilus-sampler",
