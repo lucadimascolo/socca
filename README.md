@@ -1,7 +1,7 @@
 # Source Characterization using a Composable Analysis
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
+[![stability-release-candidate](https://img.shields.io/badge/stability-release--candidate-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
 [![CI](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml/badge.svg)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
 [![Docs](https://github.com/lucadimascolo/socca/actions/workflows/docs.yml/badge.svg)](https://lucadimascolo.github.io/socca)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)

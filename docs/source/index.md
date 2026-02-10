@@ -16,7 +16,7 @@ This code is broadly inspired by the excellent [`pysersic`](https://github.com/p
 [![GitHub](https://img.shields.io/badge/GitHub-lucadimascolo%2Fsocca-blue.svg?style=flat)](https://github.com/lucadimascolo/socca)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat)](https://www.python.org/downloads/)
-[![stability-release-candidate](https://img.shields.io/badge/stability-pre--release-48c9b0.svg?style=flat)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
+[![stability-release-candidate](https://img.shields.io/badge/stability-release--candidate-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat)](https://github.com/astral-sh/ruff)
 [![CI](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/ci.yml?style=flat&label=CI)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/docs.yml?style=flat&label=docs)](https://lucadimascolo.github.io/socca)<br/>
