@@ -127,7 +127,7 @@ beta     [] : 5.5000E-01 | Slope parameter
 The `gNFW` class implements the generalized Navarro-Frenk-White (gNFW) profile ([Nagai et al. 2007](https://ui.adsabs.harvard.edu/abs/2007ApJ...668....1N/abstract), [Mroczkowski et al. 2009](https://ui.adsabs.harvard.edu/abs/2009ApJ...694.1034M/abstract)) commonly used to describe the pressure profile of the intracluster medium in galaxy clusters. The projected two-dimensional profile is obtained by integrating the three-dimensional gNFW profile along the line of sight. In **``socca``**, this is implemented as follows:
 
 $$
-I(r) = I_c r_c \int_{r/r_c}^{+\infty} x^{-\gamma}(1+x^{\alpha})^{\frac{\gamma - \beta}{\alpha}} \tfrac{x}{\sqrt{x^2 - x_r^2}} \mathrm{d}x,
+I(r) = I_c \times 2\int_{r/r_c}^{+\infty} x^{-\gamma}(1+x^{\alpha})^{\frac{\gamma - \beta}{\alpha}} \tfrac{x}{\sqrt{x^2 - x_r^2}} \mathrm{d}x,
 $$  
 
 where $x$ is a dimensionless radius in units of the core radius $r_c$. The parameters $\alpha$, $\beta$, and $\gamma$ control the intermediate, outer, and inner slopes of the profile, respectively. The normalization $I_c$ has units of surface brightness in units of the input data per unit length.

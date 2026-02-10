@@ -92,8 +92,8 @@ class gNFW(Profile):
 
         Notes
         -----
-        The 3D density profile is:
-        rho(r) = rho0 / [(r/rc)^gamma * (1 + (r/rc)^alpha)^((beta-gamma)/alpha)]
+        The 3D profile is:
+        s(r) = (Ic/rc) / [(r/rc)^gamma * (1 + (r/rc)^alpha)^((beta-gamma)/alpha)]
 
         The surface brightness is obtained by Abel projection (line-of-sight
         integration). This is computed numerically using adaptive quadrature.
