@@ -93,8 +93,6 @@ class Disk(Component):
         components to ensure consistent parameter naming in composite models.
         """
         super().__init__(**kwargs)
-        for key in ["radial", "vertical", "profile", "_rkw", "_zkw"]:
-            self.okeys.append(key)
 
         self.radial = radial
         self.vertical = vertical
@@ -497,21 +495,7 @@ class Disk(Component):
         radial.yc         [deg]    : 4.5200E+01 | Declination of centroid
         ...
         """
-        keyout = []
-        for key in self.radial.__dict__.keys():
-            if (
-                key not in self.okeys
-                and f"radial.{key}" not in self.hyper
-                and key != "okeys"
-            ):
-                keyout.append(f"radial.{key}")
-        for key in self.vertical.__dict__.keys():
-            if (
-                key not in self.okeys
-                and f"vertical.{key}" not in self.hyper
-                and key != "okeys"
-            ):
-                keyout.append(f"vertical.{key}")
+        keyout = [key for key in self.units.keys() if key not in self.hyper]
 
         if len(keyout) > 0:
             maxlen = np.max(
@@ -528,13 +512,13 @@ class Disk(Component):
             for key in keyout:
                 keylen = maxlen - len(f" [{self.units[key]}]")
                 if key.startswith("radial."):
-                    kvalue = self.radial.__dict__[key.replace("radial.", "")]
+                    kvalue = getattr(self.radial, key.replace("radial.", ""))
                 elif key.startswith("vertical."):
-                    kvalue = self.vertical.__dict__[
-                        key.replace("vertical.", "")
-                    ]
+                    kvalue = getattr(
+                        self.vertical, key.replace("vertical.", "")
+                    )
                 else:
-                    kvalue = self.__dict__[key]
+                    kvalue = getattr(self, key)
 
                 if kvalue is None:
                     kvalue = None
@@ -559,15 +543,15 @@ class Disk(Component):
                 for key in self.hyper:
                     keylen = maxlen - len(f" [{self.units[key]}]")
                     if key.startswith("radial."):
-                        kvalue = self.radial.__dict__[
-                            key.replace("radial.", "")
-                        ]
+                        kvalue = getattr(
+                            self.radial, key.replace("radial.", "")
+                        )
                     elif key.startswith("vertical."):
-                        kvalue = self.vertical.__dict__[
-                            key.replace("vertical.", "")
-                        ]
+                        kvalue = getattr(
+                            self.vertical, key.replace("vertical.", "")
+                        )
                     else:
-                        kvalue = self.__dict__[key]
+                        kvalue = getattr(self, key)
 
                     if kvalue is None:
                         kvalue = None
@@ -621,14 +605,4 @@ class Disk(Component):
          'radial.rs', 'radial.Is', 'vertical.losdepth', 'vertical.losbins',
          'vertical.inc', 'vertical.zs']
         """
-        pars_ = [
-            f"radial.{key}"
-            for key in self.radial.__dict__.keys()
-            if key not in self.okeys and key != "okeys"
-        ]
-        pars_ += [
-            f"vertical.{key}"
-            for key in self.vertical.__dict__.keys()
-            if key not in self.okeys and key != "okeys"
-        ]
-        return pars_
+        return list(self.units.keys())

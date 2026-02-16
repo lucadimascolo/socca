@@ -82,8 +82,6 @@ class Bridge(Component):
 
     def __init__(self, radial=Beta(), parallel=TopHat(), **kwargs):
         super().__init__(**kwargs)
-        for key in ["radial", "parallel", "profile", "_rkw", "_zkw"]:
-            self.okeys.append(key)
 
         self.xc = kwargs.get("xc", config.Bridge.xc)
         self.yc = kwargs.get("yc", config.Bridge.yc)
@@ -128,14 +126,22 @@ class Bridge(Component):
                 )
 
         for key in ["xc", "yc", "theta", "e", "cbox"]:
-            if hasattr(self.radial, key):
-                delattr(self.radial, key)
-            if hasattr(self.parallel, key):
-                delattr(self.parallel, key)
+            bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
+            if bkey in self.radial.__dict__:
+                delattr(self.radial, bkey)
+            self.radial.units.pop(key, None)
+            bkey = f"_{key}" if f"_{key}" in self.parallel.__dict__ else key
+            if bkey in self.parallel.__dict__:
+                delattr(self.parallel, bkey)
+            self.parallel.units.pop(key, None)
 
         for key in ["_scale_amp", "_scale_radius"]:
-            delattr(self.radial, getattr(self.radial, key))
-            delattr(self.parallel, getattr(self.parallel, key))
+            rname = getattr(self.radial, key)
+            pname = getattr(self.parallel, key)
+            delattr(self.radial, rname)
+            delattr(self.parallel, pname)
+            self.radial.units.pop(rname, None)
+            self.parallel.units.pop(pname, None)
 
         if self.radial.id != self.id:
             type(self).idcls -= 1
@@ -436,32 +442,7 @@ class Bridge(Component):
         parallel) along with their units, current values, and descriptions.
         Hyperparameters are shown in a separate section.
         """
-        keyout = []
-        for key in self.__dict__.keys():
-            if (
-                key not in self.okeys
-                and key not in self.hyper
-                and key != "okeys"
-            ):
-                keyout.append(key)
-        for key in self.radial.__dict__.keys():
-            if (
-                key not in self.okeys
-                and f"radial.{key}" not in self.hyper
-                and key != "okeys"
-                and key
-                not in [self.radial._scale_radius, self.radial._scale_amp]
-            ):
-                keyout.append(f"radial.{key}")
-        for key in self.parallel.__dict__.keys():
-            if (
-                key not in self.okeys
-                and f"parallel.{key}" not in self.hyper
-                and key != "okeys"
-                and key
-                not in [self.parallel._scale_radius, self.parallel._scale_amp]
-            ):
-                keyout.append(f"parallel.{key}")
+        keyout = [key for key in self.units.keys() if key not in self.hyper]
 
         if len(keyout) > 0:
             maxlen = np.max(
@@ -478,13 +459,13 @@ class Bridge(Component):
             for key in keyout:
                 keylen = maxlen - len(f" [{self.units[key]}]")
                 if key.startswith("radial."):
-                    kvalue = self.radial.__dict__[key.replace("radial.", "")]
+                    kvalue = getattr(self.radial, key.replace("radial.", ""))
                 elif key.startswith("parallel."):
-                    kvalue = self.parallel.__dict__[
-                        key.replace("parallel.", "")
-                    ]
+                    kvalue = getattr(
+                        self.parallel, key.replace("parallel.", "")
+                    )
                 else:
-                    kvalue = self.__dict__[key]
+                    kvalue = getattr(self, key)
 
                 if kvalue is None:
                     kvalue = None
@@ -509,15 +490,15 @@ class Bridge(Component):
                 for key in self.hyper:
                     keylen = maxlen - len(f" [{self.units[key]}]")
                     if key.startswith("radial."):
-                        kvalue = self.radial.__dict__[
-                            key.replace("radial.", "")
-                        ]
+                        kvalue = getattr(
+                            self.radial, key.replace("radial.", "")
+                        )
                     elif key.startswith("parallel."):
-                        kvalue = self.parallel.__dict__[
-                            key.replace("parallel.", "")
-                        ]
+                        kvalue = getattr(
+                            self.parallel, key.replace("parallel.", "")
+                        )
                     else:
-                        kvalue = self.__dict__[key]
+                        kvalue = getattr(self, key)
                     kvalue = None if kvalue is None else f"{kvalue:.4E}"
                     print(
                         f"{key:<{keylen}} [{self.units[key]}] : "
@@ -536,27 +517,7 @@ class Bridge(Component):
         list of str
             Parameter names including base, radial, and parallel parameters.
         """
-        pars_ = [
-            key
-            for key in self.__dict__.keys()
-            if key not in self.okeys and key != "okeys"
-        ]
-        pars_ += [
-            f"radial.{key}"
-            for key in self.radial.__dict__.keys()
-            if key not in self.okeys
-            and key != "okeys"
-            and key not in [self.radial._scale_radius, self.radial._scale_amp]
-        ]
-        pars_ += [
-            f"parallel.{key}"
-            for key in self.parallel.__dict__.keys()
-            if key not in self.okeys
-            and key != "okeys"
-            and key
-            not in [self.parallel._scale_radius, self.parallel._scale_amp]
-        ]
-        return pars_
+        return list(self.units.keys())
 
 
 class SimpleBridge(Bridge):

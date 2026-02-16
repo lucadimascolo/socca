@@ -30,8 +30,6 @@ class Component:
         Mapping from parameter names to their physical units.
     description : dict
         Mapping from parameter names to their descriptions.
-    okeys : list of str
-        Reserved keys that should not be treated as model parameters.
     """
 
     idcls = 0
@@ -58,14 +56,6 @@ class Component:
         Component.idcls += 1
 
         self.positive = kwargs.get("positive", config.Component.positive)
-        self.okeys = [
-            "id",
-            "positive",
-            "hyper",
-            "units",
-            "description",
-            "_initialized",
-        ]
         self.hyper = []
         self.units = {}
         self.description = {}
@@ -124,14 +114,7 @@ class Component:
         e     []       : 0.0000E+00 | Projected axis ratio
         cbox  []       : 0.0000E+00 | Projected boxiness
         """
-        keyout = []
-        for key in self.__dict__.keys():
-            if (
-                key not in self.okeys
-                and key not in self.hyper
-                and key != "okeys"
-            ):
-                keyout.append(key)
+        keyout = [key for key in self.units.keys() if key not in self.hyper]
 
         if len(keyout) > 0:
             maxlen = np.max(
@@ -147,7 +130,7 @@ class Component:
             print("=" * 16)
             for key in keyout:
                 keylen = maxlen - len(f" [{self.units[key]}]")
-                keypar = self.__dict__[key]
+                keypar = getattr(self, key)
 
                 if keypar is None:
                     keyval = None
@@ -171,7 +154,7 @@ class Component:
                 print("=" * 15)
                 for key in self.hyper:
                     keylen = maxlen - len(f" [{self.units[key]}]")
-                    kvalue = self.__dict__[key]
+                    kvalue = getattr(self, key)
                     kvalue = None if kvalue is None else f"{kvalue:.4E}"
                     print(
                         f"{key:<{keylen}} [{self.units[key]}] : "
@@ -189,8 +172,7 @@ class Component:
         Returns
         -------
         list of str
-            Names of all parameters (excluding reserved keys like 'id', 'positive',
-            'hyper', 'units', 'description', and 'okeys').
+            Names of all model parameters, as defined in the units dict.
 
         Notes
         -----
@@ -204,11 +186,7 @@ class Component:
         >>> beta.parlist()
         ['xc', 'yc', 'theta', 'e', 'cbox', 'rc', 'Ic', 'beta']
         """
-        return [
-            key
-            for key in self.__dict__.keys()
-            if key not in self.okeys and key != "okeys"
-        ]
+        return list(self.units.keys())
 
     def addparameter(self, name, value=None, units="", description=""):
         """

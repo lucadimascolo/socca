@@ -86,8 +86,18 @@ class Background(Component):
         self.units.update(
             {
                 key: ""
-                for key in self.__dict__.keys()
-                if key not in self.okeys and key[0] == "a"
+                for key in [
+                    "a0",
+                    "a1x",
+                    "a1y",
+                    "a2xx",
+                    "a2xy",
+                    "a2yy",
+                    "a3xxx",
+                    "a3xxy",
+                    "a3xyy",
+                    "a3yyy",
+                ]
             }
         )
 
@@ -287,11 +297,7 @@ class Background(Component):
                 "Ignoring `convolve` argument."
             )
 
-        klist = [
-            key
-            for key in self.__dict__.keys()
-            if key not in self.okeys and key[0] == "a"
-        ] + ["rs"]
+        klist = list(self.units.keys())
         kwarg = {key: getattr(self, key) for key in klist}
 
         for key in kwarg.keys():
