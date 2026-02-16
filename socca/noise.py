@@ -620,12 +620,14 @@ class NormalRI:
     kwargs : dict
         Keyword arguments provided for specifying the noise model.
     data : jax.numpy.ndarray
-        Image data array. This is set when the model is called.
+        Image data array.
+        This is set automatically from the reference image.
     mask : jax.numpy.ndarray
-        Boolean mask array. This is set when the model is called.
+        Boolean mask array.
+        This is set automatically from the reference image.
     resp : jax.numpy.ndarray
-        Interferometric response function. This is set when the model
-        is called.
+        Antenna response function (i.e., primary beam).
+        This is set automatically from the reference image.
     sigma : float
         Noise standard deviation.
     """
@@ -733,7 +735,7 @@ class NormalRI:
             Binary mask array (1=valid, 0=masked). Pixels where mask==0
             are excluded from likelihood calculations.
         resp : array_like
-            Interferometric response function (dirty beam).
+            Antenna response function (i.e., primary beam).
 
         Notes
         -----
