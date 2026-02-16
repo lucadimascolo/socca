@@ -3,12 +3,17 @@
 from .utils import _img_loader, _reduce_axes
 from . import noise as noisepdf
 
-from astropy.io import fits
+from functools import partial
+
+import jax
 import jax.numpy as jp
+from jax.scipy.signal import fftconvolve
+
 import numpy as np
 
 import inspect
 
+from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.nddata import Cutout2D
 
@@ -139,6 +144,7 @@ class WCSgrid:
 
         if wcs is None:
             wcs = WCS(headerWCS)
+        wcs = wcs.celestial
 
         gridmx, gridmy = np.meshgrid(
             np.arange(headerWCS["NAXIS1"]), np.arange(headerWCS["NAXIS2"])
@@ -382,14 +388,16 @@ class Image:
         if exposure is not None:
             self.exp = _img_loader(exposure, kwargs.get("exp_idx", 0))
             self.exp = _reduce_axes(self.exp)
-            self.exp = self.exp.data.copy()
+            self.exp.data[np.isnan(self.exp.data)] = 0.00
+            self.exp = jp.array(self.exp.data.copy())
         else:
             self.exp = jp.ones(self.data.shape, dtype=float)
 
         if response is not None:
             self.resp = _img_loader(response, kwargs.get("resp_idx", 0))
             self.resp = _reduce_axes(self.resp)
-            self.resp = self.resp.data.copy()
+            self.resp.data[np.isnan(self.resp.data)] = 0.00
+            self.resp = jp.array(self.resp.data.copy())
         else:
             self.resp = jp.ones(self.data.shape, dtype=float)
 
@@ -415,6 +423,7 @@ class Image:
         else:
             self.noise = noise
 
+    def _init_noise(self):
         if self.psf is None and self.noise.__class__.__name__ == "NormalRI":
             raise ValueError(
                 "PSF must be defined for images with NormalRI noise."
@@ -555,7 +564,7 @@ class Image:
 
     #   Add PSF
     #   --------------------------------------------------------
-    def addpsf(self, img, normalize=True, idx=0):
+    def addpsf(self, img, normalize=True, flip=False, idx=0):
         """
         Add a point spread function (PSF) to the image.
 
@@ -589,10 +598,19 @@ class Image:
             kernel = img.copy()
         else:
             hdu = _img_loader(img, idx)
-            kernel = hdu.data.copy()
+            hdu = _reduce_axes(hdu)
+            kernel = np.asarray(hdu.data.astype(float).copy())
+
+        if self.noise.__class__.__name__ == "NormalRI" and normalize:
+            ValueError(
+                "PSF normalization is not supported for NormalRI noise."
+            )
 
         if normalize:
             kernel = kernel / np.sum(kernel)
+
+        if self.noise.__class__.__name__ == "NormalRI" or flip:
+            kernel = np.flip(kernel, axis=(0, 1))
 
         kx, ky = kernel.shape
         dx, dy = self.data.shape
@@ -610,10 +628,91 @@ class Image:
         pad_width = [
             (0, max(0, s - k)) for s, k in zip(self.data.shape, kernel.shape)
         ]
-        self.psf_fft = np.pad(kernel, pad_width, mode="constant").astype(
+        self.psf = np.pad(kernel, pad_width, mode="constant").astype(
             np.float64
         )
         self.psf_fft = jp.fft.rfft2(
-            jp.fft.fftshift(self.psf_fft), s=self.psf_fft.shape
+            jp.fft.fftshift(self.psf), s=self.psf.shape
         )
         self.psf_fft = jp.abs(self.psf_fft)
+
+        # self.convolve = lambda x: fftconvolve(x, self.psf, mode="same")
+        self.convolve = FFTConvolve(self.psf, self.data.shape, mode="same")
+
+
+# FFT-based convolver
+# Ported from jax.scipy.signal.fftconvolve
+# ========================================================
+class FFTConvolve:
+    """FFT-based convolution with a cached kernel transform.
+
+    The kernel FFT is computed once at initialization and reused
+    for each call, avoiding redundant transforms during fitting.
+
+    Parameters
+    ----------
+    kernel : array_like
+        The convolution kernel (e.g., PSF).
+    image_shape : tuple of int
+        Shape of the images to be convolved.
+    mode : str, optional
+        Convolution mode: 'same', 'full', or 'valid'.
+        Default is 'same'.
+    """
+
+    def __init__(self, kernel, image_shape, mode="same"):
+        self.mode = mode
+        self.kernel_shape = kernel.shape
+        self.image_shape = image_shape
+
+        full_shape = tuple(
+            s1 + s2 - 1 for s1, s2 in zip(image_shape, kernel.shape)
+        )
+        self.full_shape = full_shape
+
+        is_complex = jp.iscomplexobj(kernel)
+        if is_complex:
+            self._fft = jp.fft.fftn
+            self._ifft = jp.fft.ifftn
+        else:
+            self._fft = jp.fft.rfftn
+            self._ifft = jp.fft.irfftn
+
+        self._kernel_fft = self._fft(kernel, full_shape)
+
+    @property
+    def kernel_fft(self):
+        """Pre-computed FFT of the kernel."""
+        return self._kernel_fft
+
+    @partial(jax.jit, static_argnames=["self"])
+    def __call__(self, image):
+        """Convolve an image with the cached kernel.
+
+        Parameters
+        ----------
+        image : array_like
+            Input image. Must match the `image_shape` provided
+            at initialization.
+
+        Returns
+        -------
+        jax.Array
+            Convolved image, cropped according to `mode`.
+        """
+        sp1 = self._fft(image, self.full_shape)
+        conv = self._ifft(sp1 * self._kernel_fft, self.full_shape)
+
+        if self.mode == "full":
+            out_shape = self.full_shape
+        elif self.mode == "same":
+            out_shape = self.image_shape
+        elif self.mode == "valid":
+            out_shape = tuple(
+                s1 - s2 + 1
+                for s1, s2 in zip(self.image_shape, self.kernel_shape)
+            )
+
+        start = tuple((f - o) // 2 for f, o in zip(self.full_shape, out_shape))
+
+        return jax.lax.dynamic_slice(conv, start, out_shape)

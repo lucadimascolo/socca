@@ -292,13 +292,14 @@ class Bridge(Component):
                     "No PSF defined, so no convolution will be performed."
                 )
             else:
-                mgrid = (
-                    jp.fft.rfft2(jp.fft.fftshift(mgrid), s=img.data.shape)
-                    * img.psf_fft
-                )
-                mgrid = jp.fft.ifftshift(
-                    jp.fft.irfft2(mgrid, s=img.data.shape)
-                ).real
+                # mgrid = (
+                #    jp.fft.rfft2(jp.fft.fftshift(mgrid), s=img.data.shape)
+                #    * img.psf_fft
+                # )
+                # mgrid = jp.fft.ifftshift(
+                #    jp.fft.irfft2(mgrid, s=img.data.shape)
+                # ).real
+                mgrid = img.convolve(mgrid)
         return mgrid
 
     @staticmethod

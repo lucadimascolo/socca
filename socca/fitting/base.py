@@ -94,6 +94,8 @@ class fitter:
         self.img = img
         self.mod = mod
 
+        self.img._init_noise()
+
         self.mask = self.img.noise.mask
         self.pdfnoise = self.img.noise.logpdf
         self.pdfkwarg = [
