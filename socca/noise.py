@@ -98,7 +98,7 @@ class Normal:
         """
         if self.select is None:
             sigma = median_abs_deviation(
-                x=self.data.at[self.mask].get(),
+                x=self.data.at[self.mask == 1].get(),
                 scale="normal",
                 nan_policy="omit",
                 axis=None,
@@ -604,18 +604,226 @@ class NormalFourier:
 # Correlated noise for radio-interferometric data
 # ========================================================
 class NormalRI:
-    """Radio-interferometric noise model (placeholder)."""
+    """
+    Noise model for radio-interferometric data.
 
-    def __init__(self):
-        """
-        Initialize radio-interferometric noise model (not yet implemented).
+    Evaluates the likelihood in Fourier space, accounting for the
+    interferometric response function.
 
-        Raises
-        ------
-        NotImplementedError
-            This noise model is a placeholder for future implementation of
-            radio-interferometric data handling with visibility-space noise.
+    Attributes
+    ----------
+    options : dict
+        Dictionary of accepted noise model identifiers and their aliases.
+    select : str or None
+        Selected noise model identifier from the provided keyword arguments.
+    kwargs : dict
+        Keyword arguments provided for specifying the noise model.
+    ftype : str
+        Type of Fourier transform to use. Options are:
+
+        - 'real' or 'rfft': real-to-complex FFT (for real input data)
+        - 'full' or 'fft': complex-to-complex FFT (for complex input data)
+    data : jax.numpy.ndarray
+        Image data array. This is set when the model is called.
+    mask : jax.numpy.ndarray
+        Boolean mask array. This is set when the model is called.
+    resp : jax.numpy.ndarray
+        Interferometric response function. This is set when the model
+        is called.
+    sigma : float
+        Noise standard deviation.
+    """
+
+    def __init__(self, ftype="real", **kwargs):
         """
-        raise NotImplementedError(
-            "NormalRI noise model is not yet implemented."
+        Initialize radio-interferometric noise model.
+
+        Parameters
+        ----------
+        ftype : str, optional, default 'real'
+            Type of Fourier transform to use. Options are:
+
+            - 'real' or 'rfft': real-to-complex FFT (for real input data)
+            - 'full' or 'fft': complex-to-complex FFT
+              (for complex input data)
+        **kwargs : dict
+            Keyword arguments for specifying the noise model.
+            Accepted keywords (with aliases):
+
+            - sigma : float, optional
+                Standard deviation of the noise. Default is None, in
+                which case the noise level is estimated using the
+                median absolute deviation. Accepted aliases: ``sig``,
+                ``std``, ``rms``, ``stddev``.
+            - var : float, optional
+                Variance of the noise.
+                Accepted aliases: ``var``, ``variance``.
+            - wht : float, optional
+                Weight (inverse variance) of the noise.
+                Accepted aliases: ``wht``, ``wgt``, ``weight``,
+                ``weights``, ``invvar``.
+        """
+        if ftype not in ["real", "rfft", "full", "fft"]:
+            raise ValueError(
+                "ftype must be either 'real'/'rfft' or 'full'/'fft'."
+            )
+        self.ftype = ftype
+
+        self.options = {
+            "sig": ["sigma", "sig", "std", "rms", "stddev"],
+            "var": ["var", "variance"],
+            "wht": ["wht", "wgt", "weight", "weights", "invvar"],
+        }
+
+        options = (
+            self.options["sig"] + self.options["var"] + self.options["wht"]
         )
+
+        self.select = np.array([key for key in options if key in kwargs])
+        if self.select.shape[0] > 1:
+            raise ValueError(
+                "Multiple noise identifiers found in kwargs. "
+                "Please use only one of sigma, variance, or weight."
+            )
+        self.select = self.select[0] if self.select.shape[0] == 1 else None
+
+        self.kwargs = {key: kwargs[key] for key in options if key in kwargs}
+
+    #   Estimate/build noise statistics
+    #   --------------------------------------------------------
+    def getsigma(self):
+        """
+        Estimate or build the noise standard deviation.
+
+        Returns
+        -------
+        float
+            The noise standard deviation.
+        """
+        if self.select is None:
+            sigma = median_abs_deviation(
+                x=self.data.at[self.mask == 1].get(),
+                scale="normal",
+                nan_policy="omit",
+                axis=None,
+            )
+            sigma = float(sigma)
+
+            if MPI_RANK == 0:
+                print(
+                    "Using MAD for estimating noise level\n"
+                    f"- noise level: {sigma:.2E} [image units]"
+                )
+        elif isinstance(self.select, str):
+            try:
+                self.kwargs[self.select] = float(self.kwargs[self.select])
+            except ValueError:
+                pass
+
+            if isinstance(self.kwargs[self.select], (float, int)):
+                sigma = self.kwargs[self.select]
+
+            if self.select in self.options["var"]:
+                sigma = np.sqrt(sigma)
+            elif self.select in self.options["wht"]:
+                sigma = 1.00 / np.sqrt(sigma)
+            elif self.select not in self.options["sig"]:
+                raise ValueError("Unrecognized noise identifier")
+        return sigma
+
+    #   Set up noise model
+    #   --------------------------------------------------------
+    def __call__(self, data, mask, resp):
+        """
+        Set up the radio-interferometric noise model.
+
+        Processes the input data, mask, and response function, computes
+        or loads the noise sigma, and creates the JIT-compiled log
+        probability density function.
+
+        Parameters
+        ----------
+        data : array_like
+            Image data array to be modeled.
+        mask : array_like
+            Binary mask array (1=valid, 0=masked). Pixels where mask==0
+            are excluded from likelihood calculations.
+        resp : array_like
+            Interferometric response function (dirty beam).
+
+        Notes
+        -----
+        - Computes noise standard deviation via getsigma()
+        - Creates JIT-compiled log-likelihood with response convolution
+        """
+        self.mask = mask.copy()
+        self.data = data.copy()
+        self.resp = resp.copy()
+
+        self.sigma = self.getsigma()
+
+        self.mask = self.mask == 1.00
+        self.norm = 0.0
+
+        def _logpdf(xr, xs):
+            factor = self._logpdf(
+                xr,
+                xs,
+                self.data,
+                self.sigma,
+                self.mask,
+                self.resp,
+            )
+            return factor - 0.50 * self.norm
+
+        self.logpdf = jax.jit(_logpdf)
+
+    #   Noise log-pdf/likelihood function
+    #   --------------------------------------------------------
+    @staticmethod
+    def _logpdf(xr, xs, data, sigma, mask, resp):
+        """
+        Compute log probability for radio-interferometric noise.
+
+        Static method that evaluates the likelihood in Fourier space,
+        accounting for the interferometric response function.
+
+        Parameters
+        ----------
+        xr : jax.numpy.ndarray
+            Model values at each pixel (flattened, masked pixels
+            excluded).
+        xs : jax.numpy.ndarray
+            Model values for convolution (flattened, masked pixels
+            excluded).
+        data : jax.numpy.ndarray
+            Observed data array (2D image).
+        sigma : float
+            Noise standard deviation.
+        mask : jax.numpy.ndarray
+            Boolean mask for valid pixels.
+        resp : jax.numpy.ndarray
+            Interferometric response function.
+
+        Returns
+        -------
+        float
+            Log probability of the data given the model.
+
+        Notes
+        -----
+        The normalization constant is added separately in __call__().
+        """
+        chisq = jp.zeros(mask.shape, dtype=float)
+        chisq = chisq.at[mask].set(xs)
+        chisq = chisq - 2.00 * data
+
+        chisq = jp.fft.fft2(chisq)
+        chisq = chisq.at[0, 0].set(0.00 + 0.00j)
+        chisq = jp.fft.ifft2(chisq).real
+        chisq = chisq * resp
+
+        chisq = chisq.at[mask].get()
+        chisq = jp.sum(xr * chisq) / sigma**2.00
+
+        return -0.50 * chisq
