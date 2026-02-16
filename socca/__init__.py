@@ -1,3 +1,8 @@
+import warnings
+from astropy.wcs import FITSFixedWarning
+
+warnings.filterwarnings("ignore", category=FITSFixedWarning)
+
 import os
 
 os.environ["JAX_ENABLE_X64"] = "True"
