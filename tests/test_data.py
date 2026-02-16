@@ -160,7 +160,7 @@ class TestImage:
         nan_data[10:20, 10:20] = np.nan
         hdu = fits.PrimaryHDU(data=nan_data, header=simple_wcs_header)
         img = data.Image(hdu, noise=noise.Normal(sigma=0.1))
-        assert not img.noise.mask[15, 15]
+        assert img.mask[15, 15] == 0
 
     def test_grid_created(self, simple_hdu):
         """Test that WCSgrid is created."""
