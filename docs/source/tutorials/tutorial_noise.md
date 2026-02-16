@@ -9,7 +9,7 @@ As shown in "[Getting started](./tutorial_quickstart.md)", any noise model shoul
 At present, **``socca``** provides a limited but representative set of Gaussian noise models, covering the most common use cases encountered in astronomical imaging and map-based analyses. Below is a brief description of the noise models currently implemented in **``socca``**.
 
 ```{note}
-Several noise models are under active development and testing, and will be added to **``socca``** in future releases. These include, among others, Poisson noise models for photon-counting data (e.g., X-ray observations), as well as noise models specifically designed for radio-interferometric observations.
+Several noise models are under active development and testing, and will be added to **``socca``** in future releases. These include, among others, Poisson noise models for photon-counting data (e.g., X-ray observations).
 ```
 
 ```{important}
@@ -90,4 +90,27 @@ Other optional keyword arguments include `apod`, which specifies an apodization 
 
 ```{warning}
 The likelihood is evaluated by Fourier transforming the apodized residuals between model and data, weighting each Fourier mode by the inverse noise covariance, and summing over the Fourier modes with non-zero inverse covariance. Given the Fourier-space nature of this noise model, it is not possible to handle masked pixels in the input data.
+```
+
+## `NormalRI`: radio-interferometric noise
+The `NormalRI` noise model implements an image-space approximation to the Fourier-space likelihood for radio-interferometric data. Rather than working directly in the visibility domain, this model uses the dirty beam (i.e., the interferometric response function) to approximate the noise covariance structure in image space. This approach enables efficient likelihood evaluation while accounting for the correlated noise introduced by the interferometric imaging process. The specific implementation is based on the derivations by [Powell et al. (2020)](https://ui.adsabs.harvard.edu/abs/arXiv:2005.03609) and [Zhang et al. (2025)](https://ui.adsabs.harvard.edu/abs/2025arXiv250808393Z/abstract), to which we refer to for an extensive discussion of the theoretical framework.
+
+```{important}
+When using the `NormalRI` noise model, the input data should be a raw dirty image (i.e., without any deconvolution applied) and should not be corrected for the primary beam (i.e., the antenna pattern) response. If the primary beam is expected to have a significant effect on the signal, a model should be provided as the `resp` attribute of the input `socca.data.Image` object.
+```
+
+The noise amplitude can be specified using the same keyword arguments as the `Normal` noise model (see above), but does not support image-like inputs. If no noise amplitude is provided, the per-pixel standard deviation is estimated from the median absolute deviation of the unmasked pixels.
+
+```python
+>>> from socca.noise import NormalRI
+>>>
+>>> # With explicit noise level
+>>> noise = NormalRI(sigma=0.1)
+>>>
+>>> # With automatic noise estimation
+>>> noise = NormalRI()
+```
+
+```{warning}
+The `NormalRI` noise model is designed for map-based analyses of radio-interferometric data, where the dirty beam encodes the sampling of the Fourier plane by the interferometer. It provides a computationally efficient alternative to full visibility-domain fitting, at the cost of an approximate treatment of the noise correlations. Current tests indicate that this approach is accurate enough for sources that are not too extended compared to the maximum recoverable scale in the specific interferometric dataset. For more extended sources, the approximation may break down and a full visibility-domain analysis may be necessary.
 ```
