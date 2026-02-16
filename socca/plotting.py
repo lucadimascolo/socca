@@ -410,8 +410,8 @@ class Plotter:
 
         for mi, m in enumerate([imgdata, moddata, imgdata - moddata]):
             if mi < 2:
-                vmin = imgdata.min()
-                vmax = imgdata.max()
+                vmin = np.nanmin(imgdata)
+                vmax = np.nanmax(imgdata)
             else:
                 vmin = -np.nanmax(np.abs(m))
                 vmax = np.nanmax(np.abs(m))
