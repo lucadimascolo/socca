@@ -281,7 +281,105 @@ class TestNormalFourier:
 class TestNormalRI:
     """Tests for NormalRI noise model."""
 
-    def test_not_implemented(self):
-        """Test that NormalRI raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            noise.NormalRI()
+    def test_initialization_default(self):
+        """Test default initialization without parameters."""
+        n = noise.NormalRI()
+        assert n.select is None
+
+    def test_initialization_with_sigma(self):
+        """Test initialization with sigma parameter."""
+        n = noise.NormalRI(sigma=0.1)
+        assert n.select == "sigma"
+        assert n.kwargs["sigma"] == 0.1
+
+    def test_initialization_with_variance(self):
+        """Test initialization with variance parameter."""
+        n = noise.NormalRI(var=0.01)
+        assert n.select == "var"
+        assert n.kwargs["var"] == 0.01
+
+    def test_initialization_with_weight(self):
+        """Test initialization with weight parameter."""
+        n = noise.NormalRI(wht=100.0)
+        assert n.select == "wht"
+        assert n.kwargs["wht"] == 100.0
+
+    def test_initialization_with_alias(self):
+        """Test initialization with alias parameter names."""
+        for alias in ["sig", "std", "rms", "stddev"]:
+            n = noise.NormalRI(**{alias: 0.1})
+            assert n.select == alias
+
+    def test_multiple_identifiers_raises_error(self):
+        """Test that multiple noise identifiers raise ValueError."""
+        with pytest.raises(ValueError, match="Multiple noise identifiers"):
+            noise.NormalRI(sigma=0.1, var=0.01)
+
+    def test_getsigma_from_float(self):
+        """Test getsigma with float sigma value."""
+        n = noise.NormalRI(sigma=0.5)
+        n.data = jp.array(np.random.rand(8, 8))
+        n.mask = jp.array(np.ones((8, 8), dtype=int))
+        sigma = n.getsigma()
+        assert sigma == pytest.approx(0.5)
+
+    def test_getsigma_from_variance(self):
+        """Test getsigma with variance value (converts to sigma)."""
+        n = noise.NormalRI(var=0.25)
+        n.data = jp.array(np.random.rand(8, 8))
+        n.mask = jp.array(np.ones((8, 8), dtype=int))
+        sigma = n.getsigma()
+        assert sigma == pytest.approx(0.5)
+
+    def test_getsigma_from_weight(self):
+        """Test getsigma with weight value (converts to sigma)."""
+        n = noise.NormalRI(wht=4.0)
+        n.data = jp.array(np.random.rand(8, 8))
+        n.mask = jp.array(np.ones((8, 8), dtype=int))
+        sigma = n.getsigma()
+        assert sigma == pytest.approx(0.5)
+
+    def test_getsigma_mad_estimation(self, capsys):
+        """Test getsigma with MAD estimation (default)."""
+        np.random.seed(42)
+        data = np.random.normal(0, 1.0, (32, 32))
+        n = noise.NormalRI()
+        n.data = jp.array(data)
+        n.mask = jp.array(np.ones_like(data, dtype=int))
+        sigma = n.getsigma()
+        captured = capsys.readouterr()
+        assert "MAD" in captured.out
+        assert sigma == pytest.approx(1.0, rel=0.2)
+
+    def test_call_sets_up_model(self):
+        """Test __call__ sets up the noise model correctly."""
+        n = noise.NormalRI(sigma=0.1)
+        data = jp.array(np.random.rand(8, 8))
+        mask = jp.array(np.ones((8, 8), dtype=int))
+        resp = jp.array(np.random.rand(8, 8))
+        n(data, mask, resp)
+        assert n.data is not None
+        assert n.sigma is not None
+        assert n.logpdf is not None
+
+    def test_logpdf_returns_scalar(self):
+        """Test logpdf returns a scalar value."""
+        n = noise.NormalRI(sigma=0.1)
+        data = jp.array(np.random.rand(8, 8))
+        mask = jp.array(np.ones((8, 8), dtype=int))
+        resp = jp.array(np.random.rand(8, 8))
+        n(data, mask, resp)
+        xr = jp.ones(64)
+        xs = jp.ones(64)
+        logp = n.logpdf(xr, xs)
+        assert np.isscalar(logp) or logp.shape == ()
+
+    def test_static_logpdf(self):
+        """Test _logpdf static method directly."""
+        mask = jp.array(np.ones((4, 4), dtype=bool))
+        data = jp.array(np.random.rand(4, 4))
+        resp = jp.array(np.ones((4, 4)))
+        xr = jp.ones(16)
+        xs = jp.ones(16)
+        logp = noise.NormalRI._logpdf(xr, xs, data, 0.1, mask, resp)
+        assert np.isfinite(float(logp))
