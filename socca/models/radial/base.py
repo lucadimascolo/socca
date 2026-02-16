@@ -70,8 +70,6 @@ class Profile(Component):
             See class docstring for parameter descriptions.
         """
         super().__init__(**kwargs)
-        self.okeys.append("_scale_radius")
-        self.okeys.append("_scale_amp")
         self.xc = kwargs.get("xc", config.Profile.xc)
         self.yc = kwargs.get("yc", config.Profile.yc)
 
@@ -90,6 +88,31 @@ class Profile(Component):
                 cbox="Projected boxiness",
             )
         )
+
+    @property
+    def e(self):  # noqa: D102
+        return self._e
+
+    @e.setter
+    def e(self, value):  # noqa: D102
+        wsuffix = "Ellipticity must be in the range [0, 1)."
+        wstring = None
+        if isinstance(value, numpyro.distributions.Distribution):
+            if value.support.upper_bound > 1:
+                wstring = "The ellipticity prior support includes values"
+        elif value >= 1:
+            wstring = "The ellipticity parameter is"
+        if wstring is not None:
+            raise ValueError(f"{wstring} greater than 1. {wsuffix}")
+
+        if isinstance(value, numpyro.distributions.Distribution):
+            if value.support.lower_bound < 0:
+                wstring = "The ellipticity prior support includes values"
+        elif value < 0:
+            wstring = "The ellipticity parameter is"
+        if wstring is not None:
+            raise ValueError(f"{wstring} lower than 0. {wsuffix}")
+        self._e = value
 
     @abstractmethod
     def profile(self, r):
@@ -392,7 +415,6 @@ class CustomProfile(Profile):
             Standard profile parameters (xc, yc, theta, e, cbox).
         """
         super().__init__(**kwargs)
-        self.okeys.append("profile")
 
         for p in parameters:
             setattr(self, p["name"], None)

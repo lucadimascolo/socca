@@ -1,7 +1,11 @@
 """Sersic profile for modeling elliptical galaxies and bulges."""
 
+import warnings
+
 import jax
 import jax.numpy as jp
+import numpyro.distributions
+
 import numpy as np
 from scipy.special import gammaincinv
 
@@ -46,6 +50,28 @@ class Sersic(Profile):
             )
         )
         self._initialized = True
+
+    @property
+    def ns(self):  # noqa: D102
+        return self._ns
+
+    @ns.setter
+    def ns(self, value):  # noqa: D102
+        wstring = None
+        if isinstance(value, numpyro.distributions.Distribution):
+            if (
+                value.support.upper_bound > 10.00
+                or value.support.lower_bound < 0.25
+            ):
+                wstring = "The ns prior support includes values"
+        elif value < 0.25 or value > 10.00:
+            wstring = "The ns parameter falls"
+        if wstring is not None:
+            raise ValueError(
+                f"{wstring} outside the range [0.25,10.] "
+                "This might lead to inaccurate interpolation."
+            )
+        self._ns = value
 
     @staticmethod
     @jax.jit

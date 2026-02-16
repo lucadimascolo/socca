@@ -1,7 +1,10 @@
 """Generalized Navarro-Frenk-White profile."""
 
+import warnings
+
 import jax
 import jax.numpy as jp
+import numpyro.distributions
 from quadax import quadgk
 
 from .. import config
@@ -32,10 +35,6 @@ class gNFW(Profile):
         self.rz = kwargs.get("rz", jp.logspace(-7, 2, 1000))
         self.eps = kwargs.get("eps", 1.00e-08)
 
-        self.okeys.append("rz")
-        self.okeys.append("eps")
-        self.okeys.append("profile")
-
         self.units.update(
             dict(rc="deg", alpha="", beta="", gamma="", Ic="image")
         )
@@ -57,6 +56,63 @@ class gNFW(Profile):
 
         self.profile = jax.jit(_profile)
         self._initialized = True
+
+    @property
+    def alpha(self):  # noqa: D102
+        return self._alpha
+
+    @alpha.setter
+    def alpha(self, value):  # noqa: D102
+        wstring = None
+        if isinstance(value, numpyro.distributions.Distribution):
+            if value.support.lower_bound <= 0:
+                wstring = "The alpha prior support includes values"
+        elif value <= 0:
+            wstring = "The alpha parameter is"
+        if wstring is not None:
+            warnings.warn(
+                f"{wstring} less than or equal to 0. "
+                "This might lead to unphysical models."
+            )
+        self._alpha = value
+
+    @property
+    def beta(self):  # noqa: D102
+        return self._beta
+
+    @beta.setter
+    def beta(self, value):  # noqa: D102
+        wstring = None
+        if isinstance(value, numpyro.distributions.Distribution):
+            if value.support.upper_bound >= 3:
+                wstring = "The beta prior support includes values"
+        elif value >= 3:
+            wstring = "The beta parameter is"
+        if wstring is not None:
+            warnings.warn(
+                f"{wstring} greater than or equal to 3. "
+                "This might lead to unphysical models."
+            )
+        self._beta = value
+
+    @property
+    def gamma(self):  # noqa: D102
+        return self._gamma
+
+    @gamma.setter
+    def gamma(self, value):  # noqa: D102
+        wstring = None
+        if isinstance(value, numpyro.distributions.Distribution):
+            if value.support.upper_bound >= 1:
+                wstring = "The gamma prior support includes values"
+        elif value >= 1:
+            wstring = "The gamma parameter is"
+        if wstring is not None:
+            warnings.warn(
+                f"{wstring} greater than or equal to 1. "
+                "This might lead to unphysical models."
+            )
+        self._gamma = value
 
     @staticmethod
     def _profile(r, Ic, rc, alpha, beta, gamma, rz, eps=1.00e-08):
