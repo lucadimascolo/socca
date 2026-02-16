@@ -607,8 +607,9 @@ class NormalRI:
     """
     Noise model for radio-interferometric data.
 
-    Evaluates the likelihood in Fourier space, accounting for the
-    interferometric response function.
+    Computes the Fourier-space likelihood using an image-based approximation
+    by describing the interferometric transfer function and noise covariance
+    via its image-space dirty beam.
 
     Attributes
     ----------
@@ -618,11 +619,6 @@ class NormalRI:
         Selected noise model identifier from the provided keyword arguments.
     kwargs : dict
         Keyword arguments provided for specifying the noise model.
-    ftype : str
-        Type of Fourier transform to use. Options are:
-
-        - 'real' or 'rfft': real-to-complex FFT (for real input data)
-        - 'full' or 'fft': complex-to-complex FFT (for complex input data)
     data : jax.numpy.ndarray
         Image data array. This is set when the model is called.
     mask : jax.numpy.ndarray
@@ -634,18 +630,12 @@ class NormalRI:
         Noise standard deviation.
     """
 
-    def __init__(self, ftype="real", **kwargs):
+    def __init__(self, **kwargs):
         """
         Initialize radio-interferometric noise model.
 
         Parameters
         ----------
-        ftype : str, optional, default 'real'
-            Type of Fourier transform to use. Options are:
-
-            - 'real' or 'rfft': real-to-complex FFT (for real input data)
-            - 'full' or 'fft': complex-to-complex FFT
-              (for complex input data)
         **kwargs : dict
             Keyword arguments for specifying the noise model.
             Accepted keywords (with aliases):
@@ -663,12 +653,6 @@ class NormalRI:
                 Accepted aliases: ``wht``, ``wgt``, ``weight``,
                 ``weights``, ``invvar``.
         """
-        if ftype not in ["real", "rfft", "full", "fft"]:
-            raise ValueError(
-                "ftype must be either 'real'/'rfft' or 'full'/'fft'."
-            )
-        self.ftype = ftype
-
         self.options = {
             "sig": ["sigma", "sig", "std", "rms", "stddev"],
             "var": ["var", "variance"],
@@ -785,8 +769,8 @@ class NormalRI:
         """
         Compute log probability for radio-interferometric noise.
 
-        Static method that evaluates the likelihood in Fourier space,
-        accounting for the interferometric response function.
+        Static method that approximates the Fourier-space likelihood
+        in image space using the dirty beam response function.
 
         Parameters
         ----------
