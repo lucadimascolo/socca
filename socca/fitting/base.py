@@ -772,7 +772,8 @@ class fitter:
         asymmetric uncertainties (16th and 84th percentiles) for each
         fitted parameter, grouped by model component.
 
-        The output format is:
+        The output format is::
+
             comp_00
             -------
             param : best-fit [+upper/-lower]
