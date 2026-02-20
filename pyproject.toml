@@ -55,6 +55,11 @@ exclude = ["data*","examples*"]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.uv]
+constraint-dependencies = [
+    "pyarrow>=10,<20",
+]
+
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
 
