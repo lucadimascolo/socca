@@ -185,7 +185,7 @@ class fitter:
         xr = xr.at[self.mask].get()
         local_vars = {"xs": xs, "xr": xr}
         pdf = self.pdfnoise(**{key: local_vars[key] for key in self.pdfkwarg})
-        return jp.where(jp.any(neg.at[self.mask].get() == 1), -jp.inf, pdf)
+        return jp.where(jp.any(neg == 1), -jp.inf, pdf)
 
     #   Prior probability distribution
     #   --------------------------------------------------------
