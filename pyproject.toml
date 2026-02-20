@@ -57,7 +57,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.uv]
 constraint-dependencies = [
-    "pyarrow>=10,<20",
+    "pyarrow>=14,<15",
 ]
 
 [tool.uv.sources]
