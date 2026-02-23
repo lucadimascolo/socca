@@ -3,11 +3,8 @@
 from .utils import _img_loader, _reduce_axes
 from . import noise as noisepdf
 
-from functools import partial
-
 import jax
 import jax.numpy as jp
-from jax.scipy.signal import fftconvolve
 
 import numpy as np
 
@@ -49,6 +46,11 @@ def _hdu_mask(mask, hdu):
     data, _ = reproject.reproject_interp(mask, hdu.header)
     data[np.isnan(data)] = 0.00
     return np.where(data < 1.00, 0.00, 1.00)
+
+
+def pad_size(shape):
+    """Compute the standard padded shape for convolution."""
+    return tuple(2 * s - 1 for s in shape)
 
 
 # Coordinate grids
@@ -183,31 +185,13 @@ class FFTspec:
         FFT of a unit pulse in image space.
     freq : list of jax.numpy.ndarray
         Frequency grids in u and v directions.
-    head : dict
+    header : dict
         Dictionary containing relevant header keywords.
     """
 
     def __init__(self, hdu):
-        self.pulse = jp.fft.rfft2(
-            jp.fft.ifftshift(
-                jp.fft.ifft2(jp.full(hdu.data.shape, 1.00 + 0.00j))
-            ).real
-        )
-        self.freq = [
-            jp.array(
-                np.broadcast_to(
-                    np.fft.rfftfreq(hdu.data.shape[1])[None, :],
-                    self.pulse.shape,
-                )
-            ),
-            jp.array(
-                np.broadcast_to(
-                    np.fft.fftfreq(hdu.data.shape[0])[:, None],
-                    self.pulse.shape,
-                )
-            ),
-        ]
-        self.head = {
+        self.image_shape = hdu.data.shape
+        self.header = {
             key: hdu.header[key]
             for idx in [1, 2]
             for key in [
@@ -218,49 +202,76 @@ class FFTspec:
             ]
         }
 
+        self.padded_shape = pad_size(self.image_shape)
+
+        self.center = jp.zeros(self.image_shape)
+        self.center = self.center.at[
+            self.image_shape[0] // 2, self.image_shape[1] // 2
+        ].set(1.00)
+
+        self.center = jp.fft.rfft2(self.center, self.padded_shape)
+
+        self.freq = [
+            jp.array(
+                np.broadcast_to(
+                    np.fft.rfftfreq(self.padded_shape[1])[None, :],
+                    self.center.shape,
+                )
+            ),
+            jp.array(
+                np.broadcast_to(
+                    np.fft.fftfreq(self.padded_shape[0])[:, None],
+                    self.center.shape,
+                )
+            ),
+        ]
+
+        dx = self.image_shape[1] // 2 - self.header["CRPIX1"] + 1.00
+        dy = self.image_shape[0] // 2 - self.header["CRPIX2"] + 1.00
+
+        self.pulse = self.center * jp.exp(
+            2.00j * jp.pi * (self.freq[0] * dx + self.freq[1] * dy)
+        )
+
     def shift(self, xc, yc):
         """
-        Compute FFT phase shifts for translating image center.
-
-        Calculates the phase shifts in Fourier space (u and v) needed to
-        shift the image center to new world coordinates. This enables
-        efficient image translation via the FFT shift theorem.
+        Compute Fourier shift for a point source at (xc, yc).
 
         Parameters
         ----------
         xc : float
-            Target x-coordinate (RA or longitude) in world coordinates.
+            x-coordinate of the point source in world coordinates.
         yc : float
-            Target y-coordinate (Dec or latitude) in world coordinates.
+            y-coordinate of the point source in world coordinates.
 
         Returns
         -------
-        tuple of jax.numpy.ndarray
-            (uphase, vphase) - Complex phase shift arrays for u and v
-            frequencies, to be applied in Fourier space.
-
-        Notes
-        -----
-        The x-coordinate shift accounts for spherical projection effects
-        via cos(declination) scaling.
+        jax.numpy.ndarray
+            Complex array representing the Fourier shift for the point source.
         """
-        dx = (xc - self.head["CRVAL1"]) * jp.cos(
-            jp.deg2rad(self.head["CRVAL2"])
+        dy = yc - self.header["CRVAL2"]
+        dx = (xc - self.header["CRVAL1"]) * jp.cos(
+            jp.deg2rad(self.header["CRVAL2"])
         )
-        dy = yc - self.head["CRVAL2"]
-        uphase = (
-            -2.00j
-            * jp.pi
-            * self.freq[0]
-            * (self.head["CRPIX1"] - 1.00 + dx / jp.abs(self.head["CDELT1"]))
+
+        dx = dx / self.header["CDELT1"]
+        dy = dy / self.header["CDELT2"]
+
+        return jp.exp(-2.00j * jp.pi * (self.freq[0] * dx + self.freq[1] * dy))
+
+    def ifft(self, data):
+        """Compute inverse FFT to get image from Fourier-space data."""
+        data_ = jp.fft.irfft2(data, self.padded_shape)
+
+        start = tuple(
+            (f - o) // 2 for f, o in zip(self.padded_shape, self.image_shape)
         )
-        vphase = (
-            2.00j
-            * jp.pi
-            * self.freq[1]
-            * (self.head["CRPIX2"] - 1.00 + dy / jp.abs(self.head["CDELT2"]))
-        )
-        return uphase, vphase
+        if self.image_shape[0] % 2 == 0:
+            start = (start[0] + 1, start[1])
+        if self.image_shape[1] % 2 == 0:
+            start = (start[0], start[1] + 1)
+
+        return jax.lax.dynamic_slice(data_, start, self.image_shape)
 
 
 # Image constructor
@@ -564,7 +575,7 @@ class Image:
 
     #   Add PSF
     #   --------------------------------------------------------
-    def addpsf(self, img, normalize=True, flip=False, idx=0):
+    def addpsf(self, img, normalize=True, idx=0):
         """
         Add a point spread function (PSF) to the image.
 
@@ -609,110 +620,56 @@ class Image:
         if normalize:
             kernel = kernel / np.sum(kernel)
 
-        if self.noise.__class__.__name__ == "NormalRI" or flip:
-            kernel = np.flip(kernel, axis=(0, 1))
-
-        kx, ky = kernel.shape
-        dx, dy = self.data.shape
-
-        if kx > dx:
-            cx = (kx - dx) // 2
-            kernel = kernel[cx : cx + dx, :]
-
-        if ky > dy:
-            cy = (ky - dy) // 2
-            kernel = kernel[:, cy : cy + dy]
-
         self.psf = kernel
-
-        pad_width = [
-            (0, max(0, s - k)) for s, k in zip(self.data.shape, kernel.shape)
-        ]
-        self.psf = np.pad(kernel, pad_width, mode="constant").astype(
-            np.float64
-        )
-        self.psf_fft = jp.fft.rfft2(
-            jp.fft.fftshift(self.psf), s=self.psf.shape
-        )
-        self.psf_fft = jp.abs(self.psf_fft)
-
-        # self.convolve = lambda x: fftconvolve(x, self.psf, mode="same")
-        self.convolve = FFTConvolve(self.psf, self.data.shape, mode="same")
+        self.convolve = Convolve(self.psf, self.data.shape)
 
 
-# FFT-based convolver
-# Ported from jax.scipy.signal.fftconvolve
-# ========================================================
-class FFTConvolve:
-    """FFT-based convolution with a cached kernel transform.
+class Convolve:
+    """FFT-based convolution operator with optional zero-padding."""
 
-    The kernel FFT is computed once at initialization and reused
-    for each call, avoiding redundant transforms during fitting.
-
-    Parameters
-    ----------
-    kernel : array_like
-        The convolution kernel (e.g., PSF).
-    image_shape : tuple of int
-        Shape of the images to be convolved.
-    mode : str, optional
-        Convolution mode: 'same', 'full', or 'valid'.
-        Default is 'same'.
-    """
-
-    def __init__(self, kernel, image_shape, mode="same"):
-        self.mode = mode
-        self.kernel_shape = kernel.shape
-        self.image_shape = image_shape
-
-        full_shape = tuple(
-            s1 + s2 - 1 for s1, s2 in zip(image_shape, kernel.shape)
-        )
-        self.full_shape = full_shape
-
-        is_complex = jp.iscomplexobj(kernel)
-        if is_complex:
-            self._fft = jp.fft.fftn
-            self._ifft = jp.fft.ifftn
-        else:
-            self._fft = jp.fft.rfftn
-            self._ifft = jp.fft.irfftn
-
-        self._kernel_fft = self._fft(kernel, full_shape)
-
-    @property
-    def kernel_fft(self):
-        """Pre-computed FFT of the kernel."""
-        return self._kernel_fft
-
-    @partial(jax.jit, static_argnames=["self"])
-    def __call__(self, image):
-        """Convolve an image with the cached kernel.
+    def __init__(self, kernel, image_shape):
+        """
+        Initialize the convolution operator.
 
         Parameters
         ----------
-        image : array_like
-            Input image. Must match the `image_shape` provided
-            at initialization.
+        kernel : array_like
+            PSF kernel array.
+        image_shape : tuple of int
+            Shape of the images to convolve.
+        """
+        self.kernel = kernel
+        self.image_shape = image_shape
+
+        self.padded_shape = pad_size(self.image_shape)
+
+        self._fft = jp.fft.rfft2
+        self._ifft = jp.fft.irfft2
+
+        self.psf_fft = self._fft(self.kernel, self.padded_shape)
+
+    def __call__(self, image):
+        """
+        Convolve an image with the PSF kernel.
+
+        Parameters
+        ----------
+        image : jax.numpy.ndarray
+            2-D image array to convolve.
 
         Returns
         -------
-        jax.Array
-            Convolved image, cropped according to `mode`.
+        jax.numpy.ndarray
+            Convolved image with the same shape as the input.
         """
-        sp1 = self._fft(image, self.full_shape)
-        conv = self._ifft(sp1 * self._kernel_fft, self.full_shape)
+        _image = self._fft(image, self.padded_shape)
+        _image = self._ifft(_image * self.psf_fft, self.padded_shape)
 
-        if self.mode == "full":
-            out_shape = self.full_shape
-        elif self.mode == "same":
-            out_shape = self.image_shape
-        elif self.mode == "valid":
-            out_shape = tuple(
-                s1 - s2 + 1
-                for s1, s2 in zip(self.image_shape, self.kernel_shape)
-            )
-
-        start = tuple((f - o) // 2 for f, o in zip(self.full_shape, out_shape))
-
-        return jax.lax.dynamic_slice(conv, start, out_shape)
+        start = tuple(
+            (f - o) // 2 for f, o in zip(self.padded_shape, self.image_shape)
+        )
+        if self.image_shape[0] % 2 == 0:
+            start = (start[0] + 1, start[1])
+        if self.image_shape[1] % 2 == 0:
+            start = (start[0], start[1] + 1)
+        return jax.lax.dynamic_slice(_image, start, self.image_shape)

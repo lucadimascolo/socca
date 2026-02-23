@@ -626,11 +626,7 @@ class Model:
             msmo *= img.resp
 
         if img.psf is not None:
-            msmo = (
-                mpts + jp.fft.rfft2(jp.fft.fftshift(msmo), s=img.data.shape)
-            ) * img.psf_fft
-            msmo = jp.fft.ifftshift(jp.fft.irfft2(msmo, s=img.data.shape)).real
-
+            msmo = img.convolve(msmo)
         mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts, s=img.data.shape)).real
 
         if img.psf is None:

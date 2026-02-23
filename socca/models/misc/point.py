@@ -160,8 +160,8 @@ class Point(Component):
         xc = kwarg["xc"]
         yc = kwarg["yc"]
         Ic = kwarg["Ic"]
-        uphase, vphase = img.fft.shift(xc, yc)
-        return Ic * img.fft.pulse * jp.exp(-(uphase + vphase))
+        phase = img.fft.shift(xc, yc)
+        return Ic * img.fft.pulse * phase  # jp.exp(-(uphase + vphase))
 
     def getmap(self, img, convolve=False):
         """
@@ -228,12 +228,14 @@ class Point(Component):
 
         mgrid = self._evaluate(img, **kwarg)
 
+        kernel = img.fft.center
+
         if convolve:
             if img.psf is None:
                 warnings.warn(
                     "No PSF defined, so no convolution will be performed."
                 )
             else:
-                mgrid = mgrid * img.psf_fft
-        mgrid = jp.fft.ifftshift(jp.fft.irfft2(mgrid, s=img.data.shape)).real
-        return mgrid
+                kernel = img.convolve.psf_fft
+
+        return img.fft.ifft(mgrid * kernel)
