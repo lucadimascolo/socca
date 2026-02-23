@@ -621,7 +621,7 @@ class Image:
         Notes
         -----
         - If PSF dimensions exceed image dimensions, it is automatically cropped
-        - The PSF FFT is precomputed and stored in `self.psf_fft` for efficiency
+        - The PSF FFT is precomputed and stored in `self.convolve.psf_fft`
         - PSF kernel is stored in `self.psf` for reference
         - PSF is zero-padded to match image dimensions before FFT
         """

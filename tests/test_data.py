@@ -84,16 +84,17 @@ class TestFFTspec:
         """Test FFTspec initialization."""
         fft_spec = data.FFTspec(simple_hdu)
         assert fft_spec.pulse is not None
+        assert fft_spec.center is not None
+        assert fft_spec.image_shape == simple_hdu.data.shape
+        assert fft_spec.padded_shape == data.pad_size(simple_hdu.data.shape)
         assert len(fft_spec.freq) == 2
-        assert fft_spec.head is not None
+        assert fft_spec.header is not None
 
     def test_pulse_shape(self, simple_hdu):
-        """Test that pulse has correct shape (rfft2 output)."""
+        """Test that pulse has correct shape (rfft2 on padded grid)."""
         fft_spec = data.FFTspec(simple_hdu)
-        expected_shape = (
-            simple_hdu.data.shape[0],
-            simple_hdu.data.shape[1] // 2 + 1,
-        )
+        padded = data.pad_size(simple_hdu.data.shape)
+        expected_shape = (padded[0], padded[1] // 2 + 1)
         assert fft_spec.pulse.shape == expected_shape
 
     def test_freq_shape(self, simple_hdu):
@@ -102,8 +103,8 @@ class TestFFTspec:
         for freq in fft_spec.freq:
             assert freq.shape == fft_spec.pulse.shape
 
-    def test_head_contains_required_keys(self, simple_hdu):
-        """Test that head dictionary has required keys."""
+    def test_header_contains_required_keys(self, simple_hdu):
+        """Test that header dictionary has required keys."""
         fft_spec = data.FFTspec(simple_hdu)
         required_keys = [
             "CRPIX1",
@@ -116,16 +117,16 @@ class TestFFTspec:
             "NAXIS2",
         ]
         for key in required_keys:
-            assert key in fft_spec.head
+            assert key in fft_spec.header
 
-    def test_shift_returns_phases(self, simple_hdu):
-        """Test that shift method returns phase arrays."""
+    def test_shift_returns_phase(self, simple_hdu):
+        """Test that shift method returns a single complex phase array."""
         fft_spec = data.FFTspec(simple_hdu)
         xc = simple_hdu.header["CRVAL1"]
         yc = simple_hdu.header["CRVAL2"]
-        uphase, vphase = fft_spec.shift(xc, yc)
-        assert uphase.shape == fft_spec.pulse.shape
-        assert vphase.shape == fft_spec.pulse.shape
+        phase = fft_spec.shift(xc, yc)
+        assert phase.shape == fft_spec.pulse.shape
+        assert jp.iscomplexobj(phase)
 
 
 class TestImage:
@@ -213,7 +214,8 @@ class TestImageAddpsf:
         img = data.Image(simple_hdu)
         img.addpsf(gaussian_psf)
         assert img.psf is not None
-        assert img.psf_fft is not None
+        assert img.convolve is not None
+        assert img.convolve.psf_fft is not None
 
     def test_addpsf_normalizes_by_default(self, simple_hdu, gaussian_psf):
         """Test that PSF is normalized by default."""
@@ -248,22 +250,24 @@ class TestImageAddpsf:
         assert img.psf is not None
 
     def test_addpsf_fft_computed(self, simple_hdu, gaussian_psf):
-        """Test that PSF FFT is computed."""
+        """Test that PSF FFT is computed on the padded grid."""
         img = data.Image(simple_hdu)
         img.addpsf(gaussian_psf)
-        expected_shape = (
-            simple_hdu.data.shape[0],
-            simple_hdu.data.shape[1] // 2 + 1,
-        )
-        assert img.psf_fft.shape == expected_shape
+        padded = data.pad_size(simple_hdu.data.shape)
+        expected_shape = (padded[0], padded[1] // 2 + 1)
+        assert img.convolve.psf_fft.shape == expected_shape
 
-    def test_addpsf_larger_than_image_cropped(self, simple_hdu):
-        """Test that PSF larger than image is cropped."""
+    def test_addpsf_larger_than_image_stored_as_is(self, simple_hdu):
+        """Test that PSF larger than image is stored at original size.
+
+        Convolve handles size mismatches internally via FFT padding.
+        """
         img = data.Image(simple_hdu)
         large_psf = np.ones((100, 100))
         img.addpsf(large_psf)
-        assert img.psf.shape[0] <= img.data.shape[0]
-        assert img.psf.shape[1] <= img.data.shape[1]
+        assert img.psf.shape == (100, 100)
+        padded = data.pad_size(simple_hdu.data.shape)
+        assert img.convolve.psf_fft.shape == (padded[0], padded[1] // 2 + 1)
 
 
 class TestImageAddmask:

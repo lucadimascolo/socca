@@ -627,7 +627,7 @@ class TestBuildKwargsEvaluate:
         assert kwarg["Ic"] == 100.0
 
     def test_point_evaluate(self, simple_img):
-        """Test Point._evaluate returns complex Fourier array."""
+        """Test Point._evaluate returns complex Fourier array on padded grid."""
         point = models.Point(
             xc=simple_img.hdu.header["CRVAL1"],
             yc=simple_img.hdu.header["CRVAL2"],
@@ -639,10 +639,8 @@ class TestBuildKwargsEvaluate:
             "Ic": 100.0,
         }
         result = point._evaluate(simple_img, **kwarg)
-        expected_shape = (
-            simple_img.data.shape[0],
-            simple_img.data.shape[1] // 2 + 1,
-        )
+        padded = data.pad_size(simple_img.data.shape)
+        expected_shape = (padded[0], padded[1] // 2 + 1)
         assert result.shape == expected_shape
 
     def test_background_build_kwargs(self):
