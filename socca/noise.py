@@ -789,7 +789,7 @@ class NormalRI:
         mask : jax.numpy.ndarray
             Boolean mask for valid pixels.
         resp : jax.numpy.ndarray
-            Interferometric response function.
+            Antenna response function.
 
         Returns
         -------
@@ -804,9 +804,6 @@ class NormalRI:
         chisq = chisq.at[mask].set(xs)
         chisq = chisq - 2.00 * data
 
-        chisq = jp.fft.fft2(chisq)
-        chisq = chisq.at[0, 0].set(0.00 + 0.00j)
-        chisq = jp.fft.ifft2(chisq).real
         chisq = chisq * resp
 
         chisq = chisq.at[mask].get()
