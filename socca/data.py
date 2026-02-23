@@ -181,12 +181,19 @@ class FFTspec:
 
     Attributes
     ----------
-    pulse : jax.numpy.ndarray
-        FFT of a unit pulse in image space.
-    freq : list of jax.numpy.ndarray
-        Frequency grids in u and v directions.
+    image_shape : tuple of int
+        Shape of the original image ``(ny, nx)``.
+    padded_shape : tuple of int
+        Shape of the zero-padded array used for convolution.
     header : dict
         Dictionary containing relevant header keywords.
+    center : jax.numpy.ndarray
+        FFT of a unit impulse at the image centre, computed on the
+        padded grid.
+    freq : list of jax.numpy.ndarray
+        Frequency grids in u and v directions, defined on the padded grid.
+    pulse : jax.numpy.ndarray
+        FFT of a unit pulse at the reference pixel position.
     """
 
     def __init__(self, hdu):
@@ -435,6 +442,19 @@ class Image:
             self.noise = noise
 
     def _init_noise(self):
+        """Initialise the noise model and populate the pixel mask.
+
+        Inspects the noise model's call signature to forward the
+        appropriate image attributes, then calls the model in-place so
+        that ``self.noise.mask`` is populated and copied to
+        ``self.mask``.
+
+        Raises
+        ------
+        ValueError
+            If the noise model is ``NormalRI`` but no PSF has been
+            provided.
+        """
         if self.psf is None and self.noise.__class__.__name__ == "NormalRI":
             raise ValueError(
                 "PSF must be defined for images with NormalRI noise."
