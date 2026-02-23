@@ -18,6 +18,8 @@ import pyregion
 import reproject
 
 
+_pad_factor = 2.00
+
 # Support functions
 # ========================================================
 # Get mask from input HDU
@@ -48,9 +50,11 @@ def _hdu_mask(mask, hdu):
     return np.where(data < 1.00, 0.00, 1.00)
 
 
-def pad_size(shape):
+def pad_size(shape, factor=_pad_factor):
     """Compute the standard padded shape for convolution."""
-    return tuple(2 * s - 1 for s in shape)
+    if factor < 1:
+        raise ValueError("Padding factor must be >= 1.")
+    return tuple(int(factor * s - 1) for s in shape)
 
 
 # Coordinate grids
