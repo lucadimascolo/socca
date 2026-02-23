@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import inspect
 import types
 import warnings
@@ -576,7 +577,7 @@ class Model:
 
         mbkg = jp.zeros(img.data.shape)
         mraw = jp.zeros(img.data.shape)
-        mpts = jp.fft.rfft2(mraw, s=img.data.shape)
+        mpts = jp.zeros(img.fft.pulse.shape)+0j
 
         mneg = jp.zeros(img.data.shape)
 
@@ -624,13 +625,15 @@ class Model:
         msmo = mraw.copy()
         if doresp:
             msmo *= img.resp
+        
+        mraw = mraw + img.fft.ifft(mpts).real
 
         if img.psf is not None:
             msmo = img.convolve(msmo)
-        mpts = jp.fft.ifftshift(jp.fft.irfft2(mpts, s=img.data.shape)).real
-
-        if img.psf is None:
-            msmo = msmo + mpts
+            mpts = mpts * img.convolve.psf_fft
+        
+        mpts = img.fft.ifft(mpts).real
+        msmo = msmo + mpts
 
         if doexp:
             msmo *= img.exp
@@ -638,7 +641,7 @@ class Model:
 
         msmo = msmo + mbkg
 
-        return mraw + mpts, msmo, mbkg, mneg
+        return mraw, msmo, mbkg, mneg
 
 
 Component.idcls = 0
