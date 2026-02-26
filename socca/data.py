@@ -20,6 +20,7 @@ import reproject
 
 _pad_factor = 2.00
 
+
 # Support functions
 # ========================================================
 # Get mask from input HDU
@@ -273,7 +274,7 @@ class FFTspec:
     def fft(self, data):
         """Compute FFT of the input data with zero-padding."""
         return jp.fft.rfft2(data, self.padded_shape)
-    
+
     def ifft(self, data):
         """Compute inverse FFT to get image from Fourier-space data."""
         data_ = jp.fft.irfft2(data, self.padded_shape)
@@ -426,7 +427,7 @@ class Image:
             self.response = jp.array(self.response.data.copy())
         else:
             self.response = jp.ones(self.data.shape, dtype=float)
-        
+
         if "center" in kwargs and "csize" in kwargs:
             self.cutout(center=kwargs["center"], csize=kwargs["csize"])
 

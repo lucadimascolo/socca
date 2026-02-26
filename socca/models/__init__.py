@@ -577,7 +577,7 @@ class Model:
 
         mbkg = jp.zeros(img.data.shape)
         mraw = jp.zeros(img.data.shape)
-        mpts = jp.zeros(img.fft.pulse.shape)+0j
+        mpts = jp.zeros(img.fft.pulse.shape) + 0j
 
         mneg = jp.zeros(img.data.shape)
 
@@ -623,16 +623,16 @@ class Model:
             del mone
 
         msmo = mraw.copy()
-        
+
         if doresp:
             msmo *= img.response
-        
+
         mraw = mraw + img.fft.ifft(mpts).real
 
         if img.psf is not None:
             msmo = img.convolve(msmo)
             mpts = mpts * img.convolve.psf_fft
-        
+
         mpts = img.fft.ifft(mpts).real
         msmo = msmo + mpts
 
