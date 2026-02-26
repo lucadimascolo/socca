@@ -6,23 +6,16 @@ import jax
 import jax.numpy as jp
 import numpy as np
 
-import numpyro
-
-import scipy.optimize
-
 from ..plotting import Plotter
 
 import inspect
 import dill
-import glob
 import os
-import time
 import warnings
 from pathlib import Path
 
 from astropy.io import fits
 
-from .methods.utils import get_imp_weights
 from .methods import (
     run_nautilus,
     run_dynesty,
@@ -141,11 +134,11 @@ class fitter:
 
         Notes
         -----
-        Response is applied if any element of img.resp differs from 1.0.
-        Exposure is applied if any element of img.exp differs from 1.0.
+        Response is applied if any element of img.response differs from 1.0.
+        Exposure is applied if any element of img.exposure differs from 1.0.
         """
-        doresp = ~np.all(np.array(self.img.resp) == 1.00)  # True
-        doexp = ~np.all(np.array(self.img.exp) == 1.00)  # True
+        doresp = ~np.all(np.array(self.img.response) == 1.00)  # True
+        doexp = ~np.all(np.array(self.img.exposure) == 1.00)  # True
         return self.mod.getmodel(
             self.img, pp, doresp=doresp, doexp=doexp, component=None
         )

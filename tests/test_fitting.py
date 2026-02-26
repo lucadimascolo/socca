@@ -353,11 +353,11 @@ class TestFitterResponseAndExposure:
 
     def test_response_applied(self, fitter_with_resp_exp):
         """Test that response is considered in model evaluation."""
-        assert not np.all(np.array(fitter_with_resp_exp.img.resp) == 1.0)
+        assert not np.all(np.array(fitter_with_resp_exp.img.response) == 1.0)
 
     def test_exposure_applied(self, fitter_with_resp_exp):
         """Test that exposure is considered in model evaluation."""
-        assert not np.all(np.array(fitter_with_resp_exp.img.exp) == 1.0)
+        assert not np.all(np.array(fitter_with_resp_exp.img.exposure) == 1.0)
 
     def test_getmodel_with_resp_exp(self, fitter_with_resp_exp):
         """Test _getmodel with response and exposure."""

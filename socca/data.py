@@ -270,6 +270,10 @@ class FFTspec:
 
         return jp.exp(-2.00j * jp.pi * (self.freq[0] * dx + self.freq[1] * dy))
 
+    def fft(self, data):
+        """Compute FFT of the input data with zero-padding."""
+        return jp.fft.rfft2(data, self.padded_shape)
+    
     def ifft(self, data):
         """Compute inverse FFT to get image from Fourier-space data."""
         data_ = jp.fft.irfft2(data, self.padded_shape)
@@ -408,21 +412,21 @@ class Image:
         self.mask = self.mask.at[jp.isnan(self.data)].set(0)
 
         if exposure is not None:
-            self.exp = _img_loader(exposure, kwargs.get("exp_idx", 0))
-            self.exp = _reduce_axes(self.exp)
-            self.exp.data[np.isnan(self.exp.data)] = 0.00
-            self.exp = jp.array(self.exp.data.copy())
+            self.exposure = _img_loader(exposure, kwargs.get("exp_idx", 0))
+            self.exposure = _reduce_axes(self.exposure)
+            self.exposure.data[np.isnan(self.exposure.data)] = 0.00
+            self.exposure = jp.array(self.exposure.data.copy())
         else:
-            self.exp = jp.ones(self.data.shape, dtype=float)
+            self.exposure = jp.ones(self.data.shape, dtype=float)
 
         if response is not None:
-            self.resp = _img_loader(response, kwargs.get("resp_idx", 0))
-            self.resp = _reduce_axes(self.resp)
-            self.resp.data[np.isnan(self.resp.data)] = 0.00
-            self.resp = jp.array(self.resp.data.copy())
+            self.response = _img_loader(response, kwargs.get("resp_idx", 0))
+            self.response = _reduce_axes(self.response)
+            self.response.data[np.isnan(self.response.data)] = 0.00
+            self.response = jp.array(self.response.data.copy())
         else:
-            self.resp = jp.ones(self.data.shape, dtype=float)
-
+            self.response = jp.ones(self.data.shape, dtype=float)
+        
         if "center" in kwargs and "csize" in kwargs:
             self.cutout(center=kwargs["center"], csize=kwargs["csize"])
 
@@ -501,15 +505,15 @@ class Image:
         """
         cutout_data = Cutout2D(self.data, center, csize, wcs=self.wcs)
         cutout_mask = Cutout2D(self.mask, center, csize, wcs=self.wcs)
-        cutout_exp = Cutout2D(self.exp, center, csize, wcs=self.wcs)
-        cutout_resp = Cutout2D(self.resp, center, csize, wcs=self.wcs)
+        cutout_exp = Cutout2D(self.exposure, center, csize, wcs=self.wcs)
+        cutout_resp = Cutout2D(self.response, center, csize, wcs=self.wcs)
 
         self.data = jp.array(cutout_data.data)
         self.mask = jp.array(cutout_mask.data)
         del cutout_mask
-        self.exp = jp.array(cutout_exp.data)
+        self.exposure = jp.array(cutout_exp.data)
         del cutout_exp
-        self.resp = jp.array(cutout_resp.data)
+        self.response = jp.array(cutout_resp.data)
         del cutout_resp
 
         if self.psf is not None:

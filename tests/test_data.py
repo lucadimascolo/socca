@@ -187,12 +187,12 @@ class TestImage:
     def test_exposure_default(self, simple_hdu):
         """Test default exposure is ones."""
         img = data.Image(simple_hdu)
-        assert jp.all(img.exp == 1.0)
+        assert jp.all(img.exposure == 1.0)
 
     def test_response_default(self, simple_hdu):
         """Test default response is ones."""
         img = data.Image(simple_hdu)
-        assert jp.all(img.resp == 1.0)
+        assert jp.all(img.response == 1.0)
 
     def test_subgrid_parameter(self, simple_hdu):
         """Test subgrid parameter is passed to grid."""

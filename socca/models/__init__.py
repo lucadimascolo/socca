@@ -509,10 +509,10 @@ class Model:
             prior distributions, in the order they appear in paridx. If dict,
             contains all parameter values with keys matching self.params.
         doresp : bool, optional
-            If True, multiply by the instrumental response map (img.resp).
+            If True, multiply by the instrumental response map (img.response).
             Default is False.
         doexp : bool, optional
-            If True, multiply by the exposure map (img.exp). Default is False.
+            If True, multiply by the exposure map (img.exposure). Default is False.
         component : None, str, int, list, or Profile, optional
             Component(s) to include in the model computation. Can be:
 
@@ -606,7 +606,7 @@ class Model:
                     )
                     ypts = img.hdu.header["CRPIX2"] - 1 + ypts
                     mone *= jax.scipy.ndimage.map_coordinates(
-                        img.resp,
+                        img.response,
                         [jp.array([ypts]), jp.array([xpts])],
                         order=1,
                         mode="nearest",
@@ -623,8 +623,9 @@ class Model:
             del mone
 
         msmo = mraw.copy()
+        
         if doresp:
-            msmo *= img.resp
+            msmo *= img.response
         
         mraw = mraw + img.fft.ifft(mpts).real
 
@@ -636,8 +637,8 @@ class Model:
         msmo = msmo + mpts
 
         if doexp:
-            msmo *= img.exp
-            mbkg *= img.exp
+            msmo *= img.exposure
+            mbkg *= img.exposure
 
         msmo = msmo + mbkg
 
