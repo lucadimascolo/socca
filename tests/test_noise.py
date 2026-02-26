@@ -356,8 +356,7 @@ class TestNormalRI:
         n = noise.NormalRI(sigma=0.1)
         data = jp.array(np.random.rand(8, 8))
         mask = jp.array(np.ones((8, 8), dtype=int))
-        resp = jp.array(np.random.rand(8, 8))
-        n(data, mask, resp)
+        n(data, mask)
         assert n.data is not None
         assert n.sigma is not None
         assert n.logpdf is not None
@@ -367,8 +366,7 @@ class TestNormalRI:
         n = noise.NormalRI(sigma=0.1)
         data = jp.array(np.random.rand(8, 8))
         mask = jp.array(np.ones((8, 8), dtype=int))
-        resp = jp.array(np.random.rand(8, 8))
-        n(data, mask, resp)
+        n(data, mask)
         xr = jp.ones(64)
         xs = jp.ones(64)
         logp = n.logpdf(xr, xs)
@@ -376,10 +374,8 @@ class TestNormalRI:
 
     def test_static_logpdf(self):
         """Test _logpdf static method directly."""
-        mask = jp.array(np.ones((4, 4), dtype=bool))
-        data = jp.array(np.random.rand(4, 4))
-        resp = jp.array(np.ones((4, 4)))
+        data = jp.array(np.random.rand(16))
         xr = jp.ones(16)
         xs = jp.ones(16)
-        logp = noise.NormalRI._logpdf(xr, xs, data, 0.1, mask, resp)
+        logp = noise.NormalRI._logpdf(xr, xs, data, 0.1)
         assert np.isfinite(float(logp))

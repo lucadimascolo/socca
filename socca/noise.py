@@ -29,9 +29,9 @@ class Normal:
     kwargs : dict
         Keyword arguments provided for specifying the noise model.
     data : jax.numpy.ndarray
-        Image data array. This is inherited from the parent Data class.
+        Image data array. This is set when the model is called.
     mask : jax.numpy.ndarray
-        Image mask array. This is inherited from the parent Data class.
+        Image mask array. This is set when the model is called.
     """
 
     def __init__(self, **kwargs):
@@ -40,7 +40,7 @@ class Normal:
 
         Parameters
         ----------
-        kwargs : dict
+        **kwargs : dict
             Keyword arguments for specifying the noise model.
             Accepted keywords (with aliases):
 
@@ -363,7 +363,7 @@ class NormalCorrelated:
         return -0.50 * jp.einsum("i,ij,j->", res, icov, res)
 
 
-# Fourier-space independente noise
+# Fourier-space independent noise
 # ========================================================
 class NormalFourier:
     """
@@ -431,6 +431,8 @@ class NormalFourier:
                 "ftype must be either 'real'/'rfft' or 'full'/'fft'."
             )
         self.ftype = ftype
+
+        self.apod = kwargs.get("apod", None)
 
         if icov is not None:
             self.cov = None
@@ -530,6 +532,9 @@ class NormalFourier:
         self.mask = self.mask == 1.00
         self.data = data.copy()
 
+        if self.apod is None:
+            self.apod = jp.ones(self.data.shape)
+
         if not np.all(self.mask):
             raise ValueError(
                 "NormalFourier noise model requires full image "
@@ -625,11 +630,14 @@ class NormalRI:
     mask : jax.numpy.ndarray
         Boolean mask array.
         This is set automatically from the reference image.
-    resp : jax.numpy.ndarray
-        Antenna response function (i.e., primary beam).
-        This is set automatically from the reference image.
     sigma : float
         Noise standard deviation.
+
+    References
+    ----------
+    Powell, D., et al., MNRAS, 501, 515 (2021)
+    Powell, D., et al., MNRAS, 516, 1808 (2022)
+    Zhang, N., et al., arXiv:2508.08393 (2025)
     """
 
     def __init__(self, **kwargs):
@@ -719,46 +727,42 @@ class NormalRI:
 
     #   Set up noise model
     #   --------------------------------------------------------
-    def __call__(self, data, mask, resp):
+    def __call__(self, data, mask):
         """
-        Set up the radio-interferometric noise model.
+        Set up the radio-interferometric noise model with data and mask.
 
-        Processes the input data, mask, and response function, computes
-        or loads the noise sigma, and creates the JIT-compiled log
-        probability density function.
+        Processes the input data and mask, computes or estimates the noise
+        standard deviation, and creates the JIT-compiled log probability
+        density function for likelihood evaluation.
 
         Parameters
         ----------
         data : array_like
-            Image data array to be modeled.
+            Image data array (dirty image) to be modeled.
         mask : array_like
             Binary mask array (1=valid, 0=masked). Pixels where mask==0
             are excluded from likelihood calculations.
-        resp : array_like
-            Antenna response function (i.e., primary beam).
 
         Notes
         -----
         - Computes noise standard deviation via getsigma()
-        - Creates JIT-compiled log-likelihood with response convolution
+        - Creates a JIT-compiled log-likelihood using the image-space
+          approximation for radio-interferometric data
         """
         self.mask = mask.copy()
         self.data = data.copy()
-        self.resp = resp.copy()
 
         self.sigma = self.getsigma()
 
         self.mask = self.mask == 1.00
-        self.norm = 0.0
+        self.norm = 0.00
 
         def _logpdf(xr, xs):
             factor = self._logpdf(
                 xr,
                 xs,
-                self.data,
+                self.data.at[self.mask].get(),
                 self.sigma,
-                self.mask,
-                self.resp,
             )
             return factor - 0.50 * self.norm
 
@@ -767,46 +771,34 @@ class NormalRI:
     #   Noise log-pdf/likelihood function
     #   --------------------------------------------------------
     @staticmethod
-    def _logpdf(xr, xs, data, sigma, mask, resp):
+    def _logpdf(xr, xs, data, sigma):
         """
-        Compute log probability for radio-interferometric noise.
+        Compute log probability for the image-space RI likelihood.
 
-        Static method that approximates the Fourier-space likelihood
-        in image space using the dirty beam response function.
+        Static method that evaluates the radio-interferometric chi-squared
+        using the image-space cross-correlation approximation, where the
+        dirty beam encodes the interferometric transfer function.
 
         Parameters
         ----------
         xr : jax.numpy.ndarray
-            Model values at each pixel (flattened, masked pixels
-            excluded).
+            Raw sky model image (masked pixels excluded).
         xs : jax.numpy.ndarray
-            Model values for convolution (flattened, masked pixels
-            excluded).
+            Dirty-beam-convolved model image (masked pixels excluded).
         data : jax.numpy.ndarray
-            Observed data array (2D image).
+            Observed dirty image (masked pixels excluded).
         sigma : float
             Noise standard deviation.
-        mask : jax.numpy.ndarray
-            Boolean mask for valid pixels.
-        resp : jax.numpy.ndarray
-            Antenna response function.
 
         Returns
         -------
         float
-            Log probability of the data given the model.
+            Log probability:
+            -0.5 * sum((xs - 2 * data) * xr) / sigma**2
 
         Notes
         -----
         The normalization constant is added separately in __call__().
         """
-        chisq = jp.zeros(mask.shape, dtype=float)
-        chisq = chisq.at[mask].set(xs)
-        chisq = chisq - 2.00 * data
-
-        chisq = chisq * resp
-
-        chisq = chisq.at[mask].get()
-        chisq = jp.sum(xr * chisq) / sigma**2.00
-
-        return -0.50 * chisq
+        chisq = (xs - 2.00 * data) * xr
+        return -0.50 * jp.sum(chisq) / sigma**2

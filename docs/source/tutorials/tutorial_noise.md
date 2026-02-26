@@ -84,7 +84,7 @@ As in the case of `NormalCorrelated`, the noise properties can be specified eith
 >>> noise = NormalFourier(cube=noise_cube, ftype="real")
 ```
 
-The optional argument `ftype` controls the type of Fourier transform used when estimating the covariance from the noise cube. By default, a real-to-complex 2D Fourier transform is used (`ftype="real"`), in order to minimize the memory usage and computational cost. If needed, it is possible to use a complex-to-complex 2D Fourier transform by specifying `ftype="complex"`. 
+The optional argument `ftype` controls the type of Fourier transform used when estimating the covariance from the noise cube. By default, a real-to-complex 2D Fourier transform is used (`ftype="real"`), in order to minimize the memory usage and computational cost. If needed, it is possible to use a complex-to-complex 2D Fourier transform by specifying `ftype="full"`. 
 
 Other optional keyword arguments include `apod`, which specifies an apodization map applied to the data before Fourier transforming (though, by default, no apodization is applied). Finally, as in the case of `NormalCorrelated`, the `smooth` and `kernel` arguments control the optional smoothing of the Fourier-space covariance matrix when estimated from the noise realizations. As above, the default is 3 smoothing iterations using a 5-point stencil kernel.
 
@@ -96,7 +96,7 @@ The likelihood is evaluated by Fourier transforming the apodized residuals betwe
 The `NormalRI` noise model implements an image-space approximation to the Fourier-space likelihood for radio-interferometric data. Rather than working directly in the visibility domain, this model uses the dirty beam (i.e., the interferometric response function) to approximate the noise covariance structure in image space. This approach enables efficient likelihood evaluation while accounting for the correlated noise introduced by the interferometric imaging process. The specific implementation is based on the derivations by [Powell et al. (2020)](https://ui.adsabs.harvard.edu/abs/arXiv:2005.03609) and [Zhang et al. (2025)](https://ui.adsabs.harvard.edu/abs/2025arXiv250808393Z/abstract), to which we refer to for an extensive discussion of the theoretical framework.
 
 ```{important}
-When using the `NormalRI` noise model, the input data should be a raw dirty image (i.e., without any deconvolution applied) and should not be corrected for the primary beam (i.e., the antenna pattern) response. If the primary beam is expected to have a significant effect on the signal, a model should be provided as the `resp` attribute of the input `socca.data.Image` object.
+When using the `NormalRI` noise model, the input data should be a naturally-weighted dirty image (i.e., without any deconvolution applied) and should not be corrected for the primary beam (i.e., the antenna pattern) response. If the primary beam is expected to have a significant effect on the signal, a model should be provided as the `response` attribute of the input `socca.data.Image` object.
 ```
 
 The noise amplitude can be specified using the same keyword arguments as the `Normal` noise model (see above), but does not support image-like inputs. If no noise amplitude is provided, the per-pixel standard deviation is estimated from the median absolute deviation of the unmasked pixels.
@@ -113,4 +113,8 @@ The noise amplitude can be specified using the same keyword arguments as the `No
 
 ```{warning}
 The `NormalRI` noise model is designed for map-based analyses of radio-interferometric data, where the dirty beam encodes the sampling of the Fourier plane by the interferometer. It provides a computationally efficient alternative to full visibility-domain fitting, at the cost of an approximate treatment of the noise correlations. Current tests indicate that this approach is accurate enough for sources that are not too extended compared to the maximum recoverable scale in the specific interferometric dataset. For more extended sources, the approximation may break down and a full visibility-domain analysis may be necessary.
+```
+
+```{attention}
+Some tests have exposed some stability issues in the case of priors that allow for sources with characteristic scales much larger than the maximum recoverable scale and the field of view of the interferometric dataset. In such cases, the sampler might explore regions of the parameter space where the model predictions are dominated by large-scale features that are not well constrained by the data, leading to an unstable behavior of the sampling process. This isssue is currently under investigation and will be addressed in future releases of **``socca``**. In the meantime, we recommend using more informative priors that restrict the parameter space to regions where the model predictions are reasonably constrained by the data, especially when dealing with sources that are expected to be extended compared to the maximum recoverable scale.
 ```
