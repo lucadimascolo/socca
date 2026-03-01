@@ -164,10 +164,8 @@ class Normal:
         - Applies mask to extract valid pixels
         - Creates a lambda function for log-likelihood evaluation
         """
-        self.mask = mask.astype(int).copy()
-        self.mask = jp.asarray(self.mask)
-        
-        self.data = data.copy()
+        self.mask = jp.array(mask, dtype=int)
+        self.data = jp.array(data)
 
         self.sigma = self.getsigma()
 
@@ -322,9 +320,8 @@ class NormalCorrelated:
         - Creates lambda function that accounts for pixel correlations
         - Uses quadratic form with inverse covariance for log-likelihood
         """
-        self.mask = mask.copy()
-        self.mask = self.mask == 1.00
-        self.data = data.at[self.mask].get()
+        self.mask = jp.array(mask == 1.00)
+        self.data = jp.array(data).at[self.mask].get()
 
         self.norm = -float(jp.linalg.slogdet(self.icov / 2.00 / jp.pi)[1])
         self.logpdf = lambda xs: (
@@ -530,9 +527,8 @@ class NormalFourier:
         - Computes covariance mask (cmask) for non-zero modes
         - Creates JIT-compiled log-likelihood with apodization
         """
-        self.mask = mask.copy()
-        self.mask = self.mask == 1.00
-        self.data = data.copy()
+        self.mask = jp.array(mask == 1.00)
+        self.data = jp.array(data)
 
         if self.apod is None:
             self.apod = jp.ones(self.data.shape)
@@ -751,8 +747,8 @@ class NormalRI:
         - Creates a JIT-compiled log-likelihood using the image-space
           approximation for radio-interferometric data
         """
-        self.mask = mask.copy()
-        self.data = data.copy()
+        self.mask = jp.array(mask)
+        self.data = jp.array(data)
 
         self.sigma = self.getsigma()
 
