@@ -50,7 +50,7 @@ Background
 ### Radial profiles
 A major class of model components implemented in **``socca``** are those based on radial profiles. These are two-dimensional surface brightness distributions that are axially symmetric around a centroid position, and whose radial dependence is described by a specific functional form. The radial profiles can be further generalized to account for projected ellipticity, boxiness, and position angle, allowing for a more flexible description of the source morphology.
 
-Each radial profile component inherits from the abstract base class `Profile`, which defines the common interface and geometric parameters shared by all radial profiles. These include the centroid coordinates (`xc`, `yc`), position angle (`theta`, measured east from north), axis ratio (`e`), and boxiness (`cbox`).
+Each radial profile component inherits from the abstract base class `Profile`, which defines the common interface and geometric parameters shared by all radial profiles. These include the centroid coordinates (`xc`, `yc`), position angle (`theta`, measured east from north), projected ellipticity (`e`, i.e. 1 - axis ratio), and boxiness (`cbox`).
 
 ```python
 >>> from socca.models import Profile
@@ -62,7 +62,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 ```
 
@@ -115,7 +115,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Core radius
 Ic  [image] : None       | Central surface brightness
@@ -144,7 +144,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Scale radius
 Ic  [image] : None       | Characteristic surface brightness
@@ -172,7 +172,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Scale radius
 Ic  [image] : None       | Characteristic surface brightness
@@ -227,7 +227,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 re    [deg] : None       | Effective radius
 Ie  [image] : None       | Surface brightness at re
@@ -253,7 +253,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
@@ -278,7 +278,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
@@ -306,7 +306,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
@@ -335,7 +335,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
@@ -363,7 +363,7 @@ Model parameters
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
@@ -419,7 +419,7 @@ Model parameters
 radial.xc         [deg] : None       | Right ascension of centroid
 radial.yc         [deg] : None       | Declination of centroid
 radial.theta      [rad] : 0.0000E+00 | Position angle (east from north)
-radial.e             [] : 0.0000E+00 | Projected axis ratio
+radial.e             [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 radial.cbox          [] : 0.0000E+00 | Projected boxiness
 radial.re         [deg] : None       | Effective radius
 radial.Ie       [image] : None       | Surface brightness at re
@@ -533,7 +533,7 @@ All bridge models share a common set of geometric parameters inherited from the 
 - `rs`: Scale radius shared by both radial and parallel profiles
 - `Is`: Scale intensity of the bridge
 - `theta`: Position angle of the bridge major axis (measured east from north)
-- `e`: Axis ratio controlling the relative extent of radial vs. parallel profiles
+- `e`: Projected ellipticity (1 - axis ratio) controlling the relative extent of radial vs. parallel profiles
 
 The scale radius `rs` is applied directly to the parallel profile, while the radial profile uses `rs * (1 - e)` to create an elongated structure.
 
@@ -558,7 +558,7 @@ yc              [deg] : None       | Declination of the bridge centroid
 rs              [deg] : None       | Scale radius of the bridge profiles
 Is            [image] : None       | Scale intensity of the bridge profiles
 theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
-e                  [] : 5.0000E-01 | Axis ratio of the bridge profiles
+e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
 radial.alpha       [] : 2.0000E+00 | Radial exponent
 radial.beta        [] : 5.5000E-01 | Slope parameter
 ```
@@ -584,7 +584,7 @@ yc              [deg] : None       | Declination of the bridge centroid
 rs              [deg] : None       | Scale radius of the bridge profiles
 Is            [image] : None       | Scale intensity of the bridge profiles
 theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
-e                  [] : 5.0000E-01 | Axis ratio of the bridge profiles
+e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
 radial.alpha       [] : 8.0000E+00 | Radial exponent
 radial.beta        [] : 1.0000E+00 | Slope parameter
 parallel.alpha     [] : 8.0000E+00 | Power law slope

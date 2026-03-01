@@ -84,7 +84,7 @@ class Profile(Component):
                 xc="Right ascension of centroid",
                 yc="Declination of centroid",
                 theta="Position angle (east from north)",
-                e="Projected eccentricity (1 - axis ratio)",
+                e="Projected ellipticity (1 - axis ratio)",
                 cbox="Projected boxiness",
             )
         )

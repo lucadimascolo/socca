@@ -107,7 +107,7 @@ class Bridge(Component):
                 rs="Scale radius of the bridge profiles",
                 Is="Scale intensity of the bridge profiles",
                 theta="Position angle of the bridge major axis",
-                e="Axis ratio of the bridge profiles",
+                e="Projected ellipticity of the bridge profiles",
             )
         )
 
@@ -555,7 +555,7 @@ class SimpleBridge(Bridge):
     rs              [deg] : None       | Scale radius of the bridge profiles
     Is            [image] : None       | Scale intensity of the bridge
     theta           [rad] : 0.0000E+00 | Position angle of bridge major axis
-    e                  [] : 5.0000E-01 | Axis ratio of the bridge profiles
+    e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
     radial.alpha       [] : 2.0000E+00 | Radial exponent
     radial.beta        [] : 5.5000E-01 | Slope parameter
     """

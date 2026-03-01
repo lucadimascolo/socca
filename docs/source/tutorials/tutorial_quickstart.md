@@ -93,7 +93,7 @@ Setting up a Sérsic (or any other) component follows the same procedure as for 
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
-e        [] : 0.0000E+00 | Projected axis ratio
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 re    [deg] : None       | Effective radius
 Ie  [image] : None       | Surface brightness at re
