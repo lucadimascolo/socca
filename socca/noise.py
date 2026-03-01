@@ -165,6 +165,8 @@ class Normal:
         - Creates a lambda function for log-likelihood evaluation
         """
         self.mask = mask.astype(int).copy()
+        self.mask = jp.asarray(self.mask)
+        
         self.data = data.copy()
 
         self.sigma = self.getsigma()
