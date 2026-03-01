@@ -14,13 +14,14 @@
 This code is broadly inspired by the excellent [`pysersic`](https://github.com/pysersic/pysersic) and [`astrophot`](https://github.com/Autostronomy/AstroPhot) libraries. Their use is recommended if you require a more mature and thoroughly tested solution. **``socca``** is still in its infancy and many experimental features may undergo significant changes in the future. 
 
 [![GitHub](https://img.shields.io/badge/GitHub-lucadimascolo%2Fsocca-blue.svg?style=flat)](https://github.com/lucadimascolo/socca)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![stability-release-candidate](https://img.shields.io/badge/stability-release--candidate-48c9b0.svg)](https://github.com/mkenney/software-guides/blob/master/STABILITY-BADGES.md#release-candidate)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json&style=flat)](https://github.com/astral-sh/ruff)
-[![CI](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/ci.yml?style=flat&label=CI)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/github/actions/workflow/status/lucadimascolo/socca/docs.yml?style=flat&label=docs)](https://lucadimascolo.github.io/socca)<br/>
-[![JAX](https://img.shields.io/badge/accelerated%20by-JAX-923CAA?style=flat)](https://docs.jax.dev/en/latest/index.html)
+[![ascl:2602.005](https://img.shields.io/badge/ascl-2602.005-blue.svg?colorB=262255)](https://ascl.net/2602.005)<br>
+[![CI](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml/badge.svg)](https://github.com/lucadimascolo/socca/actions/workflows/ci.yml)
+[![Docs](https://github.com/lucadimascolo/socca/actions/workflows/docs.yml/badge.svg)](https://lucadimascolo.github.io/socca)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![JAX](https://img.shields.io/badge/accelerated%20by-JAX-923CAA)](https://docs.jax.dev/en/latest/index.html)
 [![astropy](http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat)](http://www.astropy.org/)
 
 ## Where to start?
