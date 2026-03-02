@@ -682,8 +682,14 @@ class Image:
                 kernel, pad_width, mode="constant", constant_values=0.00
             )
 
-        kernel = jp.fft.irfft2(jp.abs(jp.fft.rfft2(kernel)))
-        kernel = jp.fft.ifftshift(kernel)
+        if self.noise.__class__.__name__ != "NormalRI":
+            kernel = jp.fft.irfft2(jp.abs(jp.fft.rfft2(kernel)))
+            kernel = jp.fft.ifftshift(kernel)
+        else:
+            warnings.warn(
+                "NormalRI assume the PSF to be already centered with respect "
+                "to the image grid. PSF centering is not applied."
+            )
 
         self.psf = kernel
         self.convolve = Convolve(self.psf, self.data.shape)
@@ -711,7 +717,7 @@ class Convolve:
         self._fft = jp.fft.rfft2
         self._ifft = jp.fft.irfft2
 
-        self._fft_shift = 1.00+0j
+        self._fft_shift = 1.00 + 0j
         if self.image_shape[0] % 2 != 0:
             freq = jp.fft.fftfreq(self.padded_shape[0])[:, None]
             self._fft_shift = jp.exp(2.00j * jp.pi * freq)
@@ -742,7 +748,7 @@ class Convolve:
 
         if self.image_shape[0] % 2 == 0:
             start = (start[0] + 1, start[1])
-        
+
         if self.image_shape[1] % 2 == 0:
             start = (start[0], start[1] + 1)
 
