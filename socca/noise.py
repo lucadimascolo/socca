@@ -113,12 +113,17 @@ class Normal:
         elif isinstance(self.select, str):
             if isinstance(self.kwargs[self.select], (float, int)):
                 sigma = self.kwargs[self.select]
-            else:
+            elif isinstance(self.kwargs[self.select], str):
                 sigma = _img_loader(
                     self.kwargs[self.select], self.kwargs.get("idx", 0)
                 )
                 sigma = sigma.data.copy()
-
+            else:
+                raise ValueError(
+                    f"Invalid type for noise parameter {self.select} [{self.kwargs[self.select]}]. "
+                    "Must be a float, int, or string path to FITS file."
+                )
+            
             if self.select in self.options["var"]:
                 sigma = np.sqrt(sigma)
             elif self.select in self.options["wht"]:
