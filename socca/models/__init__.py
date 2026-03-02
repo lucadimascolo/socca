@@ -617,7 +617,7 @@ class Model:
             elif self.type[nc] == "Background":
                 mbkg += mone.copy()
 
-            else:  # Profile, Disk, etc.
+            else:  # Profiles, Disk, etc.
                 mraw += mone.copy()
 
             del mone
@@ -627,7 +627,7 @@ class Model:
         if doresp:
             msmo *= img.response
 
-        mraw = mraw + img.fft.ifft(mpts).real
+        mraw = mraw + img.fft.ifft(mpts * img.fft.center).real
 
         if img.psf is not None:
             msmo = img.convolve(msmo)

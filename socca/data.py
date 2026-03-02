@@ -9,6 +9,7 @@ import jax.numpy as jp
 import numpy as np
 
 import inspect
+import warnings
 
 from astropy.io import fits
 from astropy.wcs import WCS
@@ -649,6 +650,41 @@ class Image:
         if normalize:
             kernel = kernel / np.sum(kernel)
 
+        kx, ky = kernel.shape
+        dx, dy = self.data.shape
+
+        if kx > dx or ky > dy:
+            warnings.warn(
+                "PSF kernel is larger than the image. "
+                "Automatically cropping to match image dimensions."
+            )
+
+            if kx > dx:
+                cx = (kx - dx) // 2
+                kernel = kernel[cx : cx + dx, :]
+
+            if ky > dy:
+                cy = (ky - dy) // 2
+                kernel = kernel[:, cy : cy + dy]
+
+        if kx < dx or ky < dy:
+            warnings.warn(
+                "PSF kernel is smaller than the image. "
+                "Automatically zero-padding to match image dimensions."
+            )
+
+            pad_width = [
+                (0, max(0, s - k))
+                for s, k in zip(self.data.shape, kernel.shape)
+            ]
+
+            kernel = np.pad(
+                kernel, pad_width, mode="constant", constant_values=0.00
+            )
+
+        kernel = jp.fft.irfft2(jp.abs(jp.fft.rfft2(kernel)))
+        kernel = jp.fft.ifftshift(kernel)
+
         self.psf = kernel
         self.convolve = Convolve(self.psf, self.data.shape)
 
@@ -675,7 +711,13 @@ class Convolve:
         self._fft = jp.fft.rfft2
         self._ifft = jp.fft.irfft2
 
+        self._fft_shift = 1.00+0j
+        if self.image_shape[0] % 2 != 0:
+            freq = jp.fft.fftfreq(self.padded_shape[0])[:, None]
+            self._fft_shift = jp.exp(2.00j * jp.pi * freq)
+
         self.psf_fft = self._fft(self.kernel, self.padded_shape)
+        self.psf_fft = self.psf_fft * self._fft_shift
 
     def __call__(self, image):
         """
@@ -697,8 +739,11 @@ class Convolve:
         start = tuple(
             (f - o) // 2 for f, o in zip(self.padded_shape, self.image_shape)
         )
+
         if self.image_shape[0] % 2 == 0:
             start = (start[0] + 1, start[1])
+        
         if self.image_shape[1] % 2 == 0:
             start = (start[0], start[1] + 1)
+
         return jax.lax.dynamic_slice(_image, start, self.image_shape)
