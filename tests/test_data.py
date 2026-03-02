@@ -257,15 +257,12 @@ class TestImageAddpsf:
         expected_shape = (padded[0], padded[1] // 2 + 1)
         assert img.convolve.psf_fft.shape == expected_shape
 
-    def test_addpsf_larger_than_image_stored_as_is(self, simple_hdu):
-        """Test that PSF larger than image is stored at original size.
-
-        Convolve handles size mismatches internally via FFT padding.
-        """
+    def test_addpsf_larger_than_image_cropped_to_image_size(self, simple_hdu):
+        """Test that PSF larger than image is cropped to image dimensions."""
         img = data.Image(simple_hdu)
         large_psf = np.ones((100, 100))
         img.addpsf(large_psf)
-        assert img.psf.shape == (100, 100)
+        assert img.psf.shape == simple_hdu.data.shape
         padded = data.pad_size(simple_hdu.data.shape)
         assert img.convolve.psf_fft.shape == (padded[0], padded[1] // 2 + 1)
 
