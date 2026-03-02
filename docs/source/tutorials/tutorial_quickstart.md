@@ -41,10 +41,10 @@ We are now ready to load the image (and let **``socca``** handle much of the ass
 ```python
 >>> img = socca.data.Image(img='tutorial_mock.fits', noise=noise)
 Using MAD for estimating noise level
-- noise level: 4.11E-06
+- noise level: 4.47E-02
 ```
 
-As mentioned above, **``socca``** uses the image itself to estimate the noise properties, measuring a root-mean-square noise level of 4.11×10<sup>-6</sup> (in image units).
+As mentioned above, **``socca``** uses the image itself to estimate the noise properties, measuring a root-mean-square noise level of 4.47×10<sup>-2</sup> (in image units).
 
 ## Defining a model
 
@@ -149,7 +149,7 @@ We are now ready to run the inference step. We first initialise the fitter and t
 >>> fit = socca.fitter(mod=mod, img=img)
 >>> fit.run()
 Starting the nautilus sampler...
-Finished  | 74     | 1        | 4        | 91200    | N/A    | 11106 | +174309.5
+Finished  | 64     | 1        | 4        | 92800    | N/A    | 10082 | +29283.29 
 Elapsed time: 3.28 m
 ```
 
@@ -247,16 +247,16 @@ Best-fit parameters
 
 comp_00
 -------
-xc :  2.0000E+01 [+8.1399E-07/-8.0507E-07]
-yc : -1.0000E+01 [+7.4631E-07/-7.2487E-07]
-Ic :  9.7130E+00 [+3.5537E-01/-3.6794E-01]
+xc :  2.0000E+01 [+9.4877E-07/-9.6246E-07]
+yc : -1.0000E+01 [+8.6032E-07/-8.3115E-07]
+Ic :  9.8960E+00 [+4.2454E-01/-4.2952E-01]
 
 comp_01
 -------
-theta :  8.7389E-01 [+4.4078E-03/-4.2317E-03]
-e     :  6.0286E-01 [+3.7462E-03/-3.6892E-03]
-re    :  4.1755E-04 [+3.3501E-06/-3.2982E-06]
-Ie    :  3.0145E-01 [+2.9658E-03/-2.9120E-03]
+theta :  8.7960E-01 [+5.3261E-03/-5.2986E-03]
+e     :  5.9568E-01 [+4.3743E-03/-4.5214E-03]
+re    :  4.1541E-04 [+3.8318E-06/-3.7940E-06]
+Ie    :  2.9910E-01 [+3.5399E-03/-3.3804E-03]
 ```
 
 The output shows the weighted median (50th percentile) as the best-fit value for each parameter of the combined model, along with the associated uncertainties derived from the 16th and 84th percentiles.
