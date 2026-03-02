@@ -192,6 +192,171 @@ def splitnormal(loc, losig, hisig):
         ],
     )
 
+class LogPowerLaw(numpyro.distributions.Distribution):
+    """
+    Power-law prior for a parameter sampled in log space.
+
+    If theta = log(R_e), this distribution has:
+        log_prob(theta) ∝ (alpha + 1) * theta
+
+    where the (alpha + 1) accounts for the Jacobian of the log transform,
+    such that the implied prior on R_e is p(R_e) ∝ R_e^alpha.
+
+    Parameters
+    ----------
+    alpha : float
+        Power-law index in linear space.
+        alpha = -1 : log-uniform (flat in log space)
+        alpha =  0 : flat/uniform in linear space
+        alpha = +1 : linear prior (favours large R_e)
+    low : float
+        Lower bound in log space
+    high : float
+        Upper bound in log space
+    """
+
+    arg_constraints = {
+        "alpha": numpyro.distributions.constraints.real,
+        "low": numpyro.distributions.constraints.real,
+        "high": numpyro.distributions.constraints.real,
+    }
+    support = numpyro.distributions.constraints.real
+    reparametrized_params = ["alpha", "low", "high"]
+
+    def __init__(self, alpha, low, high, validate_args=None):
+        self.alpha, self.low, self.high = numpyro.distributions.util.promote_shapes(
+            alpha, low, high
+        )
+        batch_shape = jp.broadcast_shapes(
+            jp.shape(self.alpha),
+            jp.shape(self.low),
+            jp.shape(self.high),
+        )
+        super().__init__(
+            batch_shape=batch_shape,
+            event_shape=(),
+            validate_args=validate_args,
+        )
+
+    def _beta(self):
+        return self.alpha + 1.0
+
+    def _log_norm(self):
+        beta = self._beta()
+        # For beta=0 (log-uniform), normalisation is just log(high - low)
+        return jp.where(
+            jp.abs(beta) < 1e-6,
+            jp.log(self.high - self.low),
+            jp.log(jp.abs(jp.exp(beta * self.high) - jp.exp(beta * self.low)) / jp.abs(beta)),
+        )
+
+    def log_prob(self, theta):
+        beta = self._beta()
+        in_support = (theta >= self.low) & (theta <= self.high)
+        return jp.where(
+            in_support,
+            beta * theta - self._log_norm(),
+            -jp.inf,
+        )
+
+    def icdf(self, u):
+        beta = self._beta()
+        lo = jp.exp(beta * self.low)
+        hi = jp.exp(beta * self.high)
+        _icdf = jp.where(
+            jp.abs(beta) < 1e-6,
+            self.low + u * (self.high - self.low),
+            jp.log(u * (hi - lo) + lo) / beta,
+        )
+        return jp.exp(_icdf)
+    
+    def sample(self, key, sample_shape=()):
+        u = jax.random.uniform(key, sample_shape + self.batch_shape)
+        return self.icdf(u)
+    
+def logpowerlaw(alpha, low, high):
+    return LogPowerLaw(alpha, low=jp.log(low), high=jp.log(high))
+
+
+class PowerLaw(numpyro.distributions.Distribution):
+    """
+    Power-law prior in linear space.
+
+    p(x) ∝ x^alpha for x in [low, high]
+
+    Parameters
+    ----------
+    alpha : float
+        Power-law index.
+        alpha =  0 : flat/uniform
+        alpha = +1 : linear (favours large values)
+        alpha = -1 : log-uniform
+    low : float
+        Lower bound in linear space
+    high : float
+        Upper bound in linear space
+    """
+
+    arg_constraints = {
+        "alpha": numpyro.distributions.constraints.real,
+        "low": numpyro.distributions.constraints.positive,
+        "high": numpyro.distributions.constraints.positive,
+    }
+    support = numpyro.distributions.constraints.positive
+    reparametrized_params = ["alpha", "low", "high"]
+
+    def __init__(self, alpha, low, high, validate_args=None):
+        self.alpha, self.low, self.high = numpyro.distributions.util.promote_shapes(
+            alpha, low, high
+        )
+        batch_shape = jp.broadcast_shapes(
+            jp.shape(self.alpha),
+            jp.shape(self.low),
+            jp.shape(self.high),
+        )
+        super().__init__(
+            batch_shape=batch_shape,
+            event_shape=(),
+            validate_args=validate_args,
+        )
+
+    def _beta(self):
+        return self.alpha + 1.0
+
+    def _log_norm(self):
+        beta = self._beta()
+        return jp.where(
+            jp.abs(beta) < 1e-6,
+            jp.log(self.high / self.low),
+            jp.log(jp.abs(self.high**beta - self.low**beta) / jp.abs(beta)),
+        )
+
+    def log_prob(self, x):
+        in_support = (x >= self.low) & (x <= self.high)
+        return jp.where(
+            in_support,
+            self.alpha * jp.log(x) - self._log_norm(),
+            -jp.inf,
+        )
+
+    def icdf(self, u):
+        beta = self._beta()
+        lo = self.low**beta
+        hi = self.high**beta
+        # For beta=0 (log-uniform): x = low * (high/low)^u
+        return jp.where(
+            jp.abs(beta) < 1e-6,
+            self.low * (self.high / self.low) ** u,
+            (u * (hi - lo) + lo) ** (1.0 / beta),
+        )
+
+    def sample(self, key, sample_shape=()):
+        u = jax.random.uniform(key, sample_shape + self.batch_shape)
+        return self.icdf(u)
+
+def powerlaw(alpha, low, high):
+    return PowerLaw(alpha, low=low, high=high)
+
 
 # Parameter bound to another component's parameter
 # --------------------------------------------------------
