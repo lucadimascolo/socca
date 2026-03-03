@@ -123,7 +123,7 @@ class Normal:
                     f"Invalid type for noise parameter {self.select} [{self.kwargs[self.select]}]. "
                     "Must be a float, int, or string path to FITS file."
                 )
-            
+
             if self.select in self.options["var"]:
                 sigma = np.sqrt(sigma)
             elif self.select in self.options["wht"]:

@@ -192,6 +192,7 @@ def splitnormal(loc, losig, hisig):
         ],
     )
 
+
 class LogPowerLaw(numpyro.distributions.Distribution):
     """
     Power-law prior for a parameter sampled in log space.
@@ -224,8 +225,8 @@ class LogPowerLaw(numpyro.distributions.Distribution):
     reparametrized_params = ["alpha", "low", "high"]
 
     def __init__(self, alpha, low, high, validate_args=None):
-        self.alpha, self.low, self.high = numpyro.distributions.util.promote_shapes(
-            alpha, low, high
+        self.alpha, self.low, self.high = (
+            numpyro.distributions.util.promote_shapes(alpha, low, high)
         )
         batch_shape = jp.broadcast_shapes(
             jp.shape(self.alpha),
@@ -247,10 +248,26 @@ class LogPowerLaw(numpyro.distributions.Distribution):
         return jp.where(
             jp.abs(beta) < 1e-6,
             jp.log(self.high - self.low),
-            jp.log(jp.abs(jp.exp(beta * self.high) - jp.exp(beta * self.low)) / jp.abs(beta)),
+            jp.log(
+                jp.abs(jp.exp(beta * self.high) - jp.exp(beta * self.low))
+                / jp.abs(beta)
+            ),
         )
 
     def log_prob(self, theta):
+        """
+        Compute log probability density in log space.
+
+        Parameters
+        ----------
+        theta : float or array_like
+            Value(s) in log space at which to evaluate the log probability.
+
+        Returns
+        -------
+        float or array_like
+            Log probability density at theta.
+        """
         beta = self._beta()
         in_support = (theta >= self.low) & (theta <= self.high)
         return jp.where(
@@ -260,6 +277,19 @@ class LogPowerLaw(numpyro.distributions.Distribution):
         )
 
     def icdf(self, u):
+        """
+        Compute the inverse CDF (quantile function) in log space.
+
+        Parameters
+        ----------
+        u : float or array_like
+            Uniform random variable(s) in [0, 1].
+
+        Returns
+        -------
+        float or array_like
+            Corresponding sample(s) in linear space.
+        """
         beta = self._beta()
         lo = jp.exp(beta * self.low)
         hi = jp.exp(beta * self.high)
@@ -269,12 +299,45 @@ class LogPowerLaw(numpyro.distributions.Distribution):
             jp.log(u * (hi - lo) + lo) / beta,
         )
         return jp.exp(_icdf)
-    
+
     def sample(self, key, sample_shape=()):
+        """
+        Draw random samples from the distribution.
+
+        Parameters
+        ----------
+        key : jax.random.PRNGKey
+            JAX random key.
+        sample_shape : tuple, optional
+            Shape of the sample batch.
+
+        Returns
+        -------
+        array_like
+            Random samples in linear space.
+        """
         u = jax.random.uniform(key, sample_shape + self.batch_shape)
         return self.icdf(u)
-    
+
+
 def logpowerlaw(alpha, low, high):
+    """
+    Create a power-law prior for a parameter sampled in log space.
+
+    Parameters
+    ----------
+    alpha : float
+        Power-law index in linear space.
+    low : float
+        Lower bound in linear space (log-transformed internally).
+    high : float
+        Upper bound in linear space (log-transformed internally).
+
+    Returns
+    -------
+    LogPowerLaw
+        Power-law distribution in log space.
+    """
     return LogPowerLaw(alpha, low=jp.log(low), high=jp.log(high))
 
 
@@ -306,8 +369,8 @@ class PowerLaw(numpyro.distributions.Distribution):
     reparametrized_params = ["alpha", "low", "high"]
 
     def __init__(self, alpha, low, high, validate_args=None):
-        self.alpha, self.low, self.high = numpyro.distributions.util.promote_shapes(
-            alpha, low, high
+        self.alpha, self.low, self.high = (
+            numpyro.distributions.util.promote_shapes(alpha, low, high)
         )
         batch_shape = jp.broadcast_shapes(
             jp.shape(self.alpha),
@@ -332,6 +395,19 @@ class PowerLaw(numpyro.distributions.Distribution):
         )
 
     def log_prob(self, x):
+        """
+        Compute log probability density in linear space.
+
+        Parameters
+        ----------
+        x : float or array_like
+            Value(s) at which to evaluate the log probability.
+
+        Returns
+        -------
+        float or array_like
+            Log probability density at x.
+        """
         in_support = (x >= self.low) & (x <= self.high)
         return jp.where(
             in_support,
@@ -340,6 +416,19 @@ class PowerLaw(numpyro.distributions.Distribution):
         )
 
     def icdf(self, u):
+        """
+        Compute the inverse CDF (quantile function).
+
+        Parameters
+        ----------
+        u : float or array_like
+            Uniform random variable(s) in [0, 1].
+
+        Returns
+        -------
+        float or array_like
+            Corresponding sample(s) in linear space.
+        """
         beta = self._beta()
         lo = self.low**beta
         hi = self.high**beta
@@ -351,10 +440,43 @@ class PowerLaw(numpyro.distributions.Distribution):
         )
 
     def sample(self, key, sample_shape=()):
+        """
+        Draw random samples from the distribution.
+
+        Parameters
+        ----------
+        key : jax.random.PRNGKey
+            JAX random key.
+        sample_shape : tuple, optional
+            Shape of the sample batch.
+
+        Returns
+        -------
+        array_like
+            Random samples.
+        """
         u = jax.random.uniform(key, sample_shape + self.batch_shape)
         return self.icdf(u)
 
+
 def powerlaw(alpha, low, high):
+    """
+    Create a power-law prior distribution in linear space.
+
+    Parameters
+    ----------
+    alpha : float
+        Power-law index.
+    low : float
+        Lower bound in linear space.
+    high : float
+        Upper bound in linear space.
+
+    Returns
+    -------
+    PowerLaw
+        Power-law distribution in linear space.
+    """
     return PowerLaw(alpha, low=low, high=high)
 
 
