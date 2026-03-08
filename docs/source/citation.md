@@ -3,16 +3,18 @@
 If you are going to include in a publication any results obtained using **``socca``**, please consider adding an hyperlink to the [GitHub repository](https://github.com/lucadimascolo/socca) or citing it as follows:
 
 ```bibtex
-@misc{socca2026,
-  author = {Di Mascolo, Luca},
-   title = {socca: Source Characterization using a Composable Analysis},
-    year = {2026},
-   month = {2},
-     url = {https://github.com/lucadimascolo/socca}
+@software{2026ascl.soft02005D,
+       author = {{Di Mascolo}, Luca},
+        title = "{socca: Source Characterization using a Composable Analysis}",
+ howpublished = {Astrophysics Source Code Library, record ascl:2602.005},
+         year = 2026,
+        month = feb,
+          eid = {ascl:2602.005},
+archivePrefix = {ascl},
+       eprint = {2602.005},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2026ascl.soft02005D},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
-```
-```{note}
-In the coming months, we plan to submit a dedicated paper to the Journal of Open Source Software (JOSS). Once available, we will update this section with the relevant citation information.
 ```
 
 If you use the `Disk` component in your work, please also consider citing the following paper:
