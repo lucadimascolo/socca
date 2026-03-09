@@ -246,6 +246,22 @@ class Model:
                     f"to None. Please provide a valid value or prior."
                 )
 
+            if isinstance(par, (types.LambdaType, types.FunctionType)):
+                _glb = {
+                    name: par.__globals__[name]
+                    for name in par.__code__.co_names
+                    if name in par.__globals__
+                }
+                _glb["jp"] = jp
+                _glb.setdefault("__builtins__", __builtins__)
+                par = types.FunctionType(
+                    par.__code__,
+                    _glb,
+                    par.__name__,
+                    par.__defaults__,
+                    par.__closure__,
+                )
+
             self.params.append(f"comp_{self.ncomp:02d}_{p}")
             self.priors.update({f"comp_{self.ncomp:02d}_{p}": par})
             if isinstance(par, numpyro.distributions.Distribution):
