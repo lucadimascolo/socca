@@ -4,6 +4,7 @@ import warnings
 
 import jax
 import jax.numpy as jp
+import numpy as np
 import numpyro.distributions
 from quadax import quadgk
 
@@ -32,7 +33,9 @@ class gNFW(Profile):
         self.beta = kwargs.get("beta", config.gNFW.beta)
         self.gamma = kwargs.get("gamma", config.gNFW.gamma)
 
-        self.rz = kwargs.get("rz", jp.logspace(-7, 2, 1000))
+        self.rz = np.asarray(
+            kwargs.get("rz", np.logspace(-7, 2, 1000)), dtype=np.float64
+        )
         self.eps = kwargs.get("eps", 1.00e-08)
 
         self.units.update(
@@ -49,13 +52,24 @@ class gNFW(Profile):
             )
         )
 
+        self._rebuild_profile()
+        self._initialized = True
+
+    def _rebuild_profile(self):
+        """Build (or rebuild) the JIT-compiled profile from current code."""
+
         def _profile(r, Ic, rc, alpha, beta, gamma):
             return gNFW._profile(
                 r, Ic, rc, alpha, beta, gamma, self.rz, self.eps
             )
 
         self.profile = jax.jit(_profile)
-        self._initialized = True
+
+    def __setstate__(self, state):
+        """Restore state and rebuild profile from current source."""
+        self.__dict__.update(state)
+        self.rz = np.asarray(self.rz, dtype=np.float64)
+        self._rebuild_profile()
 
     @property
     def alpha(self):  # noqa: D102
@@ -84,13 +98,13 @@ class gNFW(Profile):
     def beta(self, value):  # noqa: D102
         wstring = None
         if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.upper_bound >= 3:
+            if value.support.lower_bound < 3:
                 wstring = "The beta prior support includes values"
-        elif value >= 3:
+        elif value < 3:
             wstring = "The beta parameter is"
         if wstring is not None:
             warnings.warn(
-                f"{wstring} greater than or equal to 3. "
+                f"{wstring} less than or equal to 3. "
                 "This might lead to unphysical models."
             )
         self._beta = value
@@ -180,7 +194,11 @@ class gNFW(Profile):
 
         def integrate(rzj):
             return quadgk(
-                integrand, [rzj, jp.inf], args=(rzj,), epsabs=eps, epsrel=eps
+                integrand,
+                [rzj, jp.full_like(rzj, jp.inf)],
+                args=(rzj,),
+                epsabs=eps,
+                epsrel=eps,
             )[0]
 
         mz = Ic * jax.vmap(integrate)(rz)

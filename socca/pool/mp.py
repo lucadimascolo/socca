@@ -1,5 +1,7 @@
 """Multiprocessing pool for parallel likelihood evaluation."""
 
+import os
+
 import dill
 from loky import ProcessPoolExecutor
 import loky.process_executor as _loky_pe
@@ -14,6 +16,10 @@ _POOL_FUNC = None
 
 def _pool_init(func_bytes):
     """Initialize worker with deserialized likelihood function."""
+    os.environ["JAX_ENABLE_X64"] = "True"
+    import jax
+
+    jax.config.update("jax_enable_x64", True)
     global _POOL_FUNC
     _POOL_FUNC = dill.loads(func_bytes)
 
