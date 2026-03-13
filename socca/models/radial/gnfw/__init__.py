@@ -22,9 +22,9 @@ class gNFW(Profile):
     intermediate (alpha), and outer (beta) slopes.
 
     By default the projected surface brightness is computed via numerical
-    Abel integration (accurate but slow). Alternatively, a pre-trained MLP
-    emulator can be loaded with the ``emulator`` keyword argument to replace
-    the quadrature with a fast neural-network evaluation.
+    Abel integration on a 1D radial grid that is then interpolated onto the
+    image pixels (accurate and fast). Direct per-pixel integration is also
+    available, as well as a pre-trained MLP emulator.
 
     Parameters
     ----------
@@ -34,9 +34,16 @@ class gNFW(Profile):
         a file-system path (``str`` or :class:`~pathlib.Path`) to load a
         custom checkpoint, or ``None`` (default) to use numerical
         integration. Requires ``flax`` to be installed.
+    interpolate : bool, optional
+        Selects the evaluation strategy. If ``True`` (default) the profile
+        is computed on a 1D radial grid and the result is interpolated to
+        the image pixels. If ``False`` the profile is evaluated directly at
+        every pixel (slower but free from interpolation error). Applies to
+        both the numerical integration and emulator paths.
     rz : array-like, optional
-        Radial grid (in units of rc) for numerical integration. Only used
-        when ``emulator`` is None. Default is logspace(-7, 2, 1000).
+        Radial grid (in units of rc) for the interpolation path. Only used
+        when ``emulator`` is None and ``interpolate`` is True.
+        Default is logspace(-7, 2, 1000).
     eps : float, optional
         Absolute and relative quadrature tolerance. Only used when
         ``emulator`` is None. Default is 1e-8.
@@ -57,6 +64,7 @@ class gNFW(Profile):
             kwargs.get("rz", np.logspace(-7, 2, 1000)), dtype=np.float64
         )
         self.eps = kwargs.get("eps", 1.00e-08)
+        self.interpolate = kwargs.get("interpolate", True)
 
         self.emulator = kwargs.get("emulator", None)
         self._emulator_model = None
@@ -177,19 +185,33 @@ class gNFW(Profile):
 
             graphdef, state = _nnx.split(self._emulator_model)
 
-            @jax.jit
-            def _profile(r, Ic, rc, alpha, beta, gamma):
-                model = _nnx.merge(graphdef, state)
-                return gNFW._profile_emulator(
-                    r, Ic, rc, alpha, beta, gamma, model
-                )
+            if self.interpolate:
+                @jax.jit
+                def _profile(r, Ic, rc, alpha, beta, gamma):
+                    model = _nnx.merge(graphdef, state)
+                    return gNFW._profile_emulator(
+                        r, Ic, rc, alpha, beta, gamma, model
+                    )
+            else:
+                @jax.jit
+                def _profile(r, Ic, rc, alpha, beta, gamma):
+                    model = _nnx.merge(graphdef, state)
+                    return gNFW._profile_emulator_direct(
+                        r, Ic, rc, alpha, beta, gamma, model
+                    )
 
             self.profile = _profile
         else:
-            def _profile(r, Ic, rc, alpha, beta, gamma):
-                return gNFW._profile(
-                    r, Ic, rc, alpha, beta, gamma, self.rz, self.eps
-                )
+            if self.interpolate:
+                def _profile(r, Ic, rc, alpha, beta, gamma):
+                    return gNFW._profile(
+                        r, Ic, rc, alpha, beta, gamma, self.rz, self.eps
+                    )
+            else:
+                def _profile(r, Ic, rc, alpha, beta, gamma):
+                    return gNFW._profile_direct(
+                        r, Ic, rc, alpha, beta, gamma, self.eps
+                    )
 
             self.profile = jax.jit(_profile)
 
@@ -379,3 +401,96 @@ class gNFW(Profile):
 
         mz = Ic * jax.vmap(integrate)(rz)
         return jp.interp(r / rc, rz, mz)
+
+    @staticmethod
+    def _profile_direct(r, Ic, rc, alpha, beta, gamma, eps=1.00e-08):
+        """
+        Direct per-pixel Abel integration for the gNFW profile.
+
+        Evaluates the Abel integral independently at every pixel in ``r``
+        without constructing an intermediate 1D grid. Slower than the
+        interpolation path but free from interpolation error.
+
+        Parameters
+        ----------
+        r : ndarray
+            Projected elliptical radius in degrees.
+        Ic : float
+            Characteristic surface brightness (same units as image).
+        rc : float
+            Scale radius in degrees.
+        alpha : float
+            Intermediate slope parameter.
+        beta : float
+            Outer slope parameter.
+        gamma : float
+            Inner slope parameter.
+        eps : float, optional
+            Absolute and relative error tolerance for integration.
+            Default is 1e-8.
+
+        Returns
+        -------
+        ndarray
+            Projected surface brightness at radius r, same shape as r.
+        """
+
+        def radial(u, alpha, beta, gamma):
+            factor = 1.00 + u**alpha
+            factor = factor ** ((gamma - beta) / alpha)
+            return factor / u**gamma
+
+        def integrand(u, uz):
+            factor = radial(u, alpha, beta, gamma)
+            return 2.00 * factor * u / jp.sqrt(u**2 - uz**2)
+
+        def integrate(rj):
+            return quadgk(
+                integrand,
+                [rj, jp.full_like(rj, jp.inf)],
+                args=(rj,),
+                epsabs=eps,
+                epsrel=eps,
+            )[0]
+
+        shape = r.shape
+        mz = Ic * jax.vmap(integrate)((r / rc).ravel())
+        return mz.reshape(shape)
+
+    @staticmethod
+    def _profile_emulator_direct(r, Ic, rc, alpha, beta, gamma, emul_model):
+        """
+        Compute the projected gNFW surface brightness via direct emulator.
+
+        Evaluates the emulator at every pixel without an intermediate 1D
+        grid, avoiding interpolation error.
+
+        Parameters
+        ----------
+        r : ndarray
+            Projected elliptical radius in degrees.
+        Ic : float
+            Characteristic surface brightness (same units as image).
+        rc : float
+            Scale radius in degrees.
+        alpha : float
+            Intermediate slope parameter.
+        beta : float
+            Outer slope parameter.
+        gamma : float
+            Inner slope parameter.
+        emul_model : MLP
+            Pre-trained emulator instance.
+
+        Returns
+        -------
+        ndarray
+            Projected surface brightness at radius r, same shape as r.
+        """
+        from .emulator.model import getzero
+
+        shape = r.shape
+        x = (r / rc).ravel()
+        y0 = getzero(alpha, beta, gamma)
+        mz = emul_model(x, alpha, beta, gamma, log=False) * y0
+        return (Ic * mz).reshape(shape)
