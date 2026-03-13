@@ -51,6 +51,9 @@ Issues = "https://github.com/lucadimascolo/socca/issues"
 include = ["socca*"]
 exclude = ["data*","examples*"]
 
+[tool.setuptools.package-data]
+"socca.models.radial.gnfw.emulator" = ["pretrained/*.dill"]
+
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
