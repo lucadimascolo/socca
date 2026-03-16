@@ -95,6 +95,8 @@ class PolyExponential(Exponential):
     def __init__(self, **kwargs):
         nk = 4
         super().__init__(**kwargs)
+        self._initialized = False
+
         for k in range(nk):
             setattr(
                 self,
@@ -199,6 +201,8 @@ class PolyExpoRefact(Exponential):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._initialized = False
+
         self.I1 = kwargs.get("I1", config.PolyExpoRefact.I1)
         self.I2 = kwargs.get("I2", config.PolyExpoRefact.I2)
         self.I3 = kwargs.get("I3", config.PolyExpoRefact.I3)
@@ -323,6 +327,8 @@ class ModExponential(Exponential):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._initialized = False
+
         self.rm = kwargs.get("rm", config.ModExponential.rm)
         self.alpha = kwargs.get("alpha", config.ModExponential.alpha)
 
