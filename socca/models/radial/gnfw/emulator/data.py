@@ -11,7 +11,7 @@ import numpy as np
 from tqdm import tqdm
 
 from .config import Profile
-from .model import getzero, integral
+from ..model import getzero, integral
 
 
 def generate_training_data(

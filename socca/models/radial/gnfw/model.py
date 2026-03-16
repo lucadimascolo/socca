@@ -1,4 +1,4 @@
-"""Reference gNFW Abel integral for training data generation."""
+"""Reference gNFW Abel integral used by both the profile and the emulator."""
 
 import jax
 import jax.numpy as jp
@@ -60,12 +60,15 @@ def integrand(x, xc, alpha, beta, gamma):
     return profile(x, alpha, beta, gamma) * x / jp.sqrt(x**2 - xc**2)
 
 
-def integral_(xc, alpha, beta, gamma):
+def integral_(xc, alpha, beta, gamma, eps=1.40e-08):
     """Compute the Abel-projected gNFW integral at a single projected radius xc."""
     factor = quadgk(
-        lambda x: integrand(x, xc, alpha, beta, gamma), (xc, jp.inf)
+        lambda x: integrand(x, xc, alpha, beta, gamma),
+        (xc, jp.inf),
+        epsabs=eps,
+        epsrel=eps,
     )
     return 2.00 * factor[0]
 
 
-integral = jax.vmap(integral_, in_axes=(0, None, None, None))
+integral = jax.vmap(integral_, in_axes=(0, None, None, None, None))
