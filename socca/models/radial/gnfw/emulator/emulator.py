@@ -4,7 +4,7 @@ import jax.numpy as jp
 from flax import nnx
 
 from .config import Emulator, Profile
-from .model import getzero
+from ..model import getzero
 
 
 class MLP(nnx.Module):

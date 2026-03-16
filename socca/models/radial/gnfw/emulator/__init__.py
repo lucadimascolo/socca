@@ -31,7 +31,7 @@ Inference (loading and evaluating a pre-trained model) requires ``flax``.
 """
 
 from . import data
-from . import model
+from .. import model
 from . import io
 from . import plot
 from .trainer import train
