@@ -460,7 +460,9 @@ class NormalFourier:
                 self.apod = kwargs.get(
                     "apod", jp.ones((cube.shape[-2], cube.shape[-1]))
                 )
-
+                self.apod = jp.asarray(self.apod.astype(float))
+                self.apod = jp.squeeze(self.apod)
+                                
                 fft = (
                     jp.fft.rfft2 if ftype in ["real", "rfft"] else jp.fft.fft2
                 )
