@@ -170,13 +170,9 @@ def generate_training_data(
         maxval=jp.log10(Profile.x[1]),
     )
     x = jp.power(10.0, logx)
-    x = jp.concatenate(
-        [x, jp.full((n_total, 1), Profile.x[1])], axis=1
-    )
+    x = jp.concatenate([x, jp.full((n_total, 1), Profile.x[1])], axis=1)
 
-    _integral_chunk = jax.jit(
-        jax.vmap(integral, in_axes=(0, 0, 0, 0))
-    )
+    _integral_chunk = jax.jit(jax.vmap(integral, in_axes=(0, 0, 0, 0)))
     n_chunks = (n_total + chunk_size - 1) // chunk_size
 
     n_done = 0
@@ -214,9 +210,7 @@ def generate_training_data(
         if e <= n_done:
             continue
 
-        y_chunk = _integral_chunk(
-            x[s:e], alpha[s:e], beta[s:e], gamma[s:e]
-        )
+        y_chunk = _integral_chunk(x[s:e], alpha[s:e], beta[s:e], gamma[s:e])
 
         if output_path:
             with h5py.File(output_path, "a") as f:

@@ -98,9 +98,7 @@ def plot_prediction(model, alpha, beta, gamma, n_radial=100, axs=None):
     else:
         fig = axs[0].get_figure()
 
-    xr = jp.logspace(
-        jp.log10(Profile.x[0]), jp.log10(Profile.x[1]), n_radial
-    )
+    xr = jp.logspace(jp.log10(Profile.x[0]), jp.log10(Profile.x[1]), n_radial)
 
     yemu = np.array(predict(model, xr, alpha, beta, gamma))
     yref = np.array(gnfw_model.integral(xr, alpha, beta, gamma))

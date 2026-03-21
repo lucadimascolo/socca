@@ -11,6 +11,7 @@ os.environ["XLA_FLAGS"] = (
 )
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
 os.environ["OMP_NUM_THREADS"] = "1"
