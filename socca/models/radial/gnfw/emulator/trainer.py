@@ -156,9 +156,7 @@ def train(
 
     optimizer = nnx.Optimizer(
         model,
-        optax.chain(
-            optax.clip_by_global_norm(1.0), optax.adam(schedule)
-        ),
+        optax.chain(optax.clip_by_global_norm(1.0), optax.adam(schedule)),
         wrt=nnx.Param,
     )
 
@@ -186,9 +184,9 @@ def train(
             batches, _ = _make_stratified_batches(train_data, rng)
         else:
             perm = jax.random.permutation(rng, n_train)
-            batches = perm[
-                : n_batches * Training.batch_size
-            ].reshape(n_batches, Training.batch_size)
+            batches = perm[: n_batches * Training.batch_size].reshape(
+                n_batches, Training.batch_size
+            )
 
         epoch_loss = jp.float32(0.0)
         for i in range(n_batches):
@@ -209,9 +207,7 @@ def train(
             )
 
         if checkpoint_path:
-            save_checkpoint(
-                checkpoint_path, model, optimizer, epoch, history
-            )
+            save_checkpoint(checkpoint_path, model, optimizer, epoch, history)
 
         if plot_interval and (epoch + 1) % plot_interval == 0:
             import matplotlib.pyplot as plt

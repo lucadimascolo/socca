@@ -92,12 +92,7 @@ class gNFW(Profile):
         """Return the path to the bundled pre-trained checkpoint."""
         from pathlib import Path
 
-        return (
-            Path(__file__).parent
-            / "emulator"
-            / "pretrained"
-            / "gnfw.dill"
-        )
+        return Path(__file__).parent / "emulator" / "pretrained" / "gnfw.dill"
 
     @staticmethod
     def _load_emulator(path):
@@ -258,7 +253,9 @@ class gNFW(Profile):
         self._gamma = value
 
     @staticmethod
-    def _profile_switch(r, Ic, rc, alpha, beta, gamma, emul_model=None, eps=1.00e-08):
+    def _profile_switch(
+        r, Ic, rc, alpha, beta, gamma, emul_model=None, eps=1.00e-08
+    ):
         """
         Compute projected gNFW surface brightness.
 
