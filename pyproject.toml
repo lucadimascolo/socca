@@ -80,6 +80,11 @@ ignore = [
 convention = "numpy"
 
 [project.optional-dependencies]
+emulator = [
+    "flax",
+    "optax",
+    "tqdm",
+]
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
