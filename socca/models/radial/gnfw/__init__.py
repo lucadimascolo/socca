@@ -292,10 +292,10 @@ class gNFW(Profile):
         """
         shape = r.shape
         x = (r / rc).ravel()
-        y0 = getzero(alpha, beta, gamma)
         safe_x = jp.where(x > 0, x, jp.ones_like(x))
         if emul_model is None:
-            mz = integral(safe_x, alpha, beta, gamma, eps)
+            y0 = getzero(alpha, beta, gamma)
+            mz = integral(safe_x, alpha, beta, gamma, eps) / y0
         else:
-            mz = emul_model(safe_x, alpha, beta, gamma, log=False) * y0
-        return (Ic * jp.where(x > 0, mz, y0)).reshape(shape)
+            mz = emul_model(safe_x, alpha, beta, gamma, log=False)
+        return (Ic * jp.where(x > 0, mz, jp.ones_like(x))).reshape(shape)
