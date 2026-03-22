@@ -16,3 +16,4 @@ jobs:
       - uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          bootstrap-sha: 3a12b81ad6c149311973cb3149af09813acf986e
