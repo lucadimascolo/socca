@@ -9,6 +9,7 @@ import numpy as np
 import warnings
 
 from astropy.convolution import convolve, CustomKernel
+from astropy.io import fits
 from scipy.stats import median_abs_deviation
 
 from .pool.mpi import MPI_RANK
@@ -113,15 +114,22 @@ class Normal:
         elif isinstance(self.select, str):
             if isinstance(self.kwargs[self.select], (float, int)):
                 sigma = self.kwargs[self.select]
-            elif isinstance(self.kwargs[self.select], str):
+            elif isinstance(
+                self.kwargs[self.select],
+                (str, fits.ImageHDU, fits.PrimaryHDU, fits.HDUList),
+            ):
                 sigma = _img_loader(
                     self.kwargs[self.select], self.kwargs.get("idx", 0)
                 )
                 sigma = sigma.data.copy()
+            elif isinstance(
+                self.kwargs[self.select], (np.ndarray, jp.ndarray)
+            ):
+                sigma = np.array(self.kwargs[self.select])
             else:
                 raise ValueError(
                     f"Invalid type for noise parameter {self.select} [{self.kwargs[self.select]}]. "
-                    "Must be a float, int, or string path to FITS file."
+                    "Must be a float, int, string path to FITS file, array, or HDU."
                 )
 
             if self.select in self.options["var"]:
