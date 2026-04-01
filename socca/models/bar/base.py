@@ -18,7 +18,52 @@ class Bar(Component):
     Explanation TBD.
     """
 
-    # Needs a self.profile which is just going to be Sersic.
+    def __init__(self, radial=Sersic(), **kwargs):
+        super().__init__(**kwargs)
+
+        # Inherit some parameters from the radial profile;
+        # default is Sersic, where we inherit re, Ie, ns. 
+        self.radial = radial
+
+        # Sky Plane Geometry
+        self.xc = 0
+        self.yc = 0
+        self.theta = 0
+
+        # 3D Geometry
+        self.inc = 0
+        self.rs = 0.1
+        self.rot = 0
+        
+        self.profile = jax.jit(Bar._bar_profile)
+
+
+    def _build_kwargs(self, pars, comp_prefix):
+        """
+        Docstring TBD.
+        """
+        # profile parameters
+        kwarg = {
+            key.replace(f"{comp_prefix}.", ""): pars[key]
+            for key in pars
+            if key.startswith(f"{comp_prefix}.")
+        }
+
+        # geometric parameters
+        kwarg["xc"]       = pars[f"{comp_prefix}.xc"]
+        kwarg["yc"]       = pars[f"{comp_prefix}.yc"]
+        kwarg["theta"]    = pars[f"{comp_prefix}.theta"]
+        kwarg["inc"]      = pars[f"{comp_prefix}.inc"]
+        kwarg["rot"]      = pars[f"{comp_prefix}.rot"]
+        kwarg["losdepth"] = pars[f"{comp_prefix}.losdepth"]
+        kwarg["losbins"]  = pars[f"{comp_prefix}.losbins"]
+
+        return kwarg
+
+    @staticmethod
+    def _bar_profile(xt, yt, zt, Ie, re, rs, ns):
+        m = jp.sqrt((xt/rs)**2 + (yt/re)**2 + (zt/rs)**2)
+        return Sersic.profile(m, Ie, re, ns)
 
     def _evaluate(self, img, **kwarg):
         """
@@ -83,3 +128,4 @@ class Bar(Component):
         xt, yt = xt*cosr + yt*sinr, -xt*sinr + yt*cosr
 
         return xt, yt, zt
+    
