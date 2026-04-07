@@ -16,11 +16,45 @@ from ..radial import Sersic
 
 
 class BarGeometry():
-    def __init__(self, inc=0, rot=0, losdepth=1.0, losbins=10):
-        self.inc = inc        # inclination
-        self.rot = rot        # bar intrinsic rotation
-        self.losdepth = losdepth
-        self.losbins = losbins
+    def __init__(self, rot=0, rs=0.005, **kwargs):
+        super().__init__(**kwargs)
+        self.xc       = kwargs.get("xc", config.Profile.xc)
+        self.yc       = kwargs.get("yc", config.Profile.xc)
+        self.theta    = kwargs.get("theta", config.Profile.theta)
+        self.inc      = kwargs.get("inc", config.Height.inc)
+        self.rot      = rot
+        self.rs       = rs
+        self.losdepth = kwargs.get("losdepth", config.Height.losdepth)
+        self.losbins  = kwargs.get("losbins", config.Height.losbins)
+
+        self.units = {}
+        self.description = {}
+        
+        self.units.update(
+            dict(
+                xc="deg",
+                yc="deg",
+                inc="rad",
+                rot="rad",
+                theta="rad",
+                rs="deg",
+                losdepth="deg",
+                losbins=""
+            )
+        )
+
+        self.description.update(
+            dict(
+                losdepth="Half line-of-sigt extent for integration",
+                losbins="Number of points for line-of-sight integration",
+                xc="Right ascension of centroid",
+                yc="Declination of centroid",
+                inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
+                theta="Position angle (east from north); Typically inherited from a Disk Object",
+                rot="Intrinsic bar rotation relative to theta (added to position angle theta)",
+                rs="Semiminor axis scale length (x and z directions)"
+            )
+        )
 
 class Bar(Component):
     """
@@ -30,18 +64,8 @@ class Bar(Component):
     def __init__(self, radial=Sersic(), geometry=BarGeometry(), **kwargs):
         super().__init__(**kwargs)
 
-        # Inherit some parameters from the radial profile;
-        # Default is Sersic, where we inherit re, Ie, ns. 
-        # Hosts and auto-initializes the parameters xc, yc, and theta according to the config file.
         self.radial = radial
-
-        # 3D Geometry
-        # We initialize to the standard values in the config file for Height, to match the 3d Disk component. 
-        # Rotation is bar-specific, so we just let it live here.
-        self.inc = kwargs.get("inc", config.Height.inc)
-        self.rot = 0
-        self.losdepth = kwargs.get("losdepth", config.Height.losdepth)
-        self.losbins = kwargs.get("losbins", config.Height.losbins)
+        self.geometry = geometry
 
         for param in ["losdepth", "losbins"]:
             if param not in self.hyper:
@@ -53,24 +77,28 @@ class Bar(Component):
             {
                 f"radial.{key}": self.radial.units[key]
                 for key in self.radial.units.keys()
+                if key not in ["xc", "yc", "theta", "e", "cbox"]
             }
         )
-        self.units.update(dict(inc="rad", rot="rad", losdepth="deg", losbins=""))
+        self.units.update(
+            {
+                f"geometry.{key}": self.geometry.units[key]
+                for key in self.geometry.units.keys()
+            }
+        )
 
         self.description.update(
             {
                 f"radial.{key}": self.radial.description[key]
                 for key in self.radial.description.keys()
+                if key not in ["xc", "yc", "theta", "e", "cbox"]
             }
         )
         self.description.update(
-            dict(
-                losdepth="Half line-of-sigt extent for integration",
-                losbins="Number of points for line-of-sight integration",
-                inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
-                theta="Position angle (east from north); Typically inherited from a Disk Object",
-                rot="Intrinsic bar rotation relative to theta (added to position angle theta)"
-            )
+            {
+                f"geometry.{key}": self.geometry.units[key]
+                for key in self.geometry.units.keys()
+            }
         )
 
         self._initialized = True
@@ -98,14 +126,18 @@ class Bar(Component):
             kwarg[key] = val
 
         # Geometric parameters for a bar
-        kwarg["xc"]       = self.radial.xc
-        kwarg["yc"]       = self.radial.yc
-        kwarg["theta"]    = self.radial.theta
-
-        kwarg["inc"]      = self.inc
-        kwarg["rot"]      = self.rot
-        kwarg["losdepth"] = self.losdepth
-        kwarg["losbins"]  = self.losbins
+        for key in self.geometry.units.keys():
+            val = getattr(self.geometry, key)
+            if callable(val):
+                sig = inspect.signature(val)
+                params = list(sig.parameters.keys())
+                if params:
+                    args = [
+                        getattr(self, p.replace(f"{self.id}_", ""))
+                        for p in params
+                    ]
+                    val = val(*args)
+            kwarg[key] = val
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
@@ -144,6 +176,7 @@ class Bar(Component):
         kwarg["theta"]    = pars[f"{comp_prefix}.theta"]
         kwarg["inc"]      = pars[f"{comp_prefix}.inc"]
         kwarg["rot"]      = pars[f"{comp_prefix}.rot"]
+        kwarg["rs"]       = pars[f"{comp_prefix}.rs"]
         kwarg["losdepth"] = pars[f"{comp_prefix}.losdepth"]
         kwarg["losbins"]  = pars[f"{comp_prefix}.losbins"]
 
@@ -163,6 +196,7 @@ class Bar(Component):
         theta = kwarg.pop("theta")
         inc = kwarg.pop("inc")
         rot = kwarg.pop("rot")
+        rs = kwarg.pop("rs")
         losdepth = kwarg.pop("losdepth")
         losbins = kwarg.pop("losbins")
 
@@ -240,6 +274,8 @@ class Bar(Component):
                 keylen = maxlen - len(f" [{self.units[key]}]")
                 if key.startswith("radial."):
                     kvalue = getattr(self.radial, key.replace("radial.", ""))
+                elif key.startswith("geometry."):
+                    kvalue = getattr(self.geometry, key.replace("geometry.", ""))
                 else:
                     kvalue = getattr(self, key)
 
@@ -269,9 +305,9 @@ class Bar(Component):
                         kvalue = getattr(
                             self.radial, key.replace("radial.", "")
                         )
-                    elif key.startswith("vertical."):
+                    if key.startswith("geometry."):
                         kvalue = getattr(
-                            self.vertical, key.replace("vertical.", "")
+                            self.radial, key.replace("geometry.", "")
                         )
                     else:
                         kvalue = getattr(self, key)
