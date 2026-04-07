@@ -25,18 +25,74 @@ class Bar(Component):
         # default is Sersic, where we inherit re, Ie, ns. 
         self.radial = radial
 
-        # Sky Plane Geometry
-        self.xc = 0
-        self.yc = 0
-        self.theta = 0
+        # Sky Plane Geometry; the Sersic profile is capable of hosting xc, yc, and theta.
+        self.radial.xc = 0
+        self.radial.yc = 0
+        self.radial.theta = 0
 
         # 3D Geometry
         self.inc = 0
         self.rs = 0.1
         self.rot = 0
-        
+
         self.profile = jax.jit(Bar._bar_profile)
 
+    def getmap(self, img, convolve=False):
+        """
+        Docstring TBD.
+        
+        ------
+
+        Note: Kwargs currently assume a Sersic radial profile.
+        """
+        kwarg = {}
+
+        # Profile shape parameters from radial (re, Ie, ns for Sersic)
+        for key in inspect.signature(self.radial.profile).parameters.keys():
+            if key == "r":
+                continue  # skip r
+            val = getattr(self.radial, key)
+            if callable(val):
+                sig = inspect.signature(val)
+                params = list(sig.parameters.keys())
+                if params:
+                    args = [
+                        getattr(self, p.replace(f"{self.id}_", ""))
+                        for p in params
+                    ]
+                    val = val(*args)
+            kwarg[key] = val
+
+        # Geometric parameters for a bar
+        kwarg["xc"]       = self.radial.xc
+        kwarg["yc"]       = self.radial.yc
+        kwarg["theta"]    = self.radial.theta
+
+        kwarg["inc"]      = self.inc
+        kwarg["rot"]      = self.rot
+        kwarg["rs"]       = self.rs
+        kwarg["losdepth"] = self.losdepth
+        kwarg["losbins"]  = self.losbins
+
+        for key in kwarg.keys():
+            if isinstance(kwarg[key], numpyro.distributions.Distribution):
+                raise ValueError(
+                    "Priors must be fixed values, not distributions."
+                )
+            if kwarg[key] is None:
+                raise ValueError(
+                    f"keyword {key} is set to None. "
+                    f"Please provide a valid value."
+                )
+
+        mgrid = self._evaluate(img, **kwarg)
+
+        if convolve:
+            if img.psf is None:
+                warnings.warn("No PSF defined, so no convolution will be performed.")
+            else:
+                mgrid = img.convolve(mgrid)
+        return mgrid
 
     def _build_kwargs(self, pars, comp_prefix):
         """
