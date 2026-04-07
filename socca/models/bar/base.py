@@ -10,40 +10,74 @@ import numpyro.distributions
 
 import numpy as np
 
+from .. import config
 from ..base import Component
 from ..radial import Sersic
+
+
+class BarGeometry():
+    def __init__(self, inc=0, rot=0, losdepth=1.0, losbins=10):
+        self.inc = inc        # inclination
+        self.rot = rot        # bar intrinsic rotation
+        self.losdepth = losdepth
+        self.losbins = losbins
 
 class Bar(Component):
     """
     Explanation TBD.
     """
 
-    def __init__(self, radial=Sersic(), **kwargs):
+    def __init__(self, radial=Sersic(), geometry=BarGeometry(), **kwargs):
         super().__init__(**kwargs)
 
         # Inherit some parameters from the radial profile;
-        # default is Sersic, where we inherit re, Ie, ns. 
+        # Default is Sersic, where we inherit re, Ie, ns. 
+        # Hosts and auto-initializes the parameters xc, yc, and theta according to the config file.
         self.radial = radial
 
-        # Sky Plane Geometry; the Sersic profile is capable of hosting xc, yc, and theta.
-        self.radial.xc = 0
-        self.radial.yc = 0
-        self.radial.theta = 0
-
         # 3D Geometry
-        self.inc = 0
-        self.rs = 0.1
+        # We initialize to the standard values in the config file for Height, to match the 3d Disk component. 
+        # Rotation is bar-specific, so we just let it live here.
+        self.inc = kwargs.get("inc", config.Height.inc)
         self.rot = 0
+        self.losdepth = kwargs.get("losdepth", config.Height.losdepth)
+        self.losbins = kwargs.get("losbins", config.Height.losbins)
+
+        for param in ["losdepth", "losbins"]:
+            if param not in self.hyper:
+                self.hyper.append(param)
 
         self.profile = jax.jit(Bar._bar_profile)
+
+        self.units.update(
+            {
+                f"radial.{key}": self.radial.units[key]
+                for key in self.radial.units.keys()
+            }
+        )
+        self.units.update(dict(inc="rad", rot="rad", losdepth="deg", losbins=""))
+
+        self.description.update(
+            {
+                f"radial.{key}": self.radial.description[key]
+                for key in self.radial.description.keys()
+            }
+        )
+        self.description.update(
+            dict(
+                losdepth="Half line-of-sigt extent for integration",
+                losbins="Number of points for line-of-sight integration",
+                inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
+                theta="Position angle (east from north); Typically inherited from a Disk Object",
+                rot="Intrinsic bar rotation relative to theta (added to position angle theta)"
+            )
+        )
+
+        self._initialized = True
 
     def getmap(self, img, convolve=False):
         """
         Docstring TBD.
-        
-        ------
-
-        Note: Kwargs currently assume a Sersic radial profile.
         """
         kwarg = {}
 
@@ -70,7 +104,6 @@ class Bar(Component):
 
         kwarg["inc"]      = self.inc
         kwarg["rot"]      = self.rot
-        kwarg["rs"]       = self.rs
         kwarg["losdepth"] = self.losdepth
         kwarg["losbins"]  = self.losbins
 
@@ -184,4 +217,87 @@ class Bar(Component):
         xt, yt = xt*cosr + yt*sinr, -xt*sinr + yt*cosr
 
         return xt, yt, zt
+    
+    def parameters(self):
+        """
+        Docstring TBD.
+        """
+        keyout = [key for key in self.units.keys() if key not in self.hyper]
+
+        if len(keyout) > 0:
+            maxlen = np.max(
+                np.array(
+                    [
+                        len(f"{key} [{self.units[key]}]")
+                        for key in keyout + self.hyper
+                    ]
+                )
+            )
+
+            print("\nModel parameters")
+            print("=" * 16)
+            for key in keyout:
+                keylen = maxlen - len(f" [{self.units[key]}]")
+                if key.startswith("radial."):
+                    kvalue = getattr(self.radial, key.replace("radial.", ""))
+                else:
+                    kvalue = getattr(self, key)
+
+                if kvalue is None:
+                    kvalue = None
+                elif isinstance(kvalue, numpyro.distributions.Distribution):
+                    kvalue = f"Distribution: {kvalue.__class__.__name__}"
+                elif isinstance(
+                    kvalue, (types.LambdaType, types.FunctionType)
+                ):
+                    kvalue = "Tied parameter"
+                else:
+                    kvalue = f"{kvalue:.4E}"
+
+                print(
+                    f"{key:<{keylen}} [{self.units[key]}] : "
+                    + f"{kvalue}".ljust(10)
+                    + f" | {self.description[key]}"
+                )
+
+            if len(self.hyper) > 0:
+                print("\nHyperparameters")
+                print("=" * 15)
+                for key in self.hyper:
+                    keylen = maxlen - len(f" [{self.units[key]}]")
+                    if key.startswith("radial."):
+                        kvalue = getattr(
+                            self.radial, key.replace("radial.", "")
+                        )
+                    elif key.startswith("vertical."):
+                        kvalue = getattr(
+                            self.vertical, key.replace("vertical.", "")
+                        )
+                    else:
+                        kvalue = getattr(self, key)
+
+                    if kvalue is None:
+                        kvalue = None
+                    elif isinstance(
+                        kvalue, numpyro.distributions.Distribution
+                    ):
+                        kvalue = f"Distribution: {kvalue.__class__.__name__}"
+                    elif isinstance(
+                        kvalue, (types.LambdaType, types.FunctionType)
+                    ):
+                        kvalue = "Tied parameter"
+                    else:
+                        kvalue = f"{kvalue:.4E}"
+
+                    print(
+                        f"{key:<{keylen}} [{self.units[key]}] : "
+                        + f"{kvalue}".ljust(10)
+                        + f" | {self.description[key]}"
+                    )
+    
+    def parlist(self):
+        """
+        Docstring TBD.
+        """
+        return list(self.units.keys()) 
     
