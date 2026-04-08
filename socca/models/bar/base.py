@@ -83,6 +83,16 @@ class Bar(Component):
 
         for param in self.geometry.hyper:
             self.hyper.append(f"geometry.{param}")
+        
+        if self.radial.id != self.id:
+            type(self).idcls -= 1
+            idmin = np.minimum(
+                int(self.radial.id.replace("comp_", "")),
+                int(self.id.replace("comp_", "")),
+            )
+            self.id = f"comp_{idmin:02d}"
+            self.radial.id = self.id
+            self.geometry.id = self.id
 
         self.profile = jax.jit(Bar._bar_profile)
 
@@ -205,7 +215,6 @@ class Bar(Component):
         theta = kwarg.pop("theta")
         inc = kwarg.pop("inc")
         rot = kwarg.pop("rot")
-        e = kwarg.pop("e")
         losdepth = kwarg.pop("losdepth")
         losbins = kwarg.pop("losbins")
 

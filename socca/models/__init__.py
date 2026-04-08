@@ -13,6 +13,7 @@ from . import config
 from .base import Component
 from .misc import Point, Background
 from .disk import Disk
+from .bar import Bar, BarGeometry
 from .bridge import SimpleBridge, MesaBridge
 from .radial import (
     Profile,
@@ -110,6 +111,12 @@ def zoo():
     print("\nDisk-like model")
     print("===============")
     print("Disk")
+
+    print("\nBar-like model")
+    print("===============")
+    print("Bar")
+
+    
 
     print("\nOther models")
     print("============")
