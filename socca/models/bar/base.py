@@ -206,7 +206,7 @@ class Bar(Component):
     def _bar_profile(xt, yt, zt, Ie, re, e, ns):
         rs = re * (1-e)
         m = jp.sqrt((xt/rs)**2 + (yt/re)**2 + (zt/rs)**2)
-        return Sersic.profile(m, Ie, re, ns)
+        return Sersic.profile(m, Ie, 1.0, ns)
 
     def _evaluate(self, img, **kwarg):
         """
