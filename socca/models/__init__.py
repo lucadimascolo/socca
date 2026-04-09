@@ -432,9 +432,6 @@ class Model:
 
         for ki, key in enumerate(self.params):
             if self.tied[ki]:
-                print(key)
-                print(self.priors[key])
-                print(self.priors[key].key)
                 if isinstance(self.priors[key], BoundTo):
                     pars[key] = pars[self.priors[key].key]
                 else:
