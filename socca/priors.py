@@ -482,9 +482,14 @@ def powerlaw(alpha, low, high):
 
 # Parameter bound to another component's parameter
 # --------------------------------------------------------
+class BoundTo:
+    """A bound parameter reference used to tie one component's parameter to another's."""
+    def __init__(self, key):
+        self.key = key
+
 def boundto(comp, var):
     """
-    Create a lambda function to bind a parameter to another component's parameter.
+    Create a BoundTo object to bind a parameter to another component's parameter.
 
     Creates a functional relationship where one component's parameter is
     constrained to equal another component's parameter. Useful for tying
@@ -500,24 +505,44 @@ def boundto(comp, var):
 
     Returns
     -------
-    lambda function
-        A lambda function that takes the bound parameter and returns its value.
+    BoundTo object
+        An object that takes the bound parameter and returns its value.
 
     Examples
     --------
     Bind the x-coordinate of component2 to match component1's x-coordinate:
     >>> comp2.xc = boundto(comp1, 'xc')
 
+    Bind the inclination and position angle of a 3D Bar to that of its host Disk:
+    >>> disk_radial = socca.models.Sersic()
+    >>> disk_radial.theta = np.pi/4
+    >>> disk_vertical = socca.models.disk.vertical.HyperSecantHeight()
+    >>> disk_vertical.inc = np.radians(80)
+    >>>
+    >>> disk = socca.models.Disk(radial=disk_radial, vertical=disk_vertical)
+    >>>
+    >>> bar_geom = socca.models.BarGeometry()
+    >>> bar_geom.theta = socca.priors.boundto(disk, "theta")
+    >>> bar_geom.inc   = socca.priors.boundto(disk, "inc")
+
     Notes
     -----
-    The binding is implemented by creating a lambda that takes the
+    The binding is implemented by creating a BoundTo that takes the
     referenced parameter as input and returns it unchanged.
+    Always pass the top-level component, not its sub-components. For components
+    with namespaced sub-components (Disk, Bar), the correct sub-component is
+    found automatically by searching their namespaces.
     """
     if isinstance(comp, str):
         comp = eval(comp)
 
-    x = f"{comp.id}_{var}"
-    return eval(f"lambda {x}: {x}")
+    namespaces = getattr(comp, "_namespaces", None)
+    if namespaces:
+        for namespace, subcomp in namespaces.items():
+            if var in subcomp.units:
+                return BoundTo(f"{comp.id}_{namespace}.{var}")
+
+    return BoundTo(f"{comp.id}_{var}")
 
 
 # pocoMC prior refactor for numpyro

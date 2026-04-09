@@ -97,6 +97,8 @@ class Disk(Component):
         self.radial = radial
         self.vertical = vertical
 
+        self._namespaces = {"radial": self.radial, "vertical": self.vertical}
+
         if self.radial.id != self.id:
             type(self).idcls -= 1
             idmin = np.minimum(

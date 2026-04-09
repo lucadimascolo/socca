@@ -81,6 +81,8 @@ class Bar(Component):
         self.radial = radial
         self.geometry = geometry
 
+        self._namespaces = {"radial": self.radial, "geometry": self.geometry}
+
         for param in self.geometry.hyper:
             self.hyper.append(f"geometry.{param}")
         
