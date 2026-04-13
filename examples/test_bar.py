@@ -18,7 +18,7 @@ disk_radial.re = 1e-3
 disk_radial.ns = 1.0
 disk_radial.xc = img.hdu.header['CRVAL1']
 disk_radial.yc = img.hdu.header['CRVAL2']
-disk_radial.theta = np.radians(60)  # Position angle Disk
+disk_radial.theta = np.radians(0)  # Position angle Disk
 
 disk_vertical = socca.models.disk.vertical.HyperSecantHeight()
 disk_vertical.zs = disk_radial.re/10
@@ -30,8 +30,8 @@ disk = socca.models.Disk(radial=disk_radial, vertical=disk_vertical)
 ## Bar component
 
 bar_radial = socca.models.Sersic()
-bar_radial.Ie = 1e+1
-bar_radial.re = 2e-4
+bar_radial.Ie = 5e+0
+bar_radial.re = 5e-4
 bar_radial.ns = 0.25
 
 bar_geom = socca.models.BarGeometry()
@@ -40,7 +40,7 @@ bar_geom.yc = socca.priors.boundto(disk, "yc")
 bar_geom.e = 0.7
 bar_geom.inc = socca.priors.boundto(disk, "inc")
 bar_geom.theta = socca.priors.boundto(disk, "theta")
-bar_geom.rot = np.radians(30)  # Additional Position Angle Bar
+bar_geom.rot = np.radians(90)  # Additional Position Angle Bar
 # bar_geom.losdepth = disk_vertical.losdepth * 2
 
 bar = socca.models.Bar(radial=bar_radial, geometry=bar_geom)
