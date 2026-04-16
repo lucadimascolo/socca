@@ -14,6 +14,8 @@ from .exponential import (
     ModExponential,
 )
 
+from . import truncation
+
 __all__ = [
     "Profile",
     "CustomProfile",
@@ -27,4 +29,5 @@ __all__ = [
     "PolyExponential",
     "PolyExpoRefact",
     "ModExponential",
+    "truncation",
 ]
