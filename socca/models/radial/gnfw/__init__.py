@@ -11,6 +11,8 @@ from ... import config
 from ..base import Profile
 from .model import getzero, integral
 
+__all__ = ["gNFW"]
+
 
 class gNFW(Profile):
     """
