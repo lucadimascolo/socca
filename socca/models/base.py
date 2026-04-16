@@ -225,3 +225,36 @@ class Component:
         self._initialized = True
         self.units.update({name: units})
         self.description.update({name: description})
+
+    def removeparameter(self, name):
+        """
+        Remove a parameter from the component.
+
+        Parameters
+        ----------
+        name : str
+            Name of the parameter to remove.
+
+        Raises
+        ------
+        AttributeError
+            If the parameter does not exist on this component.
+
+        Examples
+        --------
+        >>> from socca.models import Beta
+        >>> beta = Beta(xc=180.5, yc=45.2)
+        >>> beta.addparameter('custom', value=1.0, units='Jy')
+        >>> beta.removeparameter('custom')
+        """
+        if not hasattr(self, name):
+            raise AttributeError(
+                f"Parameter '{name}' does not exist on "
+                f"{self.__class__.__name__}."
+            )
+        self._initialized = False
+        delattr(self, name)
+        self._initialized = True
+        self.units.pop(name, None)
+        self.description.pop(name, None)
+        self.hyper = [h for h in self.hyper if h != name]
