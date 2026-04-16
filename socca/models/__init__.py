@@ -29,6 +29,34 @@ from .radial import (
     ModExponential,
 )
 
+__all__ = [
+    "config",
+    "Component",
+    "Model",
+    "zoo",
+    # radial profiles
+    "Profile",
+    "CustomProfile",
+    "Beta",
+    "gNFW",
+    "Power",
+    "TopHat",
+    "Sersic",
+    "Gaussian",
+    "Exponential",
+    "PolyExponential",
+    "PolyExpoRefact",
+    "ModExponential",
+    # misc
+    "Point",
+    "Background",
+    # disk
+    "Disk",
+    # bridge
+    "SimpleBridge",
+    "MesaBridge",
+]
+
 
 # Support utilities
 # ========================================================
