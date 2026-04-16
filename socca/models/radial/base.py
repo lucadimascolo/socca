@@ -11,6 +11,7 @@ import numpyro.distributions
 
 from .. import config
 from ..base import Component
+from .truncation import Truncation, HyperTangent
 
 
 class Profile(Component):
@@ -88,6 +89,41 @@ class Profile(Component):
                 cbox="Projected boxiness",
             )
         )
+
+        self._truncation = None
+        self.truncation = kwargs.get("truncation", None)
+
+    @property
+    def truncation(self):  # noqa: D102
+        return self._truncation
+
+    @truncation.setter
+    def truncation(self, value):  # noqa: D102
+        if isinstance(value, bool):
+            value = HyperTangent() if value else None
+        if value is not None:
+            if not isinstance(value, Truncation):
+                raise ValueError(
+                    "Truncation must be an instance of the Truncation class."
+                )
+            _init = self._initialized
+            self._initialized = False
+            self.rt = value.rt
+            self.wt = value.wt
+            self._initialized = _init
+            self.units.update(dict(rt=value.units["rt"], wt=value.units["wt"]))
+            self.description.update(
+                dict(
+                    rt=value.description["rt"],
+                    wt=value.description["wt"],
+                )
+            )
+        else:
+            if hasattr(self, "rt"):
+                self.removeparameter("rt")
+            if hasattr(self, "wt"):
+                self.removeparameter("wt")
+        self._truncation = value
 
     @property
     def e(self):  # noqa: D102
@@ -178,12 +214,17 @@ class Profile(Component):
         >>> img = Image('observation.fits')
         >>> model_map = beta.getmap(img, convolve=True)
         """
-        kwarg = {
-            key: getattr(self, key)
-            for key in list(inspect.signature(self.profile).parameters.keys())
-            + ["xc", "yc", "theta", "e", "cbox"]
-            if key != "r"
-        }
+        _keys = list(inspect.signature(self.profile).parameters.keys()) + [
+            "xc",
+            "yc",
+            "theta",
+            "e",
+            "cbox",
+        ]
+        if self.truncation is not None:
+            _keys += ["rt", "wt"]
+
+        kwarg = {key: getattr(self, key) for key in _keys if key != "r"}
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
@@ -223,13 +264,21 @@ class Profile(Component):
         dict
             Keyword arguments for _evaluate.
         """
+        _keys = list(inspect.signature(self.profile).parameters.keys()) + [
+            "xc",
+            "yc",
+            "theta",
+            "e",
+            "cbox",
+        ]
+        if self.truncation is not None:
+            _keys += ["rt", "wt"]
+
         return {
             key.replace(f"{comp_prefix}_", ""): pars[key]
             for key in pars
             if key.startswith(f"{comp_prefix}_")
-            and key.replace(f"{comp_prefix}_", "")
-            in list(inspect.signature(self.profile).parameters.keys())
-            + ["xc", "yc", "theta", "e", "cbox"]
+            and key.replace(f"{comp_prefix}_", "") in _keys
         }
 
     def _evaluate(self, img, **kwarg):
@@ -258,8 +307,17 @@ class Profile(Component):
         theta = kwarg.pop("theta")
         e = kwarg.pop("e")
         cbox = kwarg.pop("cbox")
+
+        if self.truncation is not None:
+            rt = kwarg.pop("rt")
+            wt = kwarg.pop("wt")
+
         rgrid = self.getgrid(img.grid, xc, yc, theta, e, cbox)
         mgrid = self.profile(rgrid, **kwarg)
+
+        if self.truncation is not None:
+            mgrid = mgrid * self.truncation.profile(rgrid, rt, wt)
+
         return jp.mean(mgrid, axis=0)
 
     @staticmethod
