@@ -56,6 +56,7 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 ./tutorials/tutorial_quickstart.md
 ./tutorials/tutorial_noise.md
 ./tutorials/tutorial_data.md
+./tutorials/tutorial_components.md
 ./tutorials/tutorial_models.md
 ./tutorials/tutorial_priors.md
 ./tutorials/tutorial_fitting.md
