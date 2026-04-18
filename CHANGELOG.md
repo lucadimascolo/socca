@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/lucadimascolo/socca/compare/v1.1.0...v1.1.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* pin jax/jaxlib below 0.10.0 to avoid numpyro incompatibility ([4378cd1](https://github.com/lucadimascolo/socca/commit/4378cd1216f0cc87d913eb7eba6899e04b13495e))
+
 ## [1.1.0](https://github.com/lucadimascolo/socca/compare/v1.0.0...v1.1.0) (2026-04-17)
 
 
