@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, dev, joss, release-please--branches--main]
+    branches: [main, dev, joss]
   pull_request:
     branches: [main, dev, joss]
 
@@ -27,7 +27,6 @@ jobs:
         run: ruff format --check .
 
   test:
-    if: github.ref != 'refs/heads/release-please--branches--main'
     runs-on: ubuntu-latest
     strategy:
       matrix:
