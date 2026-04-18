@@ -27,6 +27,7 @@ jobs:
         run: ruff format --check .
 
   test:
+    if: github.ref != 'refs/heads/release-please--branches--main'
     runs-on: ubuntu-latest
     strategy:
       matrix:
