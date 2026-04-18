@@ -27,7 +27,6 @@ jobs:
         run: ruff format --check .
 
   test:
-    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
