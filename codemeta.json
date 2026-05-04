@@ -4,7 +4,7 @@
   "name": "socca",
   "description": "socca (Source Characterization using a Composable Analysis) is a Python library for modeling astronomical image data using forward modeling and Bayesian inference. The package is designed around modular, composable building blocks that allow users to flexibly define complex source models with hierarchical and physically motivated priors, instrument responses, and noise models within a unified framework. socca leverages JAX to enable automatic differentiation, just-in-time compilation, and efficient vectorized computations, making it well suited for computationally intensive inference tasks. Posterior exploration is supported through state-of-the-art sampling algorithms, enabling scalable parameter estimation.",
   "identifier": "socca",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "license": "https://spdx.org/licenses/MIT",
   "codeRepository": "https://github.com/lucadimascolo/socca",
   "issueTracker": "https://github.com/lucadimascolo/socca/issues",
