@@ -729,6 +729,11 @@ class NormalRI:
 
             if isinstance(self.kwargs[self.select], (float, int)):
                 sigma = self.kwargs[self.select]
+            else:
+                raise ValueError(
+                    f"Invalid type for noise parameter {self.select} [{self.kwargs[self.select]}]. "
+                    "Must be a float or int."
+                )
 
             if self.select in self.options["var"]:
                 sigma = np.sqrt(sigma)
