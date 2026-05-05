@@ -589,6 +589,42 @@ class TestSamplerIntegration:
         assert abs(yc_mean - yc_true) < 0.01
 
 
+class TestPocoMCVectorize:
+    """Tests for pocomc vectorize argument validation."""
+
+    @pytest.fixture
+    def simple_fitter(self, simple_hdu, gaussian_psf):
+        """Create a simple fitter for validation testing."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        img.addpsf(gaussian_psf)
+
+        xc = simple_hdu.header["CRVAL1"]
+        yc = simple_hdu.header["CRVAL2"]
+
+        gaussian = models.Gaussian(
+            xc=priors.uniform(xc - 0.01, xc + 0.01),
+            yc=priors.uniform(yc - 0.01, yc + 0.01),
+            rs=0.005,
+            Is=10.0,
+        )
+        mod = models.Model(gaussian)
+        return fitting.fitter(img=img, mod=mod)
+
+    def test_vectorize_with_pool_raises(self, simple_fitter):
+        """Test that vectorize=True with pool raises ValueError."""
+        with pytest.raises(ValueError, match="pocomc does not support"):
+            simple_fitter.run(
+                method="pocomc", vectorize=True, pool=2, resume=False
+            )
+
+    def test_vectorize_with_ncores_raises(self, simple_fitter):
+        """Test that vectorize=True with ncores raises ValueError."""
+        with pytest.raises(ValueError, match="pocomc does not support"):
+            simple_fitter.run(
+                method="pocomc", vectorize=True, ncores=2, resume=False
+            )
+
+
 @pytest.mark.slow
 class TestEmceeSpecific:
     """Specific tests for emcee sampler functionality."""
