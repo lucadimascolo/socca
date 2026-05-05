@@ -519,7 +519,10 @@ class Image:
         del cutout_resp
 
         if self.psf is not None:
-            center_psf = (self.hdu.header["CRPIX1"], self.hdu.header["CRPIX2"])
+            center_psf = (
+                self.hdu.header["CRPIX1"] - 1,
+                self.hdu.header["CRPIX2"] - 1,
+            )
             cutout_psf = Cutout2D(self.psf, center_psf, csize, wcs=self.wcs)
             self.addpsf(cutout_psf.data, normalize=False)
 
