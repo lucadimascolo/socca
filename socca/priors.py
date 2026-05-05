@@ -33,7 +33,7 @@ def uniform(low, high):
     ValueError
         If low >= high.
     """
-    if low > high:
+    if low >= high:
         message = "The lower limit must be smaller than the upper limit."
         message = message + f"\nInput values > low={low} high={high}"
         raise ValueError(message)
@@ -67,7 +67,7 @@ def loguniform(low, high):
     ValueError
         If low >= high.
     """
-    if low > high:
+    if low >= high:
         message = "The lower limit must be smaller than the upper limit."
         message = message + f"\nInput values > low={low} high={high}"
         raise ValueError(message)
