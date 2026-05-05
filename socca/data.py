@@ -403,7 +403,7 @@ class Image:
                 self.hdu.header["CD1_1"], self.hdu.header["CD2_1"]
             )
             self.hdu.header["CDELT2"] = np.hypot(
-                self.hdu.header["CD2_2"], self.hdu.header["CD2_2"]
+                self.hdu.header["CD1_2"], self.hdu.header["CD2_2"]
             )
 
         self.data = jp.array(self.hdu.data)
