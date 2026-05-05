@@ -139,6 +139,8 @@ def run_pocomc(
     if "ncores" in kwargs and "pool" in kwargs:
         raise ValueError("Cannot specify both 'ncores' and 'pool' arguments.")
 
+    vectorize = kwargs.pop("vectorize", False)
+
     pool = None
     for key in ["ncores", "pool"]:
         pool = kwargs.pop(key, pool)
@@ -147,6 +149,20 @@ def run_pocomc(
     if isinstance(pool, int):
         ncores = pool
         pool = None
+
+    if vectorize and (ncores is not None or pool is not None):
+        raise ValueError(
+            "pocomc does not support combining vectorize=True with a pool. "
+            "Use either JAX vectorization (vectorize=True) or "
+            "multiprocessing (pool/ncores), not both."
+        )
+
+    if vectorize and MPI_SIZE > 1:
+        raise ValueError(
+            "pocomc does not support combining vectorize=True with MPI. "
+            "Use either JAX vectorization (vectorize=True, single node) or "
+            "MPI parallelization (vectorize=False), not both."
+        )
 
     sampler_kwargs = {}
     for key in inspect.signature(pocomc.Sampler).parameters.keys():
@@ -157,6 +173,7 @@ def run_pocomc(
             "n_active",
             "output_dir",
             "pool",
+            "vectorize",
         ]:
             if key in kwargs:
                 sampler_kwargs[key] = kwargs.pop(key)
@@ -204,12 +221,21 @@ def run_pocomc(
     elif isinstance(pool, MultiPool):
         log_likelihood = pool.likelihood
 
+    if vectorize:
+        import jax
+        import numpy as np
+
+        _ll_vmap = jax.jit(jax.vmap(log_likelihood))
+
+        def log_likelihood(theta_batch):
+            return np.array(_ll_vmap(theta_batch))
+
     self.sampler = pocomc.Sampler(
         likelihood=log_likelihood,
         prior=prior,
         n_effective=nlive,
         n_active=n_active,
-        vectorize=False,
+        vectorize=vectorize,
         output_dir=pocodir if checkpoint is not None else None,
         pool=pool,
         **sampler_kwargs,
