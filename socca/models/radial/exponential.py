@@ -307,7 +307,7 @@ class PolyExpoRefact(Exponential):
             for key in ["xc", "yc", "theta", "e", "Is", "rs", "rc"]
         }
         for ci in range(1, 5):
-            kwargs.update({f"c{ci}": eval(f"I{ci}") / kwargs["Is"]})
+            kwargs.update({f"c{ci}": getattr(self, f"I{ci}") / kwargs["Is"]})
 
         return PolyExponential(**kwargs)
 
