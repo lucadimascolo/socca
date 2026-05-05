@@ -602,7 +602,7 @@ class fitter:
                 mraw, msmo, mbkg, _ = gm(p)
                 msmo = msmo - mbkg
             else:
-                mraw, msmo = [], []
+                mraw, msmo, mbkg = [], [], []
                 for sample in self.samples:
                     mraw_, msmo_, mbkg_, _ = gm(sample)
                     msmo_ = msmo_ - mbkg_
