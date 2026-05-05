@@ -646,7 +646,7 @@ class Image:
             kernel = np.asarray(hdu.data.astype(float).copy())
 
         if self.noise.__class__.__name__ == "NormalRI" and normalize:
-            ValueError(
+            raise ValueError(
                 "PSF normalization is not supported for NormalRI noise."
             )
 
