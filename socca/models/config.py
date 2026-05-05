@@ -197,3 +197,10 @@ class BarGeometry:
     e: float = 0.00
     losdepth: float = 10.00 / 60.00 / 60.00
     losbins: int = 200
+
+@dataclass(frozen=True)
+class Truncation:
+    """Default parameters for truncation profiles."""
+
+    rt: float = None
+    wt: float = 1.00e-02

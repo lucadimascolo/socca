@@ -107,6 +107,9 @@ class fitter:
 
         self.plot = Plotter(self)
 
+        self._doresp = bool(~jp.all(self.img.response == 1.00))
+        self._doexp = bool(~jp.all(self.img.exposure == 1.00))
+
     #   Compute total model
     #   --------------------------------------------------------
     def _getmodel(self, pp):
@@ -137,10 +140,12 @@ class fitter:
         Response is applied if any element of img.response differs from 1.0.
         Exposure is applied if any element of img.exposure differs from 1.0.
         """
-        doresp = ~np.all(np.array(self.img.response) == 1.00)  # True
-        doexp = ~np.all(np.array(self.img.exposure) == 1.00)  # True
         return self.mod.getmodel(
-            self.img, pp, doresp=doresp, doexp=doexp, component=None
+            self.img,
+            pp,
+            doresp=self._doresp,
+            doexp=self._doexp,
+            component=None,
         )
 
     #   Compute log-likelihood

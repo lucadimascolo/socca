@@ -769,12 +769,13 @@ class NormalRI:
 
         self.mask = self.mask == 1.00
         self.norm = 0.00
+        self.data = self.data.at[self.mask].get()
 
         def _logpdf(xr, xs):
             factor = self._logpdf(
                 xr,
                 xs,
-                self.data.at[self.mask].get(),
+                self.data,
                 self.sigma,
             )
             return factor - 0.50 * self.norm
