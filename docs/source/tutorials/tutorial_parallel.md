@@ -67,6 +67,23 @@ Dynesty might not benefit from MPI parallelization due to its sequential
 point proposal. Consider using method='nautilus' for MPI runs.
 ```
 
+## JAX vectorization (pocomc only)
+
+For `pocomc`, an alternative to process-based parallelization is **JAX vectorization** via `vectorize=True`. Instead of dispatching one likelihood call per particle to a pool of workers, the entire batch of active particles is evaluated in a single `jax.vmap`-compiled call:
+
+```python
+>>> fit.run(method='pocomc', vectorize=True)
+```
+
+This eliminates the Python-level overhead of N separate likelihood dispatches and leverages SIMD instructions (or GPU parallelism if available), without spawning any worker processes. It is particularly effective when the likelihood is a JAX-compiled function, as in **``socca``**.
+
+```{important}
+`vectorize=True` is **incompatible** with `pool`/`ncores` and with MPI. pocomc's internal vectorization path bypasses the pool entirely, so combining them raises a `ValueError`. Use one or the other:
+
+- Single node, JAX model → `vectorize=True`
+- Multi-node cluster → MPI (without `vectorize`)
+```
+
 ## NumPyro NUTS
 
 The `numpyro` backend does not support MPI parallelization (an error is raised if attempted). However, the `ncores` or `pool` arguments can be passed to control the number of parallel MCMC chains:
@@ -85,6 +102,6 @@ When running under MPI, several post-processing methods are restricted to rank 0
 |:------:|:-------------:|:---:|-------|
 | `'nautilus'` | `ncores` / `pool` | automatic | Recommended for MPI runs |
 | `'dynesty'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient |
-| `'pocomc'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient |
+| `'pocomc'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient; also supports `vectorize=True` (incompatible with pool/MPI) |
 | `'numpyro'` | `ncores` (chains) | not supported | `ncores` sets number of chains |
 | `'optimizer'` | not supported | not supported | Single-process only |

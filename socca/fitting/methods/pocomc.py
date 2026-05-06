@@ -83,6 +83,11 @@ def run_pocomc(
         - save_every : int, save state every N iterations
             (default: 10)
         - seed : int, random seed (default: 0)
+        - vectorize : bool, if True evaluate the likelihood on the
+            full batch of active particles at once using JAX vmap,
+            rather than calling it once per particle. Incompatible
+            with pool/ncores and MPI (raises ValueError if combined).
+            (default: False)
 
     Attributes Set
     --------------
