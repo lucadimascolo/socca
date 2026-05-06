@@ -723,13 +723,8 @@ class NormalRI:
                 )
         elif isinstance(self.select, str):
             try:
-                self.kwargs[self.select] = float(self.kwargs[self.select])
-            except ValueError:
-                pass
-
-            if isinstance(self.kwargs[self.select], (float, int)):
-                sigma = self.kwargs[self.select]
-            else:
+                sigma = float(self.kwargs[self.select])
+            except (TypeError, ValueError):
                 raise ValueError(
                     f"Invalid type for noise parameter {self.select} [{self.kwargs[self.select]}]. "
                     "Must be a float or int."
