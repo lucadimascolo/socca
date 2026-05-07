@@ -476,8 +476,6 @@ Model parameters
 radial.xc         [deg] : None       | Right ascension of centroid
 radial.yc         [deg] : None       | Declination of centroid
 radial.theta      [rad] : 0.0000E+00 | Position angle (east from north)
-radial.e             [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
-radial.cbox          [] : 0.0000E+00 | Projected boxiness
 radial.re         [deg] : None       | Effective radius
 radial.Ie       [image] : None       | Surface brightness at re
 radial.ns            [] : 5.0000E-01 | Sersic index
