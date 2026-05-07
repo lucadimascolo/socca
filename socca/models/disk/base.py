@@ -94,6 +94,8 @@ class Disk(Component):
         """
         super().__init__(**kwargs)
 
+        _radial_exclude = ["e", "cbox"]
+
         self.radial = radial
         self.vertical = vertical
 
@@ -144,6 +146,7 @@ class Disk(Component):
             {
                 f"radial.{key}": self.radial.units[key]
                 for key in self.radial.units.keys()
+                if key not in _radial_exclude
             }
         )
         self.units.update(
@@ -157,6 +160,7 @@ class Disk(Component):
             {
                 f"radial.{key}": self.radial.description[key]
                 for key in self.radial.description.keys()
+                if key not in _radial_exclude
             }
         )
         self.description.update(
@@ -594,8 +598,7 @@ class Disk(Component):
         >>> vertical = ExponentialHeight(zs=0.002, inc=0.5)
         >>> disk = Disk(radial=radial, vertical=vertical)
         >>> disk.parlist()
-        ['radial.xc', 'radial.yc', 'radial.theta', 'radial.e', 'radial.cbox',
-         'radial.rs', 'radial.Is', 'vertical.losdepth', 'vertical.losbins',
-         'vertical.inc', 'vertical.zs']
+        ['radial.xc', 'radial.yc', 'radial.theta', 'radial.rs', 'radial.Is',
+        'vertical.losdepth', 'vertical.losbins', 'vertical.inc', 'vertical.zs']
         """
         return list(self.units.keys())
