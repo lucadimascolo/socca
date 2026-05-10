@@ -179,6 +179,13 @@ class Plotter:
         - Uses weighted samples if available from nested sampling
         - Supports truths parameter via kwargs to show true parameter values
         """
+        if not hasattr(self.fit, "samples"):
+            raise AttributeError(
+                "No posterior samples available. Corner plots require a "
+                "sampling method (e.g. 'nautilus', 'dynesty'). The "
+                f"'{self.fit.method}' method does not produce samples."
+            )
+
         component = self.fit.mod._comp_filter(component)
         component = [f"comp_{ci:02d}" for ci in component]
 
