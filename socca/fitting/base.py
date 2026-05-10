@@ -331,6 +331,10 @@ class fitter:
                 "resume": resume,
                 "getzprior": getzprior,
             }
+
+            if self.method == "optimizer":
+                local_vars.update({"pinits": kwargs.pop("pinits", "median")})
+
             sampler_params = list(
                 inspect.signature(
                     sampler_methods[self.method]
@@ -339,7 +343,7 @@ class fitter:
             sampler_kwargs = {
                 key: local_vars[key]
                 for key in sampler_params
-                if key != "kwargs"
+                if key != "kwargs" and key in local_vars
             }
             sampler_methods[self.method](**sampler_kwargs, **kwargs)
         else:
@@ -808,21 +812,27 @@ class fitter:
             max_len = max(len(p[1]) for p in params)
 
             for pi, param in params:
-                samp = self.samples[:, pi]
+                if self.method == "optimizer":
+                    opt_val = np.array(self._prior_transform(self.results.x))[
+                        pi
+                    ]
+                    print(f"{param:<{max_len}} : {opt_val:11.4E}")
+                else:
+                    samp = self.samples[:, pi]
 
-                p16, p50, p84 = np.quantile(
-                    samp,
-                    q=[0.16, 0.50, 0.84],
-                    method="inverted_cdf",
-                    weights=self.weights,
-                )
+                    p16, p50, p84 = np.quantile(
+                        samp,
+                        q=[0.16, 0.50, 0.84],
+                        method="inverted_cdf",
+                        weights=self.weights,
+                    )
 
-                upper = p84 - p50
-                lower = p50 - p16
+                    upper = p84 - p50
+                    lower = p50 - p16
 
-                print(
-                    f"{param:<{max_len}} : {p50:11.4E} [+{upper:10.4E}/-{lower:10.4E}]"
-                )
+                    print(
+                        f"{param:<{max_len}} : {p50:11.4E} [+{upper:10.4E}/-{lower:10.4E}]"
+                    )
 
 
 #   Load results
