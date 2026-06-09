@@ -372,6 +372,13 @@ class Image:
 
         self.wcs = WCS(self.hdu.header)
 
+        ctypes = [str(self.hdu.header.get(f"CTYPE{i}", "")) for i in [1, 2]]
+        if self.wcs.has_distortion or any("TPV" in c for c in ctypes):
+            raise NotImplementedError(
+                "Non-linear WCS distortions (SIP, TPV) are not supported. "
+                "The pixel↔world transform uses the linear CD/PC matrix only."
+            )
+
         if (
             self.hdu.header["CRPIX1"]
             != 1.00 + 0.50 * self.hdu.header["NAXIS1"]
