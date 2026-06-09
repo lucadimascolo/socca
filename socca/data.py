@@ -83,34 +83,21 @@ class WCSgrid:
     def __init__(self, hdu, subgrid=1):
         multis = (subgrid * subgrid, *hdu.data.shape)
         multix, multiy = np.zeros(multis), np.zeros(multis)
-
-        header = hdu.header.copy()
-
-        cdelt1 = np.abs(header["CDELT1"])
-        cdelt2 = np.abs(header["CDELT2"])
-
-        header["CRVAL1"] = header["CRVAL1"] - (
-            0.50 - 0.50 / float(subgrid)
-        ) * np.abs(header["CDELT1"])
+        wcs_obj = WCS(hdu.header).celestial
         for isp in range(subgrid):
-            header["CRVAL2"] = (
-                header["CRVAL2"] - (0.50 - 0.50 / float(subgrid)) * cdelt2
-            )
             for jsp in range(subgrid):
+                dx_sub = isp / subgrid - (subgrid - 1) / (2 * subgrid)
+                dy_sub = jsp / subgrid - (subgrid - 1) / (2 * subgrid)
                 multix[isp * subgrid + jsp], multiy[isp * subgrid + jsp] = (
-                    self.getmesh(header=header)
+                    self.getmesh(
+                        header=hdu.header, wcs=wcs_obj, dx=dx_sub, dy=dy_sub
+                    )
                 )
-                header["CRVAL2"] = header["CRVAL2"] + cdelt2 / float(subgrid)
-            header["CRVAL1"] = header["CRVAL1"] + cdelt1 / float(subgrid)
-            header["CRVAL2"] = (
-                header["CRVAL2"] - (0.5 + 0.5 / float(subgrid)) * cdelt2
-            )
-
         self.x = jp.array(multix)
         self.y = jp.array(multiy)
 
     @staticmethod
-    def getmesh(hdu=None, wcs=None, header=None):
+    def getmesh(hdu=None, wcs=None, header=None, dx=0.0, dy=0.0):
         """
         Generate mesh coordinate arrays in world coordinate system.
 
@@ -127,6 +114,10 @@ class WCSgrid:
             header or HDU.
         header : fits.Header, optional
             FITS header containing WCS keywords.
+        dx : float, optional
+            Sub-pixel offset in the x (column) direction, in pixels. Default 0.
+        dy : float, optional
+            Sub-pixel offset in the y (row) direction, in pixels. Default 0.
 
         Returns
         -------
@@ -155,21 +146,15 @@ class WCSgrid:
         wcs = wcs.celestial
 
         gridmx, gridmy = np.meshgrid(
-            np.arange(headerWCS["NAXIS1"]), np.arange(headerWCS["NAXIS2"])
+            np.arange(headerWCS["NAXIS1"]) + dx,
+            np.arange(headerWCS["NAXIS2"]) + dy,
         )
         gridwx, gridwy = wcs.all_pix2world(gridmx, gridmy, 0)
 
-        if np.abs(gridwx.max() - gridwx.min() - 3.6e2) < np.abs(
-            2.00 * headerWCS["CDELT1"]
-        ):
-            gridix = np.where(
-                gridwx
-                > headerWCS["CRVAL1"]
-                + headerWCS["CDELT1"]
-                * (headerWCS["NAXIS1"] - headerWCS["CRPIX1"] + 1)
-                + 3.6e2
-            )
-            gridwx[gridix] = gridwx[gridix] - 3.6e2
+        s = np.sort(gridwx.ravel())
+        diffs = np.diff(s)
+        if diffs.max() > 180:
+            gridwx[gridwx > s[diffs.argmax()]] -= 360
 
         return gridwx, gridwy
 
@@ -214,6 +199,10 @@ class FFTspec:
                 f"NAXIS{idx}",
             ]
         }
+
+        self.cd_inv = jp.array(
+            np.linalg.inv(WCS(hdu.header).celestial.pixel_scale_matrix)
+        )
 
         self.padded_shape = pad_size(self.image_shape)
 
@@ -262,15 +251,17 @@ class FFTspec:
         jax.numpy.ndarray
             Complex array representing the Fourier shift for the point source.
         """
-        dy = yc - self.header["CRVAL2"]
-        dx = (xc - self.header["CRVAL1"]) * jp.cos(
-            jp.deg2rad(self.header["CRVAL2"])
+        dw = jp.array(
+            [
+                (xc - self.header["CRVAL1"])
+                * jp.cos(jp.deg2rad(self.header["CRVAL2"])),
+                yc - self.header["CRVAL2"],
+            ]
         )
-
-        dx = dx / self.header["CDELT1"]
-        dy = dy / self.header["CDELT2"]
-
-        return jp.exp(-2.00j * jp.pi * (self.freq[0] * dx + self.freq[1] * dy))
+        dp = self.cd_inv @ dw
+        return jp.exp(
+            -2.00j * jp.pi * (self.freq[0] * dp[0] + self.freq[1] * dp[1])
+        )
 
     def fft(self, data):
         """Compute FFT of the input data with zero-padding."""
