@@ -636,19 +636,16 @@ class Model:
 
             if self.type[nc] == "Point":
                 if doresp:
-                    xpts = (kwarg["xc"] - img.hdu.header["CRVAL1"]) / jp.abs(
-                        img.hdu.header["CDELT1"]
+                    dw = jp.array(
+                        [
+                            (kwarg["xc"] - img.hdu.header["CRVAL1"])
+                            * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"])),
+                            kwarg["yc"] - img.hdu.header["CRVAL2"],
+                        ]
                     )
-                    ypts = (kwarg["yc"] - img.hdu.header["CRVAL2"]) / jp.abs(
-                        img.hdu.header["CDELT2"]
-                    )
-
-                    xpts = (
-                        img.hdu.header["CRPIX1"]
-                        - 1
-                        + xpts * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"]))
-                    )
-                    ypts = img.hdu.header["CRPIX2"] - 1 + ypts
+                    dp = img.fft.cd_inv @ dw
+                    xpts = img.hdu.header["CRPIX1"] - 1 + dp[0]
+                    ypts = img.hdu.header["CRPIX2"] - 1 + dp[1]
                     mone *= jax.scipy.ndimage.map_coordinates(
                         img.response,
                         [jp.array([ypts]), jp.array([xpts])],
