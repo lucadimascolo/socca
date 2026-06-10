@@ -1,11 +1,13 @@
 """Base component class for model profiles."""
 
 import types
+import warnings
 
 import numpy as np
 import numpyro.distributions
 
 from . import config
+from socca.units import _NON_CONVERTIBLE, conversion_factor as _cfactor
 
 
 class Component:
@@ -58,6 +60,7 @@ class Component:
         self.positive = kwargs.get("positive", config.Component.positive)
         self.hyper = []
         self.units = {}
+        self._input_units = {}
         self.description = {}
         self._initialized = False
 
@@ -188,6 +191,61 @@ class Component:
         """
         return list(self.units.keys())
 
+    def set_units(self, **kwargs):
+        """Declare the input units for one or more parameters.
+
+        This tells the model that your parameter values (or prior bounds) are
+        expressed in the given units.  The model will transparently convert them
+        to its internal units before evaluation.
+
+        Parameters
+        ----------
+        **kwargs : str
+            Keyword arguments mapping parameter names to unit strings
+            (any string recognised by :mod:`astropy.units`).
+
+        Warns
+        -----
+        UserWarning
+            For surface brightness parameters (internal unit ``"image"``) or
+            dimensionless parameters (internal unit ``""``): the declared unit
+            will be ignored and conversion skipped.
+
+        Raises
+        ------
+        ValueError
+            If a parameter name is unknown, the unit string is not parseable
+            by astropy, or the declared unit cannot be converted to the
+            internal unit.
+
+        Examples
+        --------
+        >>> comp = Gaussian(xc=priors.uniform(100, 200), rs=priors.uniform(1, 10))
+        >>> comp.set_units(xc="arcsec", rs="arcmin")
+        """
+        for name, unit_str in kwargs.items():
+            if name not in self.units:
+                raise ValueError(
+                    f"Unknown parameter '{name}' on {self.__class__.__name__}."
+                )
+            native = self.units[name]
+            if native in _NON_CONVERTIBLE:
+                kind = (
+                    "surface brightness"
+                    if native == "image"
+                    else "dimensionless"
+                )
+                warnings.warn(
+                    f"Parameter '{name}' is {kind} (internal unit: "
+                    f"'{native}'). Unit '{unit_str}' will be neglected.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                continue
+
+            _cfactor(unit_str, native)
+            self._input_units[name] = unit_str
+
     def addparameter(self, name, value=None, units="", description=""):
         """
         Add a new parameter to the component with metadata.
@@ -256,5 +314,6 @@ class Component:
         delattr(self, name)
         self._initialized = True
         self.units.pop(name, None)
+        self._input_units.pop(name, None)
         self.description.pop(name, None)
         self.hyper = [h for h in self.hyper if h != name]

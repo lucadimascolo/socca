@@ -9,6 +9,8 @@ import numpy as np
 
 import numpyro.distributions
 
+from socca.units import conversion_factor as _cfactor
+
 from . import config
 from .base import Component
 from .misc import Point, Background
@@ -215,6 +217,7 @@ class Model:
         self.tied = []
         self.type = []
         self.units = {}
+        self.conversions = {}
 
         if prof is not None:
             self.addcomponent(prof, positive)
@@ -300,7 +303,12 @@ class Model:
             else:
                 self.tied.append(False)
 
-            self.units.update({f"comp_{self.ncomp:02d}_{p}": prof.units[p]})
+            key = f"comp_{self.ncomp:02d}_{p}"
+            native_unit = prof.units[p]
+            input_unit = prof._input_units.get(p, native_unit)
+            if input_unit != native_unit:
+                self.conversions[key] = _cfactor(input_unit, native_unit)
+            self.units[key] = input_unit
 
         self.components.append(prof)
         self.ncomp += 1
@@ -609,6 +617,10 @@ class Model:
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 pars[key], pp = pp[0], pp[1:]
+
+        for key, factor in self.conversions.items():
+            if key in pars:
+                pars[key] = pars[key] * factor
 
         for ki, key in enumerate(self.params):
             if self.tied[ki]:
