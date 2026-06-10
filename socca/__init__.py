@@ -19,6 +19,13 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("socca")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 from . import data
 from . import priors
 from . import noise
