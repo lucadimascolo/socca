@@ -23,7 +23,8 @@ from . import data
 from . import priors
 from . import noise
 from . import models
+from . import units
 
 from .fitting import fitter, load
 
-__all__ = ["data", "priors", "noise", "models", "fitter", "load"]
+__all__ = ["data", "priors", "noise", "models", "units", "fitter", "load"]
