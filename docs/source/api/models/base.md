@@ -2,7 +2,7 @@
 
 ```{eval-rst}
 .. automodule:: socca.models
-   :members:
+   :members: Model, Component, zoo
    :undoc-members:
    :show-inheritance:
 ```
