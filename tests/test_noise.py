@@ -339,6 +339,16 @@ class TestNormalRI:
         sigma = n.getsigma()
         assert sigma == pytest.approx(0.5)
 
+    def test_getsigma_invalid_type_raises_error(self):
+        """Test getsigma raises ValueError for non-scalar sigma."""
+        n = noise.NormalRI(sigma=np.ones((8, 8)))
+        n.data = jp.array(np.random.rand(8, 8))
+        n.mask = jp.array(np.ones((8, 8), dtype=int))
+        with pytest.raises(
+            ValueError, match="Invalid type for noise parameter"
+        ):
+            n.getsigma()
+
     def test_getsigma_mad_estimation(self, capsys):
         """Test getsigma with MAD estimation (default)."""
         np.random.seed(42)

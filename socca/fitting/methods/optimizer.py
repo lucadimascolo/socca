@@ -81,6 +81,10 @@ def run_optimizer(self, pinits, **kwargs):
                 "Optimizer does not support multiprocessing (yet).\n "
             )
 
+    debug_nans = kwargs.pop("debug_nans", False)
+    if debug_nans:
+        jax.config.update("jax_debug_nans", True)
+
     opt_kwargs = {}
     for key in inspect.signature(scipy.optimize.minimize).parameters.keys():
         if key not in ["fun", "x0", "jac", "bounds", "method"]:
@@ -92,9 +96,15 @@ def run_optimizer(self, pinits, **kwargs):
 
     def _opt_func(pp):
         pars = _opt_prior(pp)
-        return -self._log_likelihood(pars)
+        ll = self._log_likelihood(pars)
+        return jp.where(jp.isfinite(ll), -ll, jp.finfo(pp.dtype).max / 2)
 
-    opt_func_jac = jax.jit(jax.value_and_grad(_opt_func))
+    _opt_func_jac = jax.jit(jax.value_and_grad(_opt_func))
+
+    def opt_func_jac(pp):
+        val, grad = _opt_func_jac(pp)
+        grad = jp.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)
+        return val, grad
 
     if isinstance(pinits, (list, tuple, np.ndarray, jp.ndarray)):
         pinits = jp.asarray(pinits)
@@ -112,7 +122,8 @@ def run_optimizer(self, pinits, **kwargs):
                 "or provide an array-like object of initial values."
             )
 
-    bounds = [(0.00, 1.00) for _ in self.mod.paridx]
+    eps = 1e-6
+    bounds = [(eps, 1.00 - eps) for _ in self.mod.paridx]
 
     self.results = scipy.optimize.minimize(
         fun=opt_func_jac,

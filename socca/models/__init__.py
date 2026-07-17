@@ -10,6 +10,8 @@ import numpy as np
 import numpyro.distributions
 
 from ..priors import BoundTo
+from socca.units import conversion_factor as _cfactor
+
 from . import config
 from .base import Component
 from .misc import Point, Background
@@ -223,6 +225,7 @@ class Model:
         self.tied = []
         self.type = []
         self.units = {}
+        self.conversions = {}
 
         if prof is not None:
             self.addcomponent(prof, positive)
@@ -308,7 +311,12 @@ class Model:
             else:
                 self.tied.append(False)
 
-            self.units.update({f"comp_{self.ncomp:02d}_{p}": prof.units[p]})
+            key = f"comp_{self.ncomp:02d}_{p}"
+            native_unit = prof.units[p]
+            input_unit = prof._input_units.get(p, native_unit)
+            if input_unit != native_unit:
+                self.conversions[key] = _cfactor(input_unit, native_unit)
+            self.units[key] = input_unit
 
         self.components.append(prof)
         self.ncomp += 1
@@ -621,6 +629,10 @@ class Model:
             ):
                 pars[key], pp = pp[0], pp[1:]
 
+        for key, factor in self.conversions.items():
+            if key in pars:
+                pars[key] = pars[key] * factor
+
         for ki, key in enumerate(self.params):
             if self.tied[ki]:
                 if isinstance(self.priors[key], BoundTo):
@@ -650,19 +662,16 @@ class Model:
 
             if self.type[nc] == "Point":
                 if doresp:
-                    xpts = (kwarg["xc"] - img.hdu.header["CRVAL1"]) / jp.abs(
-                        img.hdu.header["CDELT1"]
+                    dw = jp.array(
+                        [
+                            (kwarg["xc"] - img.hdu.header["CRVAL1"])
+                            * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"])),
+                            kwarg["yc"] - img.hdu.header["CRVAL2"],
+                        ]
                     )
-                    ypts = (kwarg["yc"] - img.hdu.header["CRVAL2"]) / jp.abs(
-                        img.hdu.header["CDELT2"]
-                    )
-
-                    xpts = (
-                        img.hdu.header["CRPIX1"]
-                        - 1
-                        + xpts * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"]))
-                    )
-                    ypts = img.hdu.header["CRPIX2"] - 1 + ypts
+                    dp = img.fft.cd_inv @ dw
+                    xpts = img.hdu.header["CRPIX1"] - 1 + dp[0]
+                    ypts = img.hdu.header["CRPIX2"] - 1 + dp[1]
                     mone *= jax.scipy.ndimage.map_coordinates(
                         img.response,
                         [jp.array([ypts]), jp.array([xpts])],

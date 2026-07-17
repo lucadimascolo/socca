@@ -117,10 +117,16 @@ beta     [] : 5.5000E-01 | Slope parameter
 The `gNFW` class implements the generalized Navarro-Frenk-White (gNFW) profile ([Nagai et al. 2007](https://ui.adsabs.harvard.edu/abs/2007ApJ...668....1N/abstract), [Mroczkowski et al. 2009](https://ui.adsabs.harvard.edu/abs/2009ApJ...694.1034M/abstract)) commonly used to describe the pressure profile of the intracluster medium in galaxy clusters. The projected two-dimensional profile is obtained by integrating the three-dimensional gNFW profile along the line of sight. In **``socca``**, this is implemented as follows:
 
 $$
-I(r) = I_c \times 2\int_{r/r_c}^{+\infty} x^{-\gamma}(1+x^{\alpha})^{\frac{\gamma - \beta}{\alpha}} \tfrac{x}{\sqrt{x^2 - x_r^2}} \mathrm{d}x,
-$$  
+I(r) = I_c \,\frac{\xi(r)}{\xi(0)},
+$$
 
-where $x$ is a dimensionless radius in units of the core radius $r_c$. The parameters $\alpha$, $\beta$, and $\gamma$ control the intermediate, outer, and inner slopes of the profile, respectively. The normalization $I_c$ has units of surface brightness in units of the input data per unit length.
+where $\xi(r)$ is the Abel projection of the three-dimensional gNFW density profile along the line of sight,
+
+$$
+\xi(r) = \int_{r/r_c}^{+\infty} x^{-\gamma}\!\left(1+x^{\alpha}\right)^{\frac{\gamma - \beta}{\alpha}} \frac{x}{\sqrt{x^2 - (r/r_c)^2}} \,\mathrm{d}x,
+$$
+
+and $x = r/r_c$ is a dimensionless integration variable. The parameters $\alpha$, $\beta$, and $\gamma$ control the intermediate, outer, and inner slopes of the profile, respectively. The normalization is chosen such that $I(0) = I_c$, i.e. $I_c$ is the central surface brightness in units of the input data.
 
 The integral is computed numerically using Gauss-Kronrod adaptive quadrature, as implemented in [`quadax`](https://github.com/f0uriest/quadax). To improve computational efficiency, the profile is evaluated over a logarithmically spaced grid of dimensionless radii and then interpolated onto the two-dimensional coordinate grid on the fly during model evaluation. 
 
@@ -476,8 +482,6 @@ Model parameters
 radial.xc         [deg] : None       | Right ascension of centroid
 radial.yc         [deg] : None       | Declination of centroid
 radial.theta      [rad] : 0.0000E+00 | Position angle (east from north)
-radial.e             [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
-radial.cbox          [] : 0.0000E+00 | Projected boxiness
 radial.re         [deg] : None       | Effective radius
 radial.Ie       [image] : None       | Surface brightness at re
 radial.ns            [] : 5.0000E-01 | Sersic index

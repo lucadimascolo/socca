@@ -20,10 +20,10 @@ class TestUniform:
         with pytest.raises(ValueError, match="lower limit must be smaller"):
             priors.uniform(low=1.0, high=0.0)
 
-    def test_equal_bounds_creates_distribution(self):
-        """Test that low == high creates a degenerate distribution."""
-        dist = priors.uniform(low=0.5, high=0.5)
-        assert dist is not None
+    def test_equal_bounds_raises_error(self):
+        """Test that low == high raises ValueError."""
+        with pytest.raises(ValueError, match="lower limit must be smaller"):
+            priors.uniform(low=0.5, high=0.5)
 
     def test_icdf_at_boundaries(self):
         """Test inverse CDF at 0 and 1 returns bounds."""
@@ -65,6 +65,11 @@ class TestLoguniform:
         """Test that low >= high raises ValueError."""
         with pytest.raises(ValueError, match="lower limit must be smaller"):
             priors.loguniform(low=10.0, high=1.0)
+
+    def test_equal_bounds_raises_error(self):
+        """Test that low == high raises ValueError."""
+        with pytest.raises(ValueError, match="lower limit must be smaller"):
+            priors.loguniform(low=1.0, high=1.0)
 
     def test_icdf_at_boundaries(self):
         """Test inverse CDF at 0 and 1 returns bounds."""

@@ -19,11 +19,19 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("socca")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 from . import data
 from . import priors
 from . import noise
 from . import models
+from . import units
 
 from .fitting import fitter, load
 
-__all__ = ["data", "priors", "noise", "models", "fitter", "load"]
+__all__ = ["data", "priors", "noise", "models", "units", "fitter", "load"]
