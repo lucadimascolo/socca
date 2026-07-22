@@ -80,16 +80,17 @@ After the sampling is completed, the key results are stored in the following att
 The `fit.sampler` attribute provides direct access to the underlying sampler object (e.g., `nautilus.Sampler`, `dynesty.NestedSampler`, `pocomc.Sampler`, or `emcee.EnsembleSampler`), which can be useful for accessing additional diagnostics or methods specific to each sampling library. For `emcee`, additional attributes include `fit.tau` (integrated autocorrelation time per parameter) and `fit.tau_history` (convergence history).
 ```
 
-### Maximum a posteriori estimation
+### Point-estimate optimization
 
-For fast point estimates, it is also possible to run a maximum a posteriori (MAP) optimization using the `'optimizer'` method, that uses the L-BFGS-B algorithm from `scipy.optimize.minimize`:
+For fast point estimates, the `'optimizer'` method runs L-BFGS-B optimization via `scipy.optimize.minimize`. By default it finds the **maximum likelihood estimate (MLE)**; setting `target='map'` adds the log-prior to the objective and finds the **maximum a posteriori (MAP)** estimate instead:
 
 ```python
->>> fit.run(method='optimizer')
+>>> fit.run(method='optimizer')                   # MLE (default)
+>>> fit.run(method='optimizer', target='map')     # MAP
 ```
 
 ```{important}
-The optimization is designed to include the effect of priors on the posterior distribution. To do so, as in nested sampling, parameters are drawn from the unit hypercube and then projected onto the prior space using the inverse cumulative distribution function of the respective prior. The resulting parameters are then used to compute the prior-conditioned log-likelihood to be maximized.
+In both cases, optimization is performed in the unit hypercube: parameters are sampled from $[0,1]$ and projected onto the prior space via the inverse CDF of each prior. This bounds the search to the prior support and speeds up convergence even for MLE. When `target='map'`, the log-prior is additionally included in the objective, so the result is the mode of the full posterior rather than of the likelihood alone.
 ```
 
 The key argument for this method is `pinits`, which controls the starting point of the optimization:
