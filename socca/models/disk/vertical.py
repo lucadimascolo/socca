@@ -63,14 +63,16 @@ class Height(Component):
 
         self.losdepth = kwargs.get("losdepth", config.Height.losdepth)
         self.losbins = kwargs.get("losbins", config.Height.losbins)
-        self.units = dict(losdepth="deg", losbins="", inc="rad")
+        self.units.update(dict(losdepth="deg", losbins="", inc="rad"))
 
         self.hyper = ["losdepth", "losbins"]
 
-        self.description = dict(
-            losdepth="Half line-of-sigt extent for integration",
-            losbins="Number of points for line-of-sight integration",
-            inc="Inclination angle (0=face-on)",
+        self.description.update(
+            dict(
+                losdepth="Half line-of-sigt extent for integration",
+                losbins="Number of points for line-of-sight integration",
+                inc="Inclination angle (0=face-on)",
+            )
         )
 
     @abstractmethod

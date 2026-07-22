@@ -82,7 +82,7 @@ class Background(Component):
         self.a3xyy = kwargs.get("a3xyy", config.Background.a3xyy)
         self.a3yyy = kwargs.get("a3yyy", config.Background.a3yyy)
 
-        self.units = dict(rs="deg")
+        self.units.update(dict(rs="deg"))
         self.units.update(
             {
                 key: ""
