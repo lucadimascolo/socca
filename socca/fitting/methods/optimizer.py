@@ -1,4 +1,4 @@
-"""L-BFGS-B maximum likelihood and MAP optimization backend."""
+"""L-BFGS-B MLE and MAP optimization backend."""
 
 import scipy.optimize
 
@@ -32,11 +32,14 @@ def run_optimizer(self, pinits, **kwargs):
             unit hypercube)
         - "random" : start from random values in unit hypercube
     **kwargs : dict
-        Additional keyword arguments passed to scipy.optimize.minimize.
-        Common options include:
+        Additional keyword arguments. Optimizer-specific options:
 
+        - target : str, ``'mle'`` (default) or ``'map'``. Whether to
+            maximize the likelihood alone (MLE) or the full posterior
+            log-likelihood + log-prior (MAP).
         - tol : float, tolerance for termination
-        - options : dict, solver-specific options
+        - options : dict, solver-specific options passed to
+            scipy.optimize.minimize
 
     Attributes Set
     --------------
@@ -85,6 +88,10 @@ def run_optimizer(self, pinits, **kwargs):
     if debug_nans:
         jax.config.update("jax_debug_nans", True)
 
+    target = kwargs.pop("target", "mle")
+    if target not in ("mle", "map"):
+        raise ValueError("target must be 'mle' or 'map'.")
+
     opt_kwargs = {}
     for key in inspect.signature(scipy.optimize.minimize).parameters.keys():
         if key not in ["fun", "x0", "jac", "bounds", "method"]:
@@ -97,7 +104,11 @@ def run_optimizer(self, pinits, **kwargs):
     def _opt_func(pp):
         pars = _opt_prior(pp)
         ll = self._log_likelihood(pars)
-        return jp.where(jp.isfinite(ll), -ll, jp.finfo(pp.dtype).max / 2)
+        lp = self._log_prior(pars) if target == "map" else 0.0
+        logobj = ll + lp
+        return jp.where(
+            jp.isfinite(logobj), -logobj, jp.finfo(pp.dtype).max / 2
+        )
 
     _opt_func_jac = jax.jit(jax.value_and_grad(_opt_func))
 
@@ -133,3 +144,4 @@ def run_optimizer(self, pinits, **kwargs):
         method="L-BFGS-B",
         **opt_kwargs,
     )
+    self.results.parameters = np.array(self._prior_transform(self.results.x))
