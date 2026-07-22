@@ -436,6 +436,11 @@ class Image:
                 combine=kwargs["addmask"].get("combine", True),
             )
 
+        if noise is None:
+            self.noise = noisepdf.Normal()
+        else:
+            self.noise = noise
+
         self.psf = None
         if "addpsf" in kwargs:
             self.addpsf(
@@ -443,11 +448,6 @@ class Image:
                 normalize=kwargs["addpsf"].get("normalize", True),
                 idx=kwargs["addpsf"].get("idx", 0),
             )
-
-        if noise is None:
-            self.noise = noisepdf.Normal()
-        else:
-            self.noise = noise
 
     def _init_noise(self):
         """Initialise the noise model and populate the pixel mask.
