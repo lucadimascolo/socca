@@ -587,8 +587,7 @@ class fitter:
             )
 
         if self.method == "optimizer":
-            p = self._prior_transform(self.results.x)
-            mraw, msmo, mbkg, _ = gm(p)
+            mraw, msmo, mbkg, _ = gm(self.results.parameters)
             msmo = msmo - mbkg
         else:
             if usebest:
@@ -813,10 +812,9 @@ class fitter:
 
             for pi, param in params:
                 if self.method == "optimizer":
-                    opt_val = np.array(self._prior_transform(self.results.x))[
-                        pi
-                    ]
-                    print(f"{param:<{max_len}} : {opt_val:11.4E}")
+                    print(
+                        f"{param:<{max_len}} : {self.results.parameters[pi]:11.4E}"
+                    )
                 else:
                     samp = self.samples[:, pi]
 
