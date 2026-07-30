@@ -404,7 +404,9 @@ class Image:
                 self.hdu.header["CD1_2"], self.hdu.header["CD2_2"]
             )
 
-        self.data = jp.array(self.hdu.data)
+        self.data = jp.array(
+            self.hdu.data.astype(self.hdu.data.dtype.newbyteorder("="))
+        )
         self.grid = WCSgrid(self.hdu, subgrid=self.subgrid)
         self.fft = FFTspec(self.hdu)
 
@@ -415,7 +417,7 @@ class Image:
             self.exposure = _img_loader(exposure, kwargs.get("exp_idx", 0))
             self.exposure = _reduce_axes(self.exposure)
             self.exposure.data[np.isnan(self.exposure.data)] = 0.00
-            self.exposure = jp.array(self.exposure.data.copy())
+            self.exposure = jp.array(np.array(self.exposure.data, dtype=float))
         else:
             self.exposure = jp.ones(self.data.shape, dtype=float)
 
@@ -423,7 +425,7 @@ class Image:
             self.response = _img_loader(response, kwargs.get("resp_idx", 0))
             self.response = _reduce_axes(self.response)
             self.response.data[np.isnan(self.response.data)] = 0.00
-            self.response = jp.array(self.response.data.copy())
+            self.response = jp.array(np.array(self.response.data, dtype=float))
         else:
             self.response = jp.ones(self.data.shape, dtype=float)
 
@@ -508,12 +510,12 @@ class Image:
         cutout_exp = Cutout2D(self.exposure, center, csize, wcs=self.wcs)
         cutout_resp = Cutout2D(self.response, center, csize, wcs=self.wcs)
 
-        self.data = jp.array(cutout_data.data)
-        self.mask = jp.array(cutout_mask.data)
+        self.data = jp.array(np.array(cutout_data.data, dtype=float))
+        self.mask = jp.array(np.array(cutout_mask.data, dtype=float))
         del cutout_mask
-        self.exposure = jp.array(cutout_exp.data)
+        self.exposure = jp.array(np.array(cutout_exp.data, dtype=float))
         del cutout_exp
-        self.response = jp.array(cutout_resp.data)
+        self.response = jp.array(np.array(cutout_resp.data, dtype=float))
         del cutout_resp
 
         if self.psf is not None:
