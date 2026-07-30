@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.0](https://github.com/lucadimascolo/socca/compare/v1.2.0...v1.3.0) (2026-07-30)
+
+
+### Features
+
+* add map/mle support to optimizer ([73db57f](https://github.com/lucadimascolo/socca/commit/73db57f55883435267f2a73625ab9a2a791936e5))
+* add support for custom units ([be57273](https://github.com/lucadimascolo/socca/commit/be57273e40fbba9e7dccad7a8c8a7e598b43d59d))
+
+
+### Bug Fixes
+
+* **ci:** pin matplotlib&lt;3.9 to restore catppuccin compatibility ([482180a](https://github.com/lucadimascolo/socca/commit/482180ac70cd49f3740a584127db62ddd15a2e71))
+* initialize noise before PSF setup ([a5d4ccd](https://github.com/lucadimascolo/socca/commit/a5d4ccda8ec793fb2b9c14e21735f91c7fb0fe22))
+* normalize byte order for JAX array conversion ([e63bb3f](https://github.com/lucadimascolo/socca/commit/e63bb3fcf9c6db0a1912e46c14c173ec3c490e25))
+* preserve inherited metadata dictionaries ([d9cbc45](https://github.com/lucadimascolo/socca/commit/d9cbc45c816226f7a9b66c69701e995dcca43c2c))
+
+
+### Documentation
+
+* add map/mle support ([3c521db](https://github.com/lucadimascolo/socca/commit/3c521dbedf54850789a8e3e970f6881a8ca3b014))
+* fix gnfw equations ([74b6a0c](https://github.com/lucadimascolo/socca/commit/74b6a0c0416a7386151a975aad0c7db7e88907fe))
+
 ## [1.2.0](https://github.com/lucadimascolo/socca/compare/v1.1.0...v1.2.0) (2026-06-10)
 
 
