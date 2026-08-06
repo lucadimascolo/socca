@@ -535,25 +535,27 @@ def boundto(comp, var):
     >>>
     >>> disk = socca.models.Disk(radial=disk_radial, vertical=disk_vertical)
     >>>
-    >>> bar_radial = socca.models.Sersic()
-    >>> bar_radial.theta = socca.priors.boundto(disk, "theta")
-    >>>
-    >>> bar = socca.models.Bar(radial=bar_radial)
-    >>> bar.inc = socca.priors.boundto(disk, "inc")
+    >>> bar = socca.models.Bar(radial=socca.models.Sersic())
+    >>> bar.theta = socca.priors.boundto(disk, "theta")
+    >>> bar.inc   = socca.priors.boundto(disk, "inc")
 
     Notes
     -----
     Always pass the top-level component, not its sub-components. For components
     with namespaced sub-components (Disk, Bar), the correct sub-component is
-    found automatically by searching their namespaces.
+    found automatically by searching the component's own exposed parameter
+    names (its units dict) -- not the sub-component's, since a sub-component
+    may have attributes the parent doesn't actually expose as a parameter
+    (e.g. Bar.radial is a full Sersic profile, but Bar keeps xc/yc/theta/e
+    on itself rather than delegating to radial).
     """
     if isinstance(comp, str):
         comp = eval(comp)
 
     namespaces = getattr(comp, "_namespaces", None)
     if namespaces:
-        for namespace, subcomp in namespaces.items():
-            if var in subcomp.units:
+        for namespace in namespaces:
+            if f"{namespace}.{var}" in comp.units:
                 return _BoundTo(f"{comp.id}_{namespace}.{var}")
 
     return _BoundTo(f"{comp.id}_{var}")
