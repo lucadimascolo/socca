@@ -1,6 +1,7 @@
 from functools import partial
 import inspect
 import types
+from dataclasses import dataclass
 
 import warnings
 
@@ -14,30 +15,41 @@ from .. import config
 from ..base import Component
 from ..radial import Sersic
 
+@dataclass(frozen=True)
+class BarGeometry:  # I have placed a copy of this into ..config.py
+    xc: float = None
+    yc: float = None
+    inc: float = 0.00
+    theta: float = 0.00
+    rot: float = 0.00
+    e: float = 0.00
+    losdepth: float = 10.00 / 60.00 / 60.00
+    losbins: int = 200
 
-class BarGeometry():
-    def __init__(self, rot=0, rs=0.005, **kwargs):
+class BarGeometry(Component):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.xc       = kwargs.get("xc", config.Profile.xc)
-        self.yc       = kwargs.get("yc", config.Profile.xc)
-        self.theta    = kwargs.get("theta", config.Profile.theta)
-        self.inc      = kwargs.get("inc", config.Height.inc)
-        self.rot      = rot
-        self.rs       = rs
-        self.losdepth = kwargs.get("losdepth", config.Height.losdepth)
-        self.losbins  = kwargs.get("losbins", config.Height.losbins)
+        self.xc       = kwargs.get("xc", config.BarGeometry.xc)
+        self.yc       = kwargs.get("yc", config.BarGeometry.yc)
+        self.theta    = kwargs.get("theta", config.BarGeometry.theta)
+        self.inc      = kwargs.get("inc", config.BarGeometry.inc)
+        self.rot      = kwargs.get("rot", config.BarGeometry.rot)
+        self.e        = kwargs.get("e", config.BarGeometry.e)
+        self.losdepth = kwargs.get("losdepth", config.BarGeometry.losdepth)
+        self.losbins  = kwargs.get("losbins", config.BarGeometry.losbins)
 
-        self.units = {}
-        self.description = {}
-        
+        for param in ["losdepth", "losbins"]:
+            if param not in self.hyper:
+                self.hyper.append(param)
+
         self.units.update(
             dict(
                 xc="deg",
                 yc="deg",
                 inc="rad",
-                rot="rad",
                 theta="rad",
-                rs="deg",
+                rot="rad",
+                e="",
                 losdepth="deg",
                 losbins=""
             )
@@ -45,21 +57,23 @@ class BarGeometry():
 
         self.description.update(
             dict(
-                losdepth="Half line-of-sigt extent for integration",
-                losbins="Number of points for line-of-sight integration",
                 xc="Right ascension of centroid",
                 yc="Declination of centroid",
                 inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
                 theta="Position angle (east from north); Typically inherited from a Disk Object",
                 rot="Intrinsic bar rotation relative to theta (added to position angle theta)",
-                rs="Semiminor axis scale length (x and z directions)"
+                e="Projected ellipticity (1 - axis ratio)",
+                losdepth="Half line-of-sigt extent for integration",
+                losbins="Number of points for line-of-sight integration",
             )
         )
+
+        self._initialized = True
 
 
 class Bar(Component):
     """
-    Explanation TBD.
+    Docsring TBD.
     """
 
     def __init__(self, radial=Sersic(), geometry=BarGeometry(), **kwargs):
@@ -68,9 +82,8 @@ class Bar(Component):
         self.radial = radial
         self.geometry = geometry
 
-        for param in ["losdepth", "losbins"]:
-            if param not in self.hyper:
-                self.hyper.append(param)
+        for param in self.geometry.hyper:
+            self.hyper.append(f"geometry.{param}")
 
         self.profile = jax.jit(Bar._bar_profile)
 
@@ -97,7 +110,7 @@ class Bar(Component):
         )
         self.description.update(
             {
-                f"geometry.{key}": self.geometry.units[key]
+                f"geometry.{key}": self.geometry.description[key]
                 for key in self.geometry.units.keys()
             }
         )
@@ -164,28 +177,24 @@ class Bar(Component):
         """
         Docstring TBD.
         """
-        # profile parameters
+        # radial profile parameters (re, Ie, ns)
         kwarg = {
-            key.replace(f"{comp_prefix}.", ""): pars[key]
+            key.replace(f"{comp_prefix}_radial.", ""): pars[key]
             for key in pars
-            if key.startswith(f"{comp_prefix}.")
+            if key.startswith(f"{comp_prefix}_radial.")
         }
-
-        # geometric parameters
-        kwarg["xc"]       = pars[f"{comp_prefix}.xc"]
-        kwarg["yc"]       = pars[f"{comp_prefix}.yc"]
-        kwarg["theta"]    = pars[f"{comp_prefix}.theta"]
-        kwarg["inc"]      = pars[f"{comp_prefix}.inc"]
-        kwarg["rot"]      = pars[f"{comp_prefix}.rot"]
-        kwarg["rs"]       = pars[f"{comp_prefix}.rs"]
-        kwarg["losdepth"] = pars[f"{comp_prefix}.losdepth"]
-        kwarg["losbins"] = pars[f"{comp_prefix}.losbins"]
-
+        # geometry parameters (xc, yc, theta, inc, rot, e, losdepth, losbins)
+        kwarg.update({
+            key.replace(f"{comp_prefix}_geometry.", ""): pars[key]
+            for key in pars
+            if key.startswith(f"{comp_prefix}_geometry.")
+        })
         return kwarg
 
     @staticmethod
-    def _bar_profile(xt, yt, zt, Ie, re, rs, ns):
-        m = jp.sqrt((xt / rs) ** 2 + (yt / re) ** 2 + (zt / rs) ** 2)
+    def _bar_profile(xt, yt, zt, Ie, re, e, ns):
+        rs = re * (1-e)
+        m = jp.sqrt((xt/rs)**2 + (yt/re)**2 + (zt/rs)**2)
         return Sersic.profile(m, Ie, re, ns)
 
     def _evaluate(self, img, **kwarg):
@@ -197,7 +206,7 @@ class Bar(Component):
         theta = kwarg.pop("theta")
         inc = kwarg.pop("inc")
         rot = kwarg.pop("rot")
-        rs = kwarg.pop("rs")
+        e = kwarg.pop("e")
         losdepth = kwarg.pop("losdepth")
         losbins = kwarg.pop("losbins")
 
