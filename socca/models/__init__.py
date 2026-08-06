@@ -16,7 +16,7 @@ from . import config
 from .base import Component
 from .misc import Point, Background
 from .disk import Disk
-from .bar import Bar, BarGeometry
+from .bar import Bar
 from .bridge import SimpleBridge, MesaBridge
 from .radial import (
     Profile,

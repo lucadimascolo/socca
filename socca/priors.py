@@ -535,9 +535,11 @@ def boundto(comp, var):
     >>>
     >>> disk = socca.models.Disk(radial=disk_radial, vertical=disk_vertical)
     >>>
-    >>> bar_geom = socca.models.BarGeometry()
-    >>> bar_geom.theta = socca.priors.boundto(disk, "theta")
-    >>> bar_geom.inc   = socca.priors.boundto(disk, "inc")
+    >>> bar_radial = socca.models.Sersic()
+    >>> bar_radial.theta = socca.priors.boundto(disk, "theta")
+    >>>
+    >>> bar = socca.models.Bar(radial=bar_radial)
+    >>> bar.inc = socca.priors.boundto(disk, "inc")
 
     Notes
     -----

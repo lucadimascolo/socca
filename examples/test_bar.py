@@ -34,16 +34,15 @@ bar_radial.Ie = 1e+1
 bar_radial.re = 2e-4
 bar_radial.ns = 0.25
 
-bar_geom = socca.models.BarGeometry()
-bar_geom.xc = socca.priors.boundto(disk, "xc")
-bar_geom.yc = socca.priors.boundto(disk, "yc")
-bar_geom.e = 0.7
-bar_geom.inc = socca.priors.boundto(disk, "inc")
-bar_geom.theta = socca.priors.boundto(disk, "theta")
-bar_geom.rot = np.radians(30)  # Additional Position Angle Bar
-# bar_geom.losdepth = disk_vertical.losdepth * 2
+bar_radial.xc = socca.priors.boundto(disk, "xc")
+bar_radial.yc = socca.priors.boundto(disk, "yc")
+bar_radial.e = 0.7
+bar_radial.theta = socca.priors.boundto(disk, "theta")
 
-bar = socca.models.Bar(radial=bar_radial, geometry=bar_geom)
+bar = socca.models.Bar(radial=bar_radial)
+bar.inc = socca.priors.boundto(disk, "inc")
+bar.rot = np.radians(30)  # Additional Position Angle Bar
+# bar.losdepth = disk_vertical.losdepth * 2
 
 print(bar_radial.re)
 print(disk_radial.re)
