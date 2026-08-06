@@ -193,9 +193,10 @@ class Truncation:
 
 @dataclass(frozen=True)
 class Bar:
-    """
-    Default parameters for Bar's position, orientation, inclination,
-    rotation, and line-of-sight integration.
+    """Default parameters for Bar's position and geometry.
+
+    Covers position, orientation, inclination, rotation, and
+    line-of-sight integration.
     """
 
     xc: float = None
