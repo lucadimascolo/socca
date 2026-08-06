@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import socca
 
+import time
 
 import numpy as np
 
@@ -13,35 +14,39 @@ img = socca.data.Image(img=img, noise=noise)
 
 disk_radial = socca.models.Sersic()
 disk_radial.Ie = 1e+1
-disk_radial.re = 1.5e-2
+disk_radial.re = 1e-3
 disk_radial.ns = 1.0
 disk_radial.xc = img.hdu.header['CRVAL1']
 disk_radial.yc = img.hdu.header['CRVAL2']
-disk_radial.theta = np.pi/3  # Position angle Disk
-disk_radial.e = 0.5
+disk_radial.theta = np.radians(60)  # Position angle Disk
 
 disk_vertical = socca.models.disk.vertical.HyperSecantHeight()
-disk_vertical.zs = 3e-4
-disk_vertical.inc = np.pi/2  # Inclination Disk
+disk_vertical.zs = disk_radial.re/10
+disk_vertical.inc = np.radians(60)  # Inclination Disk
+# disk_vertical.losdepth = disk_radial.re * 3
 
 disk = socca.models.Disk(radial=disk_radial, vertical=disk_vertical)
 
 ## Bar component
 
 bar_radial = socca.models.Sersic()
-bar_radial.Ie = 50e+1
-bar_radial.re = 1.5e-2
-bar_radial.ns = 0.5
+bar_radial.Ie = 1e+1
+bar_radial.re = 2e-4
+bar_radial.ns = 0.25
 
 bar_geom = socca.models.BarGeometry()
-bar_geom.xc = img.hdu.header['CRVAL1']
-bar_geom.yc = img.hdu.header['CRVAL2']
-bar_geom.e = 0.8
+bar_geom.xc = socca.priors.boundto(disk, "xc")
+bar_geom.yc = socca.priors.boundto(disk, "yc")
+bar_geom.e = 0.7
 bar_geom.inc = socca.priors.boundto(disk, "inc")
 bar_geom.theta = socca.priors.boundto(disk, "theta")
-bar_geom.rot = np.pi/2  # Additional Position Angle Bar
+bar_geom.rot = np.radians(30)  # Additional Position Angle Bar
+# bar_geom.losdepth = disk_vertical.losdepth * 2
 
 bar = socca.models.Bar(radial=bar_radial, geometry=bar_geom)
+
+print(bar_radial.re)
+print(disk_radial.re)
 
 mod = socca.models.Model()
 mod.addcomponent(disk)
@@ -50,6 +55,6 @@ mod.addcomponent(bar)
 mraw = mod.getmap(img, convolve=False)
 
 plt.figure()
-plt.imshow(mraw, origin='lower', cmap='inferno')
+plt.imshow(mraw, origin='lower', cmap='inferno', vmin=0, vmax=np.max(mraw))
 plt.colorbar()
 plt.show()
