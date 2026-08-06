@@ -249,6 +249,11 @@ class Bar(Component):
         cost = jp.cos(theta)
         xt, yt = xt * cost - yt * sint, xt * sint + yt * cost
 
+        # Rotate with Rotation - around disk-frame z. 
+        sinr = jp.sin(rot)
+        cosr = jp.cos(rot)
+        xt, yt = xt*cosr + yt*sinr, -xt*sinr + yt*cosr
+
         # Make the cube 4d.
         xt = jp.broadcast_to(
             xt[:, None, :, :], (ssize, losbins, ysize, xsize)
@@ -264,11 +269,6 @@ class Bar(Component):
         sini = jp.sin(inc - 0.5 * jp.pi)
         cosi = jp.cos(inc - 0.5 * jp.pi)
         zt, yt = (yt * cosi - zt * sini, yt * sini + zt * cosi)
-
-        # Rotate with Rotation - around disk-frame z.
-        sinr = jp.sin(rot)
-        cosr = jp.cos(rot)
-        xt, yt = xt * cosr + yt * sinr, -xt * sinr + yt * cosr
 
         return xt, yt, zt
 
