@@ -14,6 +14,8 @@ import numpy as np
 from .. import config
 from ..base import Component
 from ..radial import Sersic
+from ...priors import _BoundTo
+
 
 @dataclass(frozen=True)
 class BarGeometry:  # I have placed a copy of this into ..config.py
@@ -26,17 +28,18 @@ class BarGeometry:  # I have placed a copy of this into ..config.py
     losdepth: float = 10.00 / 60.00 / 60.00
     losbins: int = 200
 
+
 class BarGeometry(Component):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.xc       = kwargs.get("xc", config.BarGeometry.xc)
-        self.yc       = kwargs.get("yc", config.BarGeometry.yc)
-        self.theta    = kwargs.get("theta", config.BarGeometry.theta)
-        self.inc      = kwargs.get("inc", config.BarGeometry.inc)
-        self.rot      = kwargs.get("rot", config.BarGeometry.rot)
-        self.e        = kwargs.get("e", config.BarGeometry.e)
+        self.xc = kwargs.get("xc", config.BarGeometry.xc)
+        self.yc = kwargs.get("yc", config.BarGeometry.yc)
+        self.theta = kwargs.get("theta", config.BarGeometry.theta)
+        self.inc = kwargs.get("inc", config.BarGeometry.inc)
+        self.rot = kwargs.get("rot", config.BarGeometry.rot)
+        self.e = kwargs.get("e", config.BarGeometry.e)
         self.losdepth = kwargs.get("losdepth", config.BarGeometry.losdepth)
-        self.losbins  = kwargs.get("losbins", config.BarGeometry.losbins)
+        self.losbins = kwargs.get("losbins", config.BarGeometry.losbins)
 
         for param in ["losdepth", "losbins"]:
             if param not in self.hyper:
@@ -51,7 +54,7 @@ class BarGeometry(Component):
                 rot="rad",
                 e="",
                 losdepth="deg",
-                losbins=""
+                losbins="",
             )
         )
 
@@ -86,7 +89,7 @@ class Bar(Component):
 
         for param in self.geometry.hyper:
             self.hyper.append(f"geometry.{param}")
-        
+
         if self.radial.id != self.id:
             type(self).idcls -= 1
             idmin = np.minimum(
@@ -180,7 +183,9 @@ class Bar(Component):
 
         if convolve:
             if img.psf is None:
-                warnings.warn("No PSF defined, so no convolution will be performed.")
+                warnings.warn(
+                    "No PSF defined, so no convolution will be performed."
+                )
             else:
                 mgrid = img.convolve(mgrid)
         return mgrid
@@ -196,17 +201,19 @@ class Bar(Component):
             if key.startswith(f"{comp_prefix}_radial.")
         }
         # geometry parameters (xc, yc, theta, inc, rot, e, losdepth, losbins)
-        kwarg.update({
-            key.replace(f"{comp_prefix}_geometry.", ""): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_geometry.")
-        })
+        kwarg.update(
+            {
+                key.replace(f"{comp_prefix}_geometry.", ""): pars[key]
+                for key in pars
+                if key.startswith(f"{comp_prefix}_geometry.")
+            }
+        )
         return kwarg
 
     @staticmethod
     def _bar_profile(xt, yt, zt, Ie, re, e, ns):
-        rs = re * (1-e)
-        m = jp.sqrt((xt/rs)**2 + (yt/re)**2 + (zt/rs)**2)
+        rs = re * (1 - e)
+        m = jp.sqrt((xt / rs) ** 2 + (yt / re) ** 2 + (zt / rs) ** 2)
         return Sersic.profile(m, Ie, 1.0, ns)
 
     def _evaluate(self, img, **kwarg):
@@ -245,19 +252,25 @@ class Bar(Component):
         zt = jp.linspace(-losdepth, losdepth, losbins)  # Build z
 
         # Rotate by Position Angle (CCW, with 90° offset to match Disk convention).
-        sint = jp.sin(theta - 0.5*jp.pi)
-        cost = jp.cos(theta - 0.5*jp.pi)
+        sint = jp.sin(theta - 0.5 * jp.pi)
+        cost = jp.cos(theta - 0.5 * jp.pi)
         xt, yt = -xt * sint - yt * cost, xt * cost - yt * sint
 
         # Make the cube 4d.
-        xt = jp.broadcast_to(xt[:, None, :, :], (ssize, losbins, ysize, xsize)).copy()
-        yt = jp.broadcast_to(yt[:, None, :, :], (ssize, losbins, ysize, xsize)).copy()
-        zt = jp.broadcast_to(zt[None, :, None, None], (ssize, losbins, ysize, xsize)).copy()
+        xt = jp.broadcast_to(
+            xt[:, None, :, :], (ssize, losbins, ysize, xsize)
+        ).copy()
+        yt = jp.broadcast_to(
+            yt[:, None, :, :], (ssize, losbins, ysize, xsize)
+        ).copy()
+        zt = jp.broadcast_to(
+            zt[None, :, None, None], (ssize, losbins, ysize, xsize)
+        ).copy()
 
         # Incline around y-axis.
-        sini = jp.sin(inc - 0.5*jp.pi)
-        cosi = jp.cos(inc - 0.5*jp.pi)
-        zt, xt = xt*cosi - zt*sini, xt*sini + zt*cosi
+        sini = jp.sin(inc - 0.5 * jp.pi)
+        cosi = jp.cos(inc - 0.5 * jp.pi)
+        zt, xt = xt * cosi - zt * sini, xt * sini + zt * cosi
 
         # Rotate by rot (plain CCW, adds to theta).
         sinr = jp.sin(rot)
@@ -289,7 +302,9 @@ class Bar(Component):
                 if key.startswith("radial."):
                     kvalue = getattr(self.radial, key.replace("radial.", ""))
                 elif key.startswith("geometry."):
-                    kvalue = getattr(self.geometry, key.replace("geometry.", ""))
+                    kvalue = getattr(
+                        self.geometry, key.replace("geometry.", "")
+                    )
                 else:
                     kvalue = getattr(self, key)
 
@@ -298,7 +313,7 @@ class Bar(Component):
                 elif isinstance(kvalue, numpyro.distributions.Distribution):
                     kvalue = f"Distribution: {kvalue.__class__.__name__}"
                 elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType)
+                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
                 ):
                     kvalue = "Tied parameter"
                 else:
@@ -319,9 +334,9 @@ class Bar(Component):
                         kvalue = getattr(
                             self.radial, key.replace("radial.", "")
                         )
-                    if key.startswith("geometry."):
+                    elif key.startswith("geometry."):
                         kvalue = getattr(
-                            self.radial, key.replace("geometry.", "")
+                            self.geometry, key.replace("geometry.", "")
                         )
                     else:
                         kvalue = getattr(self, key)
@@ -333,7 +348,8 @@ class Bar(Component):
                     ):
                         kvalue = f"Distribution: {kvalue.__class__.__name__}"
                     elif isinstance(
-                        kvalue, (types.LambdaType, types.FunctionType)
+                        kvalue,
+                        (types.LambdaType, types.FunctionType, _BoundTo),
                     ):
                         kvalue = "Tied parameter"
                     else:
@@ -344,7 +360,7 @@ class Bar(Component):
                         + f"{kvalue}".ljust(10)
                         + f" | {self.description[key]}"
                     )
-    
+
     def parlist(self):
         """
         Docstring TBD.

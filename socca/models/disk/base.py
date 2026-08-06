@@ -14,6 +14,7 @@ import numpy as np
 
 from ..base import Component
 from ..radial import Sersic
+from ...priors import _BoundTo
 from .vertical import HyperSecantHeight
 
 
@@ -525,7 +526,7 @@ class Disk(Component):
                 elif isinstance(kvalue, numpyro.distributions.Distribution):
                     kvalue = f"Distribution: {kvalue.__class__.__name__}"
                 elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType)
+                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
                 ):
                     kvalue = "Tied parameter"
                 else:
@@ -560,7 +561,8 @@ class Disk(Component):
                     ):
                         kvalue = f"Distribution: {kvalue.__class__.__name__}"
                     elif isinstance(
-                        kvalue, (types.LambdaType, types.FunctionType)
+                        kvalue,
+                        (types.LambdaType, types.FunctionType, _BoundTo),
                     ):
                         kvalue = "Tied parameter"
                     else:

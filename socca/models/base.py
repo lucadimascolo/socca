@@ -7,6 +7,7 @@ import numpy as np
 import numpyro.distributions
 
 from . import config
+from ..priors import _BoundTo
 from socca.units import _NON_CONVERTIBLE, conversion_factor as _cfactor
 
 
@@ -140,7 +141,7 @@ class Component:
                 elif isinstance(keypar, numpyro.distributions.Distribution):
                     keyval = f"Distribution: {keypar.__class__.__name__}"
                 elif isinstance(
-                    keypar, (types.LambdaType, types.FunctionType)
+                    keypar, (types.LambdaType, types.FunctionType, _BoundTo)
                 ):
                     keyval = "Tied keyparameter"
                 else:
