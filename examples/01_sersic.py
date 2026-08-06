@@ -23,7 +23,7 @@ kernel = kernel.array
 
 img.addpsf(img=kernel)
 
-prof0 = socca.models.Sersic()   
+prof0 = socca.models.Sersic()
 prof0.xc = socca.priors.uniform(low=334.38500, high=334.38520)
 prof0.yc = socca.priors.uniform(low=0.29535, high=0.29560)
 prof0.re = socca.priors.loguniform(low=1.00e-07, high=1.00e-02)
