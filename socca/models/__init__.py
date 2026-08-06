@@ -11,6 +11,7 @@ import numpyro.distributions
 
 from socca.units import conversion_factor as _cfactor
 
+from ..priors import BoundTo
 from . import config
 from .base import Component
 from .misc import Point, Background
@@ -305,7 +306,7 @@ class Model:
             if isinstance(par, numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params) - 1)
 
-            if isinstance(par, (types.LambdaType, types.FunctionType)):
+            if isinstance(par, (types.LambdaType, types.FunctionType, BoundTo)):
                 self.tied.append(True)
             else:
                 self.tied.append(False)
@@ -467,12 +468,18 @@ class Model:
 
         for ki, key in enumerate(self.params):
             if self.tied[ki]:
-                kwarg = list(
-                    inspect.signature(self.priors[key]).parameters.keys()
-                )
-                kwarg = {k: pars[k] for k in kwarg}
-                pars[key] = self.priors[key](**kwarg)
-                del kwarg
+                print(key)
+                print(self.priors[key])
+                print(self.priors[key].key)
+                if isinstance(self.priors[key], BoundTo):
+                    pars[key] = pars[self.priors[key].key]
+                else:
+                    kwarg = list(
+                        inspect.signature(self.priors[key]).parameters.keys()
+                    )
+                    kwarg = {k: pars[k] for k in kwarg}
+                    pars[key] = self.priors[key](**kwarg)
+                    del kwarg
 
         mraw, msmo, mbkg, _ = self.getmodel(
             img, pars, doresp=False, doexp=False
@@ -631,12 +638,15 @@ class Model:
 
         for ki, key in enumerate(self.params):
             if self.tied[ki]:
-                kwarg = list(
-                    inspect.signature(self.priors[key]).parameters.keys()
-                )
-                kwarg = {k: pars[k] for k in kwarg}
-                pars[key] = self.priors[key](**kwarg)
-                del kwarg
+                if isinstance(self.priors[key], BoundTo):
+                    pars[key] = pars[self.priors[key].key]
+                else:
+                    kwarg = list(
+                        inspect.signature(self.priors[key]).parameters.keys()
+                    )
+                    kwarg = {k: pars[k] for k in kwarg}
+                    pars[key] = self.priors[key](**kwarg)
+                    del kwarg
 
         mbkg = jp.zeros(img.data.shape)
         mraw = jp.zeros(img.data.shape)
