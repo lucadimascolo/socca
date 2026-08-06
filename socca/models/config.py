@@ -189,3 +189,20 @@ class Truncation:
 
     rt: float = None
     wt: float = 1.00e-02
+
+
+@dataclass(frozen=True)
+class BarGeometry:
+    """
+    Default parameters for Bar position and geometry.
+    Suited for line-of-sight integration.
+    """
+
+    xc: float = None
+    yc: float = None
+    inc: float = 0.00
+    theta: float = 0.00
+    rot: float = 0.00
+    e: float = 0.00
+    losdepth: float = 10.00 / 60.00 / 60.00
+    losbins: int = 200
