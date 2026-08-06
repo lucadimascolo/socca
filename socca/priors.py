@@ -482,14 +482,27 @@ def powerlaw(alpha, low, high):
 
 # Parameter bound to another component's parameter
 # --------------------------------------------------------
-class BoundTo:
-    """A bound parameter reference used to tie one component's parameter to another's."""
+class _BoundTo:
+    """
+    Internal marker tying one component's parameter to another's.
+
+    Not part of the public API -- construct these via boundto(), never
+    directly. Namespaced parameter keys (e.g. "comp_00_radial.xc") contain a
+    literal dot and can't be used as a Python identifier, so a lambda can't
+    represent the binding; this class carries the resolved key instead.
+    """
+
     def __init__(self, key):
         self.key = key
 
+    def __call__(self, value):
+        """Return the bound value unchanged, matching the lambda it replaces."""
+        return value
+
+
 def boundto(comp, var):
     """
-    Create a BoundTo object to bind a parameter to another component's parameter.
+    Bind a parameter to another component's parameter.
 
     Creates a functional relationship where one component's parameter is
     constrained to equal another component's parameter. Useful for tying
@@ -505,8 +518,9 @@ def boundto(comp, var):
 
     Returns
     -------
-    BoundTo object
-        An object that takes the bound parameter and returns its value.
+    callable
+        An opaque, callable object that takes the bound parameter and
+        returns its value unchanged.
 
     Examples
     --------
@@ -527,8 +541,6 @@ def boundto(comp, var):
 
     Notes
     -----
-    The binding is implemented by creating a BoundTo that takes the
-    referenced parameter as input and returns it unchanged.
     Always pass the top-level component, not its sub-components. For components
     with namespaced sub-components (Disk, Bar), the correct sub-component is
     found automatically by searching their namespaces.
@@ -540,9 +552,9 @@ def boundto(comp, var):
     if namespaces:
         for namespace, subcomp in namespaces.items():
             if var in subcomp.units:
-                return BoundTo(f"{comp.id}_{namespace}.{var}")
+                return _BoundTo(f"{comp.id}_{namespace}.{var}")
 
-    return BoundTo(f"{comp.id}_{var}")
+    return _BoundTo(f"{comp.id}_{var}")
 
 
 # pocoMC prior refactor for numpyro

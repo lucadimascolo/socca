@@ -11,7 +11,7 @@ import numpyro.distributions
 
 from socca.units import conversion_factor as _cfactor
 
-from ..priors import BoundTo
+from ..priors import _BoundTo
 from . import config
 from .base import Component
 from .misc import Point, Background
@@ -146,8 +146,6 @@ def zoo():
     print("\nBar-like model")
     print("===============")
     print("Bar")
-
-    
 
     print("\nOther models")
     print("============")
@@ -306,7 +304,9 @@ class Model:
             if isinstance(par, numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params) - 1)
 
-            if isinstance(par, (types.LambdaType, types.FunctionType, BoundTo)):
+            if isinstance(
+                par, (types.LambdaType, types.FunctionType, _BoundTo)
+            ):
                 self.tied.append(True)
             else:
                 self.tied.append(False)
@@ -468,7 +468,7 @@ class Model:
 
         for ki, key in enumerate(self.params):
             if self.tied[ki]:
-                if isinstance(self.priors[key], BoundTo):
+                if isinstance(self.priors[key], _BoundTo):
                     pars[key] = pars[self.priors[key].key]
                 else:
                     kwarg = list(
@@ -635,7 +635,7 @@ class Model:
 
         for ki, key in enumerate(self.params):
             if self.tied[ki]:
-                if isinstance(self.priors[key], BoundTo):
+                if isinstance(self.priors[key], _BoundTo):
                     pars[key] = pars[self.priors[key].key]
                 else:
                     kwarg = list(
