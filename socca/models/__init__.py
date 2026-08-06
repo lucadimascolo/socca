@@ -387,7 +387,9 @@ class Model:
                     keyval = None
                 elif isinstance(par, numpyro.distributions.Distribution):
                     keyval = f"Distribution: {par.__class__.__name__}"
-                elif isinstance(par, (types.LambdaType, types.FunctionType)):
+                elif isinstance(
+                    par, (types.LambdaType, types.FunctionType, _BoundTo)
+                ):
                     keyval = "Tied parameter"
                 else:
                     keyval = f"{par:.4E}"

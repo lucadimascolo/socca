@@ -20,6 +20,7 @@ from ..base import Component
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
+from ...priors import _BoundTo
 
 
 class Bridge(Component):
@@ -465,7 +466,7 @@ class Bridge(Component):
                 elif isinstance(kvalue, numpyro.distributions.Distribution):
                     kvalue = f"Distribution: {kvalue.__class__.__name__}"
                 elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType)
+                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
                 ):
                     kvalue = "Tied parameter"
                 else:
