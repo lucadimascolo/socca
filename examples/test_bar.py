@@ -38,9 +38,7 @@ bar_geom.xc = img.hdu.header['CRVAL1']
 bar_geom.yc = img.hdu.header['CRVAL2']
 bar_geom.e = 0.8
 bar_geom.inc = socca.priors.boundto(disk, "inc")
-# bar_geom.inc = np.pi/2
 bar_geom.theta = socca.priors.boundto(disk, "theta")
-# bar_geom.theta = np.pi/3
 bar_geom.rot = np.pi/2  # Additional Position Angle Bar
 
 bar = socca.models.Bar(radial=bar_radial, geometry=bar_geom)
