@@ -244,31 +244,25 @@ class Bar(Component):
         yt = grid.y - yc  # Build y
         zt = jp.linspace(-losdepth, losdepth, losbins)  # Build z
 
-        # Rotate with Position Angle - around z.
-        sint = jp.sin(theta)
-        cost = jp.cos(theta)
-        xt, yt = xt * cost - yt * sint, xt * sint + yt * cost
-
-        # Rotate with Rotation - around disk-frame z. 
-        sinr = jp.sin(rot)
-        cosr = jp.cos(rot)
-        xt, yt = xt*cosr + yt*sinr, -xt*sinr + yt*cosr
+        # Rotate by Position Angle (CCW, with 90° offset to match Disk convention).
+        sint = jp.sin(theta - 0.5*jp.pi)
+        cost = jp.cos(theta - 0.5*jp.pi)
+        xt, yt = -xt * sint - yt * cost, xt * cost - yt * sint
 
         # Make the cube 4d.
-        xt = jp.broadcast_to(
-            xt[:, None, :, :], (ssize, losbins, ysize, xsize)
-        ).copy()
-        yt = jp.broadcast_to(
-            yt[:, None, :, :], (ssize, losbins, ysize, xsize)
-        ).copy()
-        zt = jp.broadcast_to(
-            zt[None, :, None, None], (ssize, losbins, ysize, xsize)
-        ).copy()
+        xt = jp.broadcast_to(xt[:, None, :, :], (ssize, losbins, ysize, xsize)).copy()
+        yt = jp.broadcast_to(yt[:, None, :, :], (ssize, losbins, ysize, xsize)).copy()
+        zt = jp.broadcast_to(zt[None, :, None, None], (ssize, losbins, ysize, xsize)).copy()
 
-        # Rotate with Inclination - around x.
-        sini = jp.sin(inc - 0.5 * jp.pi)
-        cosi = jp.cos(inc - 0.5 * jp.pi)
-        zt, yt = (yt * cosi - zt * sini, yt * sini + zt * cosi)
+        # Incline around y-axis.
+        sini = jp.sin(inc - 0.5*jp.pi)
+        cosi = jp.cos(inc - 0.5*jp.pi)
+        zt, xt = xt*cosi - zt*sini, xt*sini + zt*cosi
+
+        # Rotate by rot (plain CCW, adds to theta).
+        sinr = jp.sin(rot)
+        cosr = jp.cos(rot)
+        xt, yt = xt * cosr + yt * sinr, -xt * sinr + yt * cosr
 
         return xt, yt, zt
 
