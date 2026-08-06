@@ -25,7 +25,7 @@ class Sersic(Profile):
     """
     Sersic profile for modeling elliptical galaxies and bulges.
 
-    The Sersic profile is a generalization of de Vaucouleurs' law that describes
+    Te Sersic profile is a generalization of de Vaucouleurs' law that describes
     the light distribution in elliptical galaxies and galactic bulges. The profile
     shape is controlled by the Sersic index (ns), with ns=1 corresponding to an
     exponential disk and ns=4 to a de Vaucouleurs profile.
@@ -63,7 +63,7 @@ class Sersic(Profile):
                 value.support.upper_bound > 10.00
                 or value.support.lower_bound < 0.25
             ):
-                wstring = "The ns prior support includes values"
+                wstring = "The ns prior support includes values"    
         elif value < 0.25 or value > 10.00:
             wstring = "The ns parameter falls"
         if wstring is not None:
