@@ -26,6 +26,40 @@ class Bar(Component):
 
         self.radial = radial
 
+        # xc/yc/theta/e live on Bar itself, not on radial. If the caller set
+        # one of them on radial (before passing it in) and didn't also pass
+        # it to Bar, inherit radial's value; if both were set, Bar's value
+        # wins and radial's is ignored (with a warning).
+        for key in ["xc", "yc", "theta", "e"]:
+            radial_val = getattr(self.radial, key)
+            radial_isset = radial_val != getattr(config.Profile, key)
+
+            if key in kwargs:
+                if radial_isset:
+                    warnings.warn(
+                        f"Bar's '{key}' and radial's '{key}' were both "
+                        f"set; radial's value will be ignored in favor of "
+                        f"the value passed to Bar.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                setattr(self, key, kwargs[key])
+            elif radial_isset:
+                setattr(self, key, radial_val)
+            else:
+                setattr(self, key, getattr(config.Bar, key))
+
+        # cbox isn't used by Bar's profile at all; xc/yc/theta/e are gone
+        # too now that Bar owns them -- strip all five off the sub-component
+        # so it doesn't carry unused, confusing duplicates. Mirrors
+        # Bridge.__init__ for its own radial/parallel components.
+        for key in ["xc", "yc", "theta", "e", "cbox"]:
+            bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
+            if bkey in self.radial.__dict__:
+                delattr(self.radial, bkey)
+            self.radial.units.pop(key, None)
+            self.radial.description.pop(key, None)
+
         self._namespaces = {"radial": self.radial}
 
         self.inc = kwargs.get("inc", config.Bar.inc)
@@ -52,22 +86,33 @@ class Bar(Component):
             {
                 f"radial.{key}": self.radial.units[key]
                 for key in self.radial.units.keys()
-                if key not in ["cbox"]
             }
         )
         self.units.update(
-            dict(inc="rad", rot="rad", losdepth="deg", losbins="")
+            dict(
+                xc="deg",
+                yc="deg",
+                theta="rad",
+                e="",
+                inc="rad",
+                rot="rad",
+                losdepth="deg",
+                losbins="",
+            )
         )
 
         self.description.update(
             {
                 f"radial.{key}": self.radial.description[key]
                 for key in self.radial.description.keys()
-                if key not in ["cbox"]
             }
         )
         self.description.update(
             dict(
+                xc="Right ascension of centroid",
+                yc="Declination of centroid",
+                theta="Position angle (east from north)",
+                e="Projected ellipticity (1 - axis ratio)",
                 inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
                 rot="Intrinsic bar rotation relative to theta (added to position angle theta)",
                 losdepth="Half line-of-sigt extent for integration",
@@ -99,22 +144,8 @@ class Bar(Component):
                     val = val(*args)
             kwarg[key] = val
 
-        # Position/orientation parameters, inherited from radial
-        for key in ["xc", "yc", "theta", "e"]:
-            val = getattr(self.radial, key)
-            if callable(val):
-                sig = inspect.signature(val)
-                params = list(sig.parameters.keys())
-                if params:
-                    args = [
-                        getattr(self, p.replace(f"{self.id}_", ""))
-                        for p in params
-                    ]
-                    val = val(*args)
-            kwarg[key] = val
-
-        # Bar's own 3D geometry
-        for key in ["inc", "rot", "losdepth", "losbins"]:
+        # Bar's own position, orientation, and 3D geometry
+        for key in ["xc", "yc", "theta", "e", "inc", "rot", "losdepth", "losbins"]:
             val = getattr(self, key)
             if callable(val):
                 sig = inspect.signature(val)
@@ -153,15 +184,16 @@ class Bar(Component):
         """
         Docstring TBD.
         """
-        # radial profile + position/orientation parameters (re, Ie, ns,
-        # xc, yc, theta, e)
+        # radial profile shape parameters (re, Ie, ns)
         kwarg = {
             key.replace(f"{comp_prefix}_radial.", ""): pars[key]
             for key in pars
             if key.startswith(f"{comp_prefix}_radial.")
         }
-        # Bar's own 3D geometry (inc, rot, losdepth, losbins)
-        for key in ["inc", "rot", "losdepth", "losbins"]:
+        # Bar's own position, orientation, and 3D geometry
+        for key in [
+            "xc", "yc", "theta", "e", "inc", "rot", "losdepth", "losbins",
+        ]:
             kwarg[key] = pars[f"{comp_prefix}_{key}"]
         return kwarg
 

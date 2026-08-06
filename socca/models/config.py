@@ -194,11 +194,14 @@ class Truncation:
 @dataclass(frozen=True)
 class Bar:
     """
-    Default parameters for Bar's inclination, rotation, and
-    line-of-sight integration. Position/orientation/ellipticity
-    (xc, yc, theta, e) are inherited from the radial sub-component.
+    Default parameters for Bar's position, orientation, inclination,
+    rotation, and line-of-sight integration.
     """
 
+    xc: float = None
+    yc: float = None
+    theta: float = 0.00
+    e: float = 0.00
     inc: float = 0.00
     rot: float = 0.00
     losdepth: float = 10.00 / 60.00 / 60.00
