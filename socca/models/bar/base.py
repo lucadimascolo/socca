@@ -247,7 +247,7 @@ class Bar(Component):
         # Rotate with Position Angle - around z.
         sint = jp.sin(theta)
         cost = jp.cos(theta)
-        xt, yt = -xt * sint - yt * cost, xt * cost - yt * sint
+        xt, yt = xt * cost - yt * sint, xt * sint + yt * cost
 
         # Make the cube 4d.
         xt = jp.broadcast_to(
