@@ -1,3 +1,5 @@
 """Bar model component."""
-from .base import Bar, BarGeometry
-__all__ = ["Bar", "BarGeometry"]
+
+from .base import Bar
+
+__all__ = ["Bar"]
