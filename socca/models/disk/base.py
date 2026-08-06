@@ -107,6 +107,7 @@ class Disk(Component):
             )
             self.id = f"comp_{idmin:02d}"
             self.radial.id = self.id
+            self.vertical.id = self.id
 
         self._rkw = [
             f"r_{key}"
