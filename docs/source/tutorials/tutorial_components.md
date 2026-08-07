@@ -597,16 +597,16 @@ A common use case for `Ellipsoid` is modeling a galactic bar embedded within a h
 ```
 
 $$
-I(r) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} I_e \exp\left\{-b_n\left[\left(\frac{m}{r_e}\right)^{1/n}-1\right]\right\} \mathrm{d}l,
+I(x_0, y_0) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} I_e \exp\left\{-b_n\left[m(l)^{1/n}-1\right]\right\} \mathrm{d}l,
 $$
 
-where the ellipsoidal radius $m$ is defined as
+where $(x_0, y_0)$ are the sky-plane coordinates of a given pixel, and $m(l)$ is the dimensionless ellipsoidal radius (already normalized by the ellipsoid's semi-axes, so it evaluates to 1 on the ellipsoid's surface) at line-of-sight position $l$:
 
 $$
-m = \sqrt{\left(\frac{x_t}{r_s}\right)^2 + \left(\frac{y_t}{r_e}\right)^2 + \left(\frac{z_t}{r_s}\right)^2}, \qquad r_s = r_e (1 - e),
+m(l) = \sqrt{\left(\frac{x_t(l)}{r_s}\right)^2 + \left(\frac{y_t(l)}{r_e}\right)^2 + \left(\frac{z_t(l)}{r_s}\right)^2}, \qquad r_s = r_e (1 - e).
 $$
 
-$(x_t, y_t, z_t)$ are ellipsoid-frame coordinates obtained from the sky-plane grid by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and applying the intrinsic rotation $\mathrm{rot}$ (added on top of $\theta$), and $e$ is the ellipticity setting the ratio between the minor and major semi-axes.
+$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and applying the intrinsic rotation $\mathrm{rot}$ (added on top of $\theta$) -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above. $e$ is the ellipticity setting the ratio between the minor and major semi-axes.
 
 ```python
 >>> from socca.models import Ellipsoid
