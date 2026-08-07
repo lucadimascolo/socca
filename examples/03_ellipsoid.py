@@ -43,14 +43,15 @@ disk.positive = True
 
 mod.addcomponent(disk)
 
-# Bar component: tied to the disk's centroid, position angle, and
-# inclination, with its own ellipticity, shape, and intrinsic rotation.
+# Ellipsoid component (e.g. a galactic bar): tied to the disk's centroid,
+# position angle, and inclination, with its own ellipticity, shape, and
+# intrinsic rotation.
 bar_radial = socca.models.Sersic()
 bar_radial.re = socca.priors.loguniform(low=1.00e-05, high=1.00e-03)
 bar_radial.Ie = socca.priors.loguniform(low=1.00e-04, high=1.00e01)
 bar_radial.ns = socca.priors.uniform(low=0.25, high=1.00)
 
-bar = socca.models.Bar(radial=bar_radial)
+bar = socca.models.Ellipsoid(radial=bar_radial)
 bar.xc = socca.priors.boundto(disk, "xc")
 bar.yc = socca.priors.boundto(disk, "yc")
 bar.theta = socca.priors.boundto(disk, "theta")

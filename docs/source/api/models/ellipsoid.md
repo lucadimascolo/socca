@@ -1,7 +1,7 @@
-# socca.models.bar
+# socca.models.ellipsoid
 
 ```{eval-rst}
-.. automodule:: socca.models.bar
+.. automodule:: socca.models.ellipsoid
    :members:
    :undoc-members:
    :show-inheritance:
