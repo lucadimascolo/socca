@@ -7,6 +7,6 @@ base
 radial
 bridge
 disk
-bar
+ellipsoid
 misc
 ```
