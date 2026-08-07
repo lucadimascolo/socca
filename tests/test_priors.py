@@ -4,6 +4,7 @@ import jax.numpy as jp
 import numpy as np
 import pytest
 
+import socca.models as models
 import socca.priors as priors
 
 
@@ -194,6 +195,44 @@ class TestBoundto:
         test_value = 42.0
         result = bound_fn(test_value)
         assert result == test_value
+
+    def test_resolve_flat_attribute(self):
+        """Test that resolve() reads a top-level component's current value."""
+        comp = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
+        bound = priors.boundto(comp, "xc")
+        assert bound.resolve() == 180.0
+
+    def test_resolve_reflects_current_value(self):
+        """Test that resolve() re-reads the value rather than caching it."""
+        comp = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
+        bound = priors.boundto(comp, "xc")
+        comp.xc = 200.0
+        assert bound.resolve() == 200.0
+
+    def test_resolve_namespaced_attribute(self):
+        """Test that resolve() works for namespaced sub-component parameters."""
+        models.Component.idcls = 0
+        disk = models.Disk()
+        disk.vertical.inc = 0.9
+        bound = priors.boundto(disk, "inc")
+        assert bound.key.endswith("vertical.inc")
+        assert bound.resolve() == 0.9
+
+    def test_resolve_chained_tie(self):
+        """Test that resolve() follows a chain of ties recursively."""
+        models.Component.idcls = 0
+        disk = models.Disk()
+        disk.radial.theta = 0.7
+        ellipsoid = models.Ellipsoid()
+        ellipsoid.theta = priors.boundto(disk, "theta")
+        chained = priors.boundto(ellipsoid, "theta")
+        assert chained.resolve() == 0.7
+
+    def test_key_unchanged_for_model_level_resolution(self):
+        """Test that .key (used by Model.getmap/getmodel) is unaffected."""
+        comp = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
+        bound = priors.boundto(comp, "xc")
+        assert bound.key == f"{comp.id}_xc"
 
 
 class TestPocomcPrior:

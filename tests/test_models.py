@@ -518,6 +518,13 @@ class TestSimpleBridge:
                 Is=1.0,
             )
 
+    def test_default_radial_not_shared_between_instances(self):
+        """Test that default-constructed SimpleBridges don't share sub-components."""
+        b1 = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        b2 = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        assert b1.radial is not b2.radial
+        assert b1.parallel is not b2.parallel
+
 
 class TestMesaBridge:
     """Tests for MesaBridge model."""
@@ -550,6 +557,246 @@ class TestMesaBridge:
         bridge = models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
         mod = models.Model(bridge)
         assert mod.type[0] == "MesaBridge"
+
+    def test_default_radial_not_shared_between_instances(self):
+        """Test that default-constructed MesaBridges don't share sub-components."""
+        b1 = models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        b2 = models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        assert b1.radial is not b2.radial
+        assert b1.parallel is not b2.parallel
+
+
+class TestDisk:
+    """Tests for Disk model."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    def test_default_initialization(self):
+        """Test Disk default initialization."""
+        disk = models.Disk()
+        assert disk.radial.re is None
+        assert disk.vertical.zs is None
+        assert disk.vertical.inc == 0.0
+
+    def test_parlist(self):
+        """Test Disk parameter list."""
+        disk = models.Disk()
+        params = disk.parlist()
+        assert "radial.re" in params
+        assert "vertical.zs" in params
+        assert "vertical.inc" in params
+
+    def test_type_stored_in_model(self):
+        """Test that Disk type is stored correctly in Model."""
+        radial = models.Sersic(re=0.005, Ie=1.0, ns=1.0, xc=180.0, yc=45.0)
+        vertical = models.disk.vertical.HyperSecantHeight(zs=0.0005)
+        disk = models.Disk(radial=radial, vertical=vertical)
+        mod = models.Model(disk)
+        assert mod.type[0] == "Disk"
+
+    def test_default_sub_components_not_shared_between_instances(self):
+        """Test that default-constructed Disks don't share sub-components.
+
+        Regression test: Disk.__init__ used to default radial/vertical via
+        mutable default arguments (radial=Sersic(), vertical=Height()),
+        evaluated once and shared across every Disk() call that doesn't
+        pass its own -- so setting one Disk's radial.xc would silently
+        leak into every other default-constructed Disk.
+        """
+        d1 = models.Disk()
+        d2 = models.Disk()
+        assert d1.radial is not d2.radial
+        assert d1.vertical is not d2.vertical
+        d1.radial.re = 0.005
+        assert d2.radial.re is None
+
+
+class TestEllipsoid:
+    """Tests for Ellipsoid model."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    def test_default_initialization(self):
+        """Test Ellipsoid default initialization."""
+        ell = models.Ellipsoid()
+        assert ell.radial.re is None
+        assert ell.xc is None
+        assert ell.yc is None
+        assert ell.theta == 0.0
+        assert ell.e == 0.0
+        assert ell.eratio == 1.0
+        assert ell.inc == 0.0
+        assert ell.rot == 0.0
+        assert ell.losdepth == pytest.approx(10.0 / 60.0 / 60.0)
+        assert ell.losbins == 200
+
+    def test_custom_radial(self):
+        """Test Ellipsoid with an explicit radial profile."""
+        radial = models.Sersic(re=0.001, Ie=10.0, ns=1.0)
+        ell = models.Ellipsoid(radial=radial)
+        assert ell.radial.re == 0.001
+        assert ell.radial.Ie == 10.0
+        assert ell.radial.ns == 1.0
+
+    def test_parlist(self):
+        """Test Ellipsoid parameter list."""
+        ell = models.Ellipsoid()
+        params = ell.parlist()
+        assert "radial.re" in params
+        assert "radial.Ie" in params
+        assert "radial.ns" in params
+        assert "xc" in params
+        assert "yc" in params
+        assert "theta" in params
+        assert "e" in params
+        assert "eratio" in params
+        assert "inc" in params
+        assert "rot" in params
+        assert "losdepth" in params
+        assert "losbins" in params
+
+    def test_type_stored_in_model(self):
+        """Test that Ellipsoid type is stored correctly in Model."""
+        radial = models.Sersic(re=0.001, Ie=10.0, ns=1.0)
+        ell = models.Ellipsoid(radial=radial, xc=180.0, yc=45.0)
+        mod = models.Model(ell)
+        assert mod.type[0] == "Ellipsoid"
+
+    def test_radial_stripped_of_geometric_params(self):
+        """Test that radial loses xc/yc/theta/e/cbox once owned by Ellipsoid."""
+        ell = models.Ellipsoid()
+        assert not hasattr(ell.radial, "xc")
+        assert not hasattr(ell.radial, "yc")
+        assert not hasattr(ell.radial, "theta")
+        assert not hasattr(ell.radial, "e")
+        assert not hasattr(ell.radial, "cbox")
+        assert "xc" not in ell.radial.units
+        assert "theta" not in ell.radial.units
+
+    def test_inherits_from_radial_when_not_set_on_ellipsoid(self):
+        """Test that xc/yc/theta/e set on radial are inherited by Ellipsoid."""
+        radial = models.Sersic(
+            re=0.001, Ie=10.0, ns=1.0, xc=180.0, yc=45.0, theta=0.5, e=0.3
+        )
+        ell = models.Ellipsoid(radial=radial)
+        assert ell.xc == 180.0
+        assert ell.yc == 45.0
+        assert ell.theta == 0.5
+        assert ell.e == 0.3
+
+    def test_ellipsoid_value_wins_and_warns_when_both_set(self):
+        """Test that Ellipsoid's own kwarg wins over radial's, with a warning."""
+        radial = models.Sersic(re=0.001, Ie=10.0, ns=1.0, xc=180.0)
+        with pytest.warns(UserWarning, match="both set"):
+            ell = models.Ellipsoid(radial=radial, xc=200.0)
+        assert ell.xc == 200.0
+
+    def test_default_radial_not_shared_between_instances(self):
+        """Test that default-constructed Ellipsoids don't share sub-components."""
+        ell1 = models.Ellipsoid()
+        ell2 = models.Ellipsoid()
+        assert ell1.radial is not ell2.radial
+        ell1.radial.re = 0.005
+        assert ell2.radial.re is None
+
+    def test_e_negative_warns(self):
+        """Test that a negative e warns."""
+        ell = models.Ellipsoid()
+        with pytest.warns(UserWarning, match="less than 0"):
+            ell.e = -0.1
+
+    def test_e_too_large_warns(self):
+        """Test that e >= 1 warns."""
+        ell = models.Ellipsoid()
+        with pytest.warns(UserWarning, match="greater than"):
+            ell.e = 1.5
+
+    def test_e_valid_no_warning(self, recwarn):
+        """Test that a valid e in [0, 1) does not warn."""
+        ell = models.Ellipsoid()
+        ell.e = 0.5
+        assert len(recwarn) == 0
+
+    def test_eratio_too_large_warns(self):
+        """Test that eratio > 1 warns."""
+        ell = models.Ellipsoid()
+        with pytest.warns(UserWarning, match="greater than"):
+            ell.eratio = 1.5
+
+    def test_eratio_negative_warns(self):
+        """Test that eratio < 0 warns."""
+        ell = models.Ellipsoid()
+        with pytest.warns(UserWarning, match="less than 0"):
+            ell.eratio = -0.1
+
+    def test_eratio_valid_no_warning(self, recwarn):
+        """Test that a valid eratio in [0, 1] does not warn."""
+        ell = models.Ellipsoid()
+        ell.eratio = 0.4
+        assert len(recwarn) == 0
+
+    def test_theta_wide_prior_warns(self):
+        """Test that a theta prior spanning more than 180deg warns."""
+        ell = models.Ellipsoid()
+        with pytest.warns(UserWarning, match="180"):
+            ell.theta = priors.uniform(-np.pi, np.pi)
+
+    def test_theta_narrow_prior_no_warning(self, recwarn):
+        """Test that a theta prior spanning less than 180deg does not warn."""
+        ell = models.Ellipsoid()
+        ell.theta = priors.uniform(-np.pi / 4, np.pi / 4)
+        assert len(recwarn) == 0
+
+    def test_rot_wide_prior_warns(self):
+        """Test that a rot prior spanning more than 180deg warns."""
+        ell = models.Ellipsoid()
+        with pytest.warns(UserWarning, match="180"):
+            ell.rot = priors.uniform(-np.pi, np.pi)
+
+    def test_tied_e_does_not_warn_or_crash(self):
+        """Test that tying e via boundto() doesn't trigger range validation."""
+        disk = models.Disk()
+        ell = models.Ellipsoid()
+        ell.e = priors.boundto(disk, "inc")
+
+    def test_profile_major_axis_surface(self):
+        """Test that the profile equals Ie on the major (x) axis surface."""
+        re, e, eratio, Ie, ns = 0.001, 0.5, 1.0, 3.0, 1.0
+        val = models.Ellipsoid._ellipsoid_profile(
+            re, 0.0, 0.0, Ie, re, e, eratio, ns
+        )
+        assert float(val) == pytest.approx(Ie, rel=1e-3)
+
+    def test_profile_first_minor_axis_surface(self):
+        """Test that the profile equals Ie on the first minor (y) axis surface."""
+        re, e, eratio, Ie, ns = 0.001, 0.5, 1.0, 3.0, 1.0
+        rs1 = re * (1 - e)
+        val = models.Ellipsoid._ellipsoid_profile(
+            0.0, rs1, 0.0, Ie, re, e, eratio, ns
+        )
+        assert float(val) == pytest.approx(Ie, rel=1e-3)
+
+    def test_profile_second_minor_axis_uses_eratio(self):
+        """Test that the profile equals Ie on the eratio-scaled z-axis surface."""
+        re, e, eratio, Ie, ns = 0.001, 0.6, 0.5, 3.0, 1.0
+        rs2 = re * (1 - eratio * e)
+        val = models.Ellipsoid._ellipsoid_profile(
+            0.0, 0.0, rs2, Ie, re, e, eratio, ns
+        )
+        assert float(val) == pytest.approx(Ie, rel=1e-3)
+
+    def test_eratio_default_makes_minor_axes_equal(self):
+        """Test that eratio=1 (default) gives equal minor-axis scales."""
+        re, e = 0.001, 0.6
+        rs1 = re * (1 - e)
+        rs2 = re * (1 - 1.0 * e)
+        assert rs1 == pytest.approx(rs2)
 
 
 class TestBuildKwargsEvaluate:
@@ -730,6 +977,58 @@ class TestBuildKwargsEvaluate:
         result = bridge._evaluate(simple_img, **kwarg)
         assert result.shape == simple_img.data.shape
 
+    def test_ellipsoid_build_kwargs(self):
+        """Test Ellipsoid._build_kwargs extracts radial and flat parameters."""
+        radial = models.Sersic(re=0.001, Ie=10.0, ns=1.0)
+        ell = models.Ellipsoid(radial=radial, xc=180.0, yc=45.0)
+        cid = ell.id
+        pars = {
+            f"{cid}_radial.re": 0.001,
+            f"{cid}_radial.Ie": 10.0,
+            f"{cid}_radial.ns": 1.0,
+            f"{cid}_xc": 180.0,
+            f"{cid}_yc": 45.0,
+            f"{cid}_theta": 0.0,
+            f"{cid}_e": 0.5,
+            f"{cid}_eratio": 0.4,
+            f"{cid}_inc": 0.3,
+            f"{cid}_rot": 0.1,
+            f"{cid}_losdepth": 10.0 / 60.0 / 60.0,
+            f"{cid}_losbins": 200,
+        }
+        kwarg = ell._build_kwargs(pars, cid)
+        assert kwarg["re"] == 0.001
+        assert kwarg["Ie"] == 10.0
+        assert kwarg["ns"] == 1.0
+        assert kwarg["xc"] == 180.0
+        assert kwarg["yc"] == 45.0
+        assert kwarg["e"] == 0.5
+        assert kwarg["eratio"] == 0.4
+        assert kwarg["inc"] == 0.3
+        assert kwarg["rot"] == 0.1
+
+    def test_ellipsoid_evaluate(self, simple_img):
+        """Test Ellipsoid._evaluate produces correct shape."""
+        radial = models.Sersic(re=0.0005, Ie=10.0, ns=1.0)
+        ell = models.Ellipsoid(radial=radial)
+        kwarg = {
+            "re": 0.0005,
+            "Ie": 10.0,
+            "ns": 1.0,
+            "xc": simple_img.hdu.header["CRVAL1"],
+            "yc": simple_img.hdu.header["CRVAL2"],
+            "theta": 0.0,
+            "e": 0.5,
+            "eratio": 0.5,
+            "inc": 0.5,
+            "rot": 0.0,
+            "losdepth": 10.0 / 60.0 / 60.0,
+            "losbins": 50,
+        }
+        result = ell._evaluate(simple_img, **kwarg)
+        assert result.shape == simple_img.data.shape
+        assert bool(jp.all(jp.isfinite(result)))
+
 
 class TestGetmodelWithBridge:
     """Tests for Model.getmodel with Bridge components."""
@@ -774,6 +1073,112 @@ class TestGetmodelWithBridge:
         assert msmo.shape == img.data.shape
         assert mbkg.shape == img.data.shape
         assert mneg.shape == img.data.shape
+
+
+class TestGetmodelWithEllipsoid:
+    """Tests for Model.getmodel with Ellipsoid components."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    @pytest.fixture
+    def ellipsoid_model_and_image(self, simple_hdu, gaussian_psf):
+        """Create an Ellipsoid model and image for testing."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        img.addpsf(gaussian_psf)
+
+        xc = simple_hdu.header["CRVAL1"]
+        yc = simple_hdu.header["CRVAL2"]
+
+        radial = models.Sersic(
+            re=0.005, ns=1.0, Ie=priors.loguniform(0.1, 10.0)
+        )
+        ell = models.Ellipsoid(radial=radial, xc=xc, yc=yc, e=0.5, inc=0.3)
+        mod = models.Model(ell)
+        return mod, img
+
+    def test_getmodel_returns_tuple(self, ellipsoid_model_and_image):
+        """Test that getmodel returns 4-tuple with Ellipsoid."""
+        mod, img = ellipsoid_model_and_image
+        pp = [1.0]
+        result = mod.getmodel(img, pp)
+        assert len(result) == 4
+
+    def test_getmodel_shapes(self, ellipsoid_model_and_image):
+        """Test that getmodel outputs have correct shapes."""
+        mod, img = ellipsoid_model_and_image
+        pp = [1.0]
+        mraw, msmo, mbkg, mneg = mod.getmodel(img, pp)
+        assert mraw.shape == img.data.shape
+        assert msmo.shape == img.data.shape
+        assert mbkg.shape == img.data.shape
+        assert mneg.shape == img.data.shape
+        assert bool(jp.all(jp.isfinite(mraw)))
+
+    @pytest.fixture
+    def disk_and_tied_ellipsoid(self, simple_hdu, gaussian_psf):
+        """Create a Disk and an Ellipsoid tied to it via boundto()."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        img.addpsf(gaussian_psf)
+
+        xc = simple_hdu.header["CRVAL1"]
+        yc = simple_hdu.header["CRVAL2"]
+
+        disk_radial = models.Sersic(
+            re=0.005, Ie=5.0, ns=1.0, xc=xc, yc=yc, theta=0.4
+        )
+        disk_vertical = models.disk.vertical.HyperSecantHeight(
+            zs=0.0005, inc=0.6
+        )
+        disk = models.Disk(radial=disk_radial, vertical=disk_vertical)
+
+        ell_radial = models.Sersic(re=0.001, Ie=1.0, ns=0.5)
+        ell = models.Ellipsoid(radial=ell_radial)
+        ell.xc = priors.boundto(disk, "xc")
+        ell.yc = priors.boundto(disk, "yc")
+        ell.theta = priors.boundto(disk, "theta")
+        ell.inc = priors.boundto(disk, "inc")
+        ell.e = 0.6
+
+        return disk, ell, img
+
+    def test_getmodel_with_disk_and_tied_ellipsoid(
+        self, disk_and_tied_ellipsoid
+    ):
+        """Test a composite Disk + boundto()-tied Ellipsoid via Model.getmodel."""
+        disk, ell, img = disk_and_tied_ellipsoid
+        mod = models.Model()
+        mod.addcomponent(disk)
+        mod.addcomponent(ell)
+
+        mraw, msmo, mbkg, mneg = mod.getmodel(img, [])
+        assert mraw.shape == img.data.shape
+        assert bool(jp.all(jp.isfinite(mraw)))
+
+    def test_direct_getmap_resolves_boundto_ties(
+        self, disk_and_tied_ellipsoid
+    ):
+        """Test that Ellipsoid.getmap() called directly resolves boundto() ties.
+
+        Regression test: calling a component's own getmap() (not through
+        Model) previously failed to resolve boundto()-tied parameters --
+        see socca/priors.py's _BoundTo.resolve().
+        """
+        _, ell, img = disk_and_tied_ellipsoid
+        mraw = ell.getmap(img, convolve=False)
+        assert mraw.shape == img.data.shape
+        assert bool(jp.all(jp.isfinite(mraw)))
+
+    def test_direct_getmap_matches_resolved_value(
+        self, disk_and_tied_ellipsoid
+    ):
+        """Test that the tied xc used by getmap() matches the disk's value."""
+        disk, ell, _ = disk_and_tied_ellipsoid
+        assert ell.xc.resolve() == disk.radial.xc
+        assert ell.theta.resolve() == disk.radial.theta
+        assert ell.inc.resolve() == disk.vertical.inc
 
 
 class TestModelComposition:
