@@ -1,4 +1,4 @@
-"""Bar model with 3D line-of-sight integration."""
+"""Ellipsoid model with 3D line-of-sight integration."""
 
 from functools import partial
 import inspect
@@ -18,26 +18,30 @@ from ..radial import Sersic
 from ...priors import _BoundTo
 
 
-class Bar(Component):
+class Ellipsoid(Component):
     """
-    3D bar model evaluated via line-of-sight integration.
+    3D triaxial-ellipsoid model evaluated via line-of-sight integration.
 
     Projects an ellipsoidal Sersic-like density onto the sky by integrating
     along the line of sight, in the same spirit as Disk but using a single
     radial profile for shape rather than separate radial/vertical profiles.
-    xc, yc, theta, e, inc, rot, losdepth, and losbins live directly on Bar;
-    radial only supplies the brightness-shape parameters (re, Ie, ns for
-    Sersic).
+    A common use case is modeling a galactic bar embedded within a host
+    Disk, with its position, position angle, and inclination tied to the
+    disk's via boundto() -- see the Examples below and
+    socca.priors.boundto(). xc, yc, theta, e, inc, rot, losdepth, and
+    losbins live directly on Ellipsoid; radial only supplies the
+    brightness-shape parameters (re, Ie, ns for Sersic).
 
     Parameters
     ----------
     radial : Profile, optional
-        Profile defining the bar's brightness-shape parameters (re, Ie, ns
-        for Sersic). Default is Sersic(). Any xc/yc/theta/e already set on
-        it are inherited by Bar unless also passed as a Bar keyword
-        argument, in which case Bar's value wins and a warning is raised.
+        Profile defining the ellipsoid's brightness-shape parameters (re,
+        Ie, ns for Sersic). Default is Sersic(). Any xc/yc/theta/e already
+        set on it are inherited by Ellipsoid unless also passed as an
+        Ellipsoid keyword argument, in which case Ellipsoid's value wins
+        and a warning is raised.
     xc, yc : float, optional
-        Right ascension and declination of the bar centroid (deg).
+        Right ascension and declination of the ellipsoid centroid (deg).
     theta : float, optional
         Position angle, east from north (rad).
     e : float, optional
@@ -46,7 +50,7 @@ class Bar(Component):
         Inclination angle (0 = face-on). Typically tied to a host Disk's
         inclination via boundto().
     rot : float, optional
-        Intrinsic bar rotation, added on top of theta.
+        Intrinsic rotation, added on top of theta.
     losdepth : float, optional
         Half line-of-sight extent for integration.
     losbins : int, optional
@@ -63,10 +67,23 @@ class Bar(Component):
 
     Examples
     --------
-    >>> from socca.models import Bar, Sersic
-    >>> bar = Bar(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
-    >>> bar.xc, bar.yc, bar.theta, bar.e = 180.5, 45.2, 0.5, 0.7
-    >>> bar.inc, bar.rot = 1.0, 0.2
+    >>> from socca.models import Ellipsoid, Sersic
+    >>> ellipsoid = Ellipsoid(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
+    >>> ellipsoid.xc, ellipsoid.yc, ellipsoid.theta, ellipsoid.e = (
+    ...     180.5, 45.2, 0.5, 0.7
+    ... )
+    >>> ellipsoid.inc, ellipsoid.rot = 1.0, 0.2
+
+    Tying a galactic bar's geometry to that of a host Disk:
+
+    >>> from socca.models import Disk
+    >>> from socca.priors import boundto
+    >>> disk = Disk()
+    >>> bar = Ellipsoid()
+    >>> bar.xc = boundto(disk, "xc")
+    >>> bar.yc = boundto(disk, "yc")
+    >>> bar.theta = boundto(disk, "theta")
+    >>> bar.inc = boundto(disk, "inc")
     """
 
     def __init__(self, radial=Sersic(), **kwargs):
@@ -74,10 +91,11 @@ class Bar(Component):
 
         self.radial = radial
 
-        # xc/yc/theta/e live on Bar itself, not on radial. If the caller set
-        # one of them on radial (before passing it in) and didn't also pass
-        # it to Bar, inherit radial's value; if both were set, Bar's value
-        # wins and radial's is ignored (with a warning).
+        # xc/yc/theta/e live on Ellipsoid itself, not on radial. If the
+        # caller set one of them on radial (before passing it in) and
+        # didn't also pass it to Ellipsoid, inherit radial's value; if
+        # both were set, Ellipsoid's value wins and radial's is ignored
+        # (with a warning).
         for key in ["xc", "yc", "theta", "e"]:
             radial_val = getattr(self.radial, key)
             radial_isset = radial_val != getattr(config.Profile, key)
@@ -85,9 +103,9 @@ class Bar(Component):
             if key in kwargs:
                 if radial_isset:
                     warnings.warn(
-                        f"Bar's '{key}' and radial's '{key}' were both "
-                        f"set; radial's value will be ignored in favor of "
-                        f"the value passed to Bar.",
+                        f"Ellipsoid's '{key}' and radial's '{key}' were "
+                        f"both set; radial's value will be ignored in "
+                        f"favor of the value passed to Ellipsoid.",
                         UserWarning,
                         stacklevel=2,
                     )
@@ -95,12 +113,12 @@ class Bar(Component):
             elif radial_isset:
                 setattr(self, key, radial_val)
             else:
-                setattr(self, key, getattr(config.Bar, key))
+                setattr(self, key, getattr(config.Ellipsoid, key))
 
-        # cbox isn't used by Bar's profile at all; xc/yc/theta/e are gone
-        # too now that Bar owns them -- strip all five off the sub-component
-        # so it doesn't carry unused, confusing duplicates. Mirrors
-        # Bridge.__init__ for its own radial/parallel components.
+        # cbox isn't used by Ellipsoid's profile at all; xc/yc/theta/e are
+        # gone too now that Ellipsoid owns them -- strip all five off the
+        # sub-component so it doesn't carry unused, confusing duplicates.
+        # Mirrors Bridge.__init__ for its own radial/parallel components.
         for key in ["xc", "yc", "theta", "e", "cbox"]:
             bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
             if bkey in self.radial.__dict__:
@@ -110,10 +128,10 @@ class Bar(Component):
 
         self._namespaces = {"radial": self.radial}
 
-        self.inc = kwargs.get("inc", config.Bar.inc)
-        self.rot = kwargs.get("rot", config.Bar.rot)
-        self.losdepth = kwargs.get("losdepth", config.Bar.losdepth)
-        self.losbins = kwargs.get("losbins", config.Bar.losbins)
+        self.inc = kwargs.get("inc", config.Ellipsoid.inc)
+        self.rot = kwargs.get("rot", config.Ellipsoid.rot)
+        self.losdepth = kwargs.get("losdepth", config.Ellipsoid.losdepth)
+        self.losbins = kwargs.get("losbins", config.Ellipsoid.losbins)
 
         for param in ["losdepth", "losbins"]:
             if param not in self.hyper:
@@ -128,7 +146,7 @@ class Bar(Component):
             self.id = f"comp_{idmin:02d}"
             self.radial.id = self.id
 
-        self.profile = jax.jit(Bar._bar_profile)
+        self.profile = jax.jit(Ellipsoid._ellipsoid_profile)
 
         self.units.update(
             {
@@ -162,7 +180,7 @@ class Bar(Component):
                 theta="Position angle (east from north)",
                 e="Projected ellipticity (1 - axis ratio)",
                 inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
-                rot="Intrinsic bar rotation relative to theta (added to position angle theta)",
+                rot="Intrinsic rotation relative to theta (added to position angle theta)",
                 losdepth="Half line-of-sigt extent for integration",
                 losbins="Number of points for line-of-sight integration",
             )
@@ -172,7 +190,7 @@ class Bar(Component):
 
     def getmap(self, img, convolve=False):
         """
-        Generate bar image via 3D line-of-sight integration.
+        Generate ellipsoid image via 3D line-of-sight integration.
 
         Computes the projected surface brightness by integrating the 3D
         ellipsoidal density along the line of sight, accounting for
@@ -188,7 +206,7 @@ class Bar(Component):
         Returns
         -------
         ndarray
-            Projected bar image on the image grid.
+            Projected ellipsoid image on the image grid.
 
         Raises
         ------
@@ -203,17 +221,19 @@ class Bar(Component):
         Notes
         -----
         Integration accuracy is controlled by losdepth (extent) and losbins
-        (number of points); increase both for highly inclined bars.
+        (number of points); increase both for highly inclined ellipsoids.
 
         Examples
         --------
-        >>> from socca.models import Bar, Sersic
+        >>> from socca.models import Ellipsoid, Sersic
         >>> from socca.data import Image
-        >>> bar = Bar(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
-        >>> bar.xc, bar.yc, bar.theta, bar.e = 180.5, 45.2, 0.5, 0.7
-        >>> bar.inc, bar.rot = 1.0, 0.2
+        >>> ellipsoid = Ellipsoid(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
+        >>> ellipsoid.xc, ellipsoid.yc, ellipsoid.theta, ellipsoid.e = (
+        ...     180.5, 45.2, 0.5, 0.7
+        ... )
+        >>> ellipsoid.inc, ellipsoid.rot = 1.0, 0.2
         >>> img = Image('observation.fits')
-        >>> bar_map = bar.getmap(img, convolve=True)
+        >>> ellipsoid_map = ellipsoid.getmap(img, convolve=True)
         """
         kwarg = {}
 
@@ -233,7 +253,7 @@ class Bar(Component):
                     val = val(*args)
             kwarg[key] = val
 
-        # Bar's own position, orientation, and 3D geometry
+        # Ellipsoid's own position, orientation, and 3D geometry
         for key in [
             "xc",
             "yc",
@@ -301,7 +321,7 @@ class Bar(Component):
             for key in pars
             if key.startswith(f"{comp_prefix}_radial.")
         }
-        # Bar's own position, orientation, and 3D geometry
+        # Ellipsoid's own position, orientation, and 3D geometry
         for key in [
             "xc",
             "yc",
@@ -316,7 +336,7 @@ class Bar(Component):
         return kwarg
 
     @staticmethod
-    def _bar_profile(xt, yt, zt, Ie, re, e, ns):
+    def _ellipsoid_profile(xt, yt, zt, Ie, re, e, ns):
         """Evaluate an ellipsoidal Sersic-like density on a 3D grid."""
         rs = re * (1 - e)
         m = jp.sqrt((xt / rs) ** 2 + (yt / re) ** 2 + (zt / rs) ** 2)
@@ -324,11 +344,11 @@ class Bar(Component):
 
     def _evaluate(self, img, **kwarg):
         """
-        Evaluate bar model on the given grid with explicit parameters.
+        Evaluate ellipsoid model on the given grid with explicit parameters.
 
-        This internal method computes the projected bar surface brightness
-        via line-of-sight integration using the provided geometric and
-        profile parameters. It is used by both getmap() and
+        This internal method computes the projected ellipsoid surface
+        brightness via line-of-sight integration using the provided
+        geometric and profile parameters. It is used by both getmap() and
         Model.getmodel() to avoid code duplication.
 
         Parameters
@@ -369,21 +389,21 @@ class Bar(Component):
         grid, xc, yc, losdepth, losbins=200, theta=0.0, inc=0.0, rot=0.0
     ):
         """
-        Compute 3D bar coordinates with position angle, inclination, and rotation.
+        Compute 3D ellipsoid coordinates with position angle, inclination, and rotation.
 
-        Generates 3D coordinate grids (x, y, z) for bar model evaluation,
-        accounting for the position angle, inclination, and intrinsic
-        rotation transformations needed for line-of-sight integration
-        through an inclined, rotated bar.
+        Generates 3D coordinate grids (x, y, z) for ellipsoid model
+        evaluation, accounting for the position angle, inclination, and
+        intrinsic rotation transformations needed for line-of-sight
+        integration through an inclined, rotated ellipsoid.
 
         Parameters
         ----------
         grid : Grid
             Grid object with .x and .y celestial coordinate arrays (deg).
         xc : float
-            Right ascension of bar center (deg).
+            Right ascension of ellipsoid center (deg).
         yc : float
-            Declination of bar center (deg).
+            Declination of ellipsoid center (deg).
         losdepth : float
             Half-extent of line-of-sight integration (deg).
         losbins : int, optional
@@ -393,12 +413,12 @@ class Bar(Component):
         inc : float, optional
             Inclination angle (0 = face-on, pi/2 = edge-on) (rad). Default is 0.
         rot : float, optional
-            Intrinsic bar rotation, added on top of theta (rad). Default is 0.
+            Intrinsic rotation, added on top of theta (rad). Default is 0.
 
         Returns
         -------
         xt, yt, zt : ndarray
-            4D arrays of bar-frame coordinates (deg).
+            4D arrays of ellipsoid-frame coordinates (deg).
             Shape: (ssize, losbins, ysize, xsize).
 
         Notes
@@ -408,7 +428,7 @@ class Bar(Component):
         2. Rotate by position angle theta, with a 90-degree offset to match Disk's convention
         3. Create the line-of-sight grid from -losdepth to +losdepth and broadcast to 4D
         4. Incline around the y-axis
-        5. Apply the intrinsic bar rotation rot, adding onto theta
+        5. Apply the intrinsic rotation rot, adding onto theta
         """
         ssize, ysize, xsize = grid.x.shape
 
@@ -446,10 +466,10 @@ class Bar(Component):
 
     def parameters(self):
         """
-        Print formatted table of bar parameters from the radial component.
+        Print formatted table of ellipsoid parameters from the radial component.
 
         Displays parameters from both the radial sub-component (prefixed
-        as 'radial.parameter') and Bar's own xc/yc/theta/e/inc/rot.
+        as 'radial.parameter') and Ellipsoid's own xc/yc/theta/e/inc/rot.
         Separates regular parameters from hyperparameters (integration
         settings).
 
@@ -473,10 +493,12 @@ class Bar(Component):
 
         Examples
         --------
-        >>> from socca.models import Bar, Sersic
-        >>> bar = Bar(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
-        >>> bar.xc, bar.yc, bar.theta, bar.e = 180.5, 45.2, 0.5, 0.7
-        >>> bar.parameters()
+        >>> from socca.models import Ellipsoid, Sersic
+        >>> ellipsoid = Ellipsoid(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
+        >>> ellipsoid.xc, ellipsoid.yc, ellipsoid.theta, ellipsoid.e = (
+        ...     180.5, 45.2, 0.5, 0.7
+        ... )
+        >>> ellipsoid.parameters()
         Model parameters
         ================
         radial.re         [deg]    : 2.0000E-04 | Effective radius
@@ -554,26 +576,26 @@ class Bar(Component):
 
     def parlist(self):
         """
-        Return list of parameter names from the radial component and Bar itself.
+        Return list of parameter names from the radial component and Ellipsoid itself.
 
         Returns
         -------
         list of str
             Combined list of parameter names: radial's shape parameters
-            (prefixed 'radial.') plus Bar's own xc, yc, theta, e, inc, rot,
-            losdepth, losbins.
+            (prefixed 'radial.') plus Ellipsoid's own xc, yc, theta, e,
+            inc, rot, losdepth, losbins.
 
         Notes
         -----
         This method is used internally by Model.addcomponent() when adding
-        a Bar component to a composite model, ensuring all parameters are
-        registered.
+        an Ellipsoid component to a composite model, ensuring all
+        parameters are registered.
 
         Examples
         --------
-        >>> from socca.models import Bar, Sersic
-        >>> bar = Bar(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
-        >>> bar.parlist()
+        >>> from socca.models import Ellipsoid, Sersic
+        >>> ellipsoid = Ellipsoid(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
+        >>> ellipsoid.parlist()
         ['radial.re', 'radial.Ie', 'radial.ns', 'xc', 'yc', 'theta', 'e',
          'inc', 'rot', 'losdepth', 'losbins']
         """
