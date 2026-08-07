@@ -73,9 +73,7 @@ class Disk(Component):
     >>> disk = Disk(radial=radial, vertical=vertical)
     """
 
-    def __init__(
-        self, radial=Sersic(), vertical=HyperSecantHeight(), **kwargs
-    ):
+    def __init__(self, radial=None, vertical=None, **kwargs):
         """
         Initialize a 3D disk model from radial and vertical profiles.
 
@@ -94,6 +92,16 @@ class Disk(Component):
         components to ensure consistent parameter naming in composite models.
         """
         super().__init__(**kwargs)
+
+        # radial/vertical default to fresh instances per call, not shared
+        # mutable defaults -- otherwise every Disk() call that doesn't pass
+        # its own radial/vertical would silently share the same
+        # sub-component objects, so setting one Disk's radial.xc would
+        # leak into every other default-constructed Disk.
+        if radial is None:
+            radial = Sersic()
+        if vertical is None:
+            vertical = HyperSecantHeight()
 
         _radial_exclude = ["e", "cbox"]
 

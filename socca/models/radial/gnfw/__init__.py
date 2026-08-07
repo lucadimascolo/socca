@@ -8,6 +8,7 @@ import numpy as np
 import numpyro.distributions
 
 from ... import config
+from ...base import _warn_range
 from ..base import Profile
 from .model import getzero, integral
 
@@ -196,6 +197,21 @@ class gNFW(Profile):
         if self.emulator is not None:
             self._emulator_model = gNFW._load_emulator(self.emulator)
         self._rebuild_profile()
+
+    @property
+    def rc(self):  # noqa: D102
+        return self._rc
+
+    @rc.setter
+    def rc(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rc",
+            lower=0,
+            lower_strict=True,
+            note="The scale radius must be strictly positive.",
+        )
+        self._rc = value
 
     @property
     def alpha(self):  # noqa: D102

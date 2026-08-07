@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jp
 
 from .. import config
+from ..base import _warn_range
 from .base import Profile
 
 
@@ -34,6 +35,21 @@ class Power(Profile):
             )
         )
         self._initialized = True
+
+    @property
+    def rc(self):  # noqa: D102
+        return self._rc
+
+    @rc.setter
+    def rc(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rc",
+            lower=0,
+            lower_strict=True,
+            note="The scale radius must be strictly positive.",
+        )
+        self._rc = value
 
     @staticmethod
     @jax.jit

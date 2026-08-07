@@ -11,6 +11,7 @@ import numpyro.distributions
 
 from .. import config
 from ..base import Component
+from ..base import _warn_span
 from .truncation import Truncation, HyperTangent
 
 
@@ -124,6 +125,22 @@ class Profile(Component):
             if hasattr(self, "wt"):
                 self.removeparameter("wt")
         self._truncation = value
+
+    @property
+    def theta(self):  # noqa: D102
+        return self._theta
+
+    @theta.setter
+    def theta(self, value):  # noqa: D102
+        _warn_span(
+            value,
+            "theta",
+            jp.pi,
+            "Profiles with e > 0 are symmetric under theta -> theta + pi, "
+            "so a wider prior range can make the posterior multimodal and "
+            "harder to sample.",
+        )
+        self._theta = value
 
     @property
     def e(self):  # noqa: D102

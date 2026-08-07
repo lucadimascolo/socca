@@ -11,6 +11,70 @@ from ..priors import _BoundTo
 from socca.units import _NON_CONVERTIBLE, conversion_factor as _cfactor
 
 
+def _warn_range(
+    value,
+    name,
+    lower=None,
+    upper=None,
+    lower_strict=False,
+    upper_strict=False,
+    note="",
+):
+    """
+    Warn if a fixed value, or a prior's support, falls outside [lower, upper].
+
+    lower_strict/upper_strict make the corresponding bound itself invalid
+    too (e.g. lower=0, lower_strict=True rejects exactly 0, for parameters
+    like scale radii that must be strictly positive; lower=0 alone allows
+    0, for parameters like ellipticities that are valid down to 0).
+
+    Tied values (lambdas, functions, or _BoundTo) and None (an unset
+    parameter, e.g. before a fixed value or prior has been assigned) are
+    skipped.
+    """
+    if value is None:
+        return
+    if isinstance(value, (types.LambdaType, types.FunctionType, _BoundTo)):
+        return
+    if isinstance(value, numpyro.distributions.Distribution):
+        kind = f"The {name} prior support includes values"
+        vlo, vhi = value.support.lower_bound, value.support.upper_bound
+    else:
+        kind = f"The {name} parameter is"
+        vlo = vhi = value
+    if upper is not None:
+        bad = vhi >= upper if upper_strict else vhi > upper
+        if bad:
+            suffix = "or equal to " if upper_strict else ""
+            warnings.warn(
+                f"{kind} greater than {suffix}{upper}. {note}",
+                UserWarning,
+                stacklevel=3,
+            )
+    if lower is not None:
+        bad = vlo <= lower if lower_strict else vlo < lower
+        if bad:
+            suffix = "or equal to " if lower_strict else ""
+            warnings.warn(
+                f"{kind} less than {suffix}{lower}. {note}",
+                UserWarning,
+                stacklevel=3,
+            )
+
+
+def _warn_span(value, name, span, note=""):
+    """Warn if a prior distribution's support is wider than `span`."""
+    if isinstance(value, numpyro.distributions.Distribution):
+        extent = value.support.upper_bound - value.support.lower_bound
+        if extent > span:
+            warnings.warn(
+                f"The {name} prior support spans more than "
+                f"{np.degrees(span):.0f} deg. {note}",
+                UserWarning,
+                stacklevel=3,
+            )
+
+
 class Component:
     """
     Base class for all model components.

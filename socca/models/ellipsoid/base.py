@@ -13,7 +13,7 @@ import numpyro.distributions
 import numpy as np
 
 from .. import config
-from ..base import Component
+from ..base import Component, _warn_range, _warn_span
 from ..radial import Sersic
 from ...priors import _BoundTo
 
@@ -102,10 +102,15 @@ class Ellipsoid(Component):
     >>> bar.inc = boundto(disk, "inc")
     """
 
-    def __init__(self, radial=Sersic(), **kwargs):
+    def __init__(self, radial=None, **kwargs):
         super().__init__(**kwargs)
 
-        self.radial = radial
+        # radial defaults to a fresh Sersic() per call, not a shared
+        # mutable default -- __init__ strips xc/yc/theta/e/cbox off
+        # radial below, which would otherwise corrupt a single
+        # module-level-evaluated default shared across every Ellipsoid()
+        # call that doesn't pass its own radial.
+        self.radial = Sersic() if radial is None else radial
 
         # xc/yc/theta/e live on Ellipsoid itself, not on radial. If the
         # caller set one of them on radial (before passing it in) and
@@ -213,22 +218,14 @@ class Ellipsoid(Component):
 
     @e.setter
     def e(self, value):  # noqa: D102
-        if not isinstance(
-            value, (types.LambdaType, types.FunctionType, _BoundTo)
-        ):
-            wstring = None
-            if isinstance(value, numpyro.distributions.Distribution):
-                if value.support.lower_bound < 0:
-                    wstring = "The e prior support includes values"
-            elif value < 0:
-                wstring = "The e parameter is"
-            if wstring is not None:
-                warnings.warn(
-                    f"{wstring} less than 0. "
-                    "This might lead to unphysical models.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+        _warn_range(
+            value,
+            "e",
+            lower=0,
+            upper=1,
+            upper_strict=True,
+            note="This might lead to unphysical models.",
+        )
         self._e = value
 
     @property
@@ -237,36 +234,46 @@ class Ellipsoid(Component):
 
     @eratio.setter
     def eratio(self, value):  # noqa: D102
-        if not isinstance(
-            value, (types.LambdaType, types.FunctionType, _BoundTo)
-        ):
-            wstring = None
-            if isinstance(value, numpyro.distributions.Distribution):
-                if value.support.upper_bound > 1:
-                    wstring = "The eratio prior support includes values"
-            elif value > 1:
-                wstring = "The eratio parameter is"
-            if wstring is not None:
-                warnings.warn(
-                    f"{wstring} greater than 1. "
-                    "This might lead to unphysical models.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                wstring = None
-            if isinstance(value, numpyro.distributions.Distribution):
-                if value.support.lower_bound < 0:
-                    wstring = "The eratio prior support includes values"
-            elif value < 0:
-                wstring = "The eratio parameter is"
-            if wstring is not None:
-                warnings.warn(
-                    f"{wstring} less than 0. "
-                    "This might lead to unphysical models.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+        _warn_range(
+            value,
+            "eratio",
+            lower=0,
+            upper=1,
+            note="This might lead to unphysical models.",
+        )
         self._eratio = value
+
+    @property
+    def theta(self):  # noqa: D102
+        return self._theta
+
+    @theta.setter
+    def theta(self, value):  # noqa: D102
+        _warn_span(
+            value,
+            "theta",
+            jp.pi,
+            "Ellipsoids with e > 0 are symmetric under theta -> theta + "
+            "pi, so a wider prior range can make the posterior "
+            "multimodal and harder to sample.",
+        )
+        self._theta = value
+
+    @property
+    def rot(self):  # noqa: D102
+        return self._rot
+
+    @rot.setter
+    def rot(self, value):  # noqa: D102
+        _warn_span(
+            value,
+            "rot",
+            jp.pi,
+            "Ellipsoids with e > 0 are symmetric under rot -> rot + pi, "
+            "so a wider prior range can make the posterior multimodal "
+            "and harder to sample.",
+        )
+        self._rot = value
 
     def getmap(self, img, convolve=False):
         """
