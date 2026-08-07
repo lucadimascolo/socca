@@ -653,6 +653,10 @@ Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-com
 If `xc`, `yc`, `theta`, or `e` are set on the `radial` profile before it is passed to `Ellipsoid` (and not also passed as an `Ellipsoid` keyword argument), `Ellipsoid` inherits that value; if both are set, `Ellipsoid`'s value takes precedence and a warning is raised. Either way, `radial` no longer carries these parameters afterwards -- they belong to `Ellipsoid` alone.
 ```
 
+```{note}
+`e` and `eratio` warn (rather than raise) if set, or given a prior distribution whose support reaches, outside `[0, 1)` and `[0, 1]` respectively, since those combinations still evaluate but describe unphysical or degenerate shapes. `theta` and `rot` similarly warn if given a prior spanning more than 180°, since an ellipsoid with `e > 0` is symmetric under a 180° rotation and a wider range can make the posterior multimodal. The same kind of range/span validation applies throughout **``socca``**'s other model components: scale/effective/core radii (e.g. `re`, `rs`, `rc`, `zs`) must be strictly positive, and every other ellipticity parameter (`Profile.e`, `Bridge.e`) and position angle (`Profile.theta`, `Bridge.theta`) follows the same pattern. Tied (`boundto()`) values are not checked, since their eventual numerical value isn't known until evaluation time.
+```
+
 As mentioned above, a galactic bar is typically embedded within, and shares the same orientation as, a host `Disk`. In that case, the `Ellipsoid`'s position, position angle, and inclination are commonly tied to those of the `Disk` component using [`boundto()`](./tutorial_priors.md):
 
 ```python
