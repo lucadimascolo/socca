@@ -28,9 +28,16 @@ class Ellipsoid(Component):
     A common use case is modeling a galactic bar embedded within a host
     Disk, with its position, position angle, and inclination tied to the
     disk's via boundto() -- see the Examples below and
-    socca.priors.boundto(). xc, yc, theta, e, inc, rot, losdepth, and
-    losbins live directly on Ellipsoid; radial only supplies the
+    socca.priors.boundto(). xc, yc, theta, e, eratio, inc, rot, losdepth,
+    and losbins live directly on Ellipsoid; radial only supplies the
     brightness-shape parameters (re, Ie, ns for Sersic).
+
+    The ellipsoid has one major semi-axis (along x) and two minor
+    semi-axes (along y and z), which need not be equal: e sets the
+    ellipticity in the (x, y) plane -- the plane that corresponds to the
+    projected ellipse when the ellipsoid is seen face-on (inc = 0) -- and
+    eratio sets the ratio of the z axis's ellipticity to e, so the two
+    minor axes can differ.
 
     Parameters
     ----------
@@ -45,7 +52,14 @@ class Ellipsoid(Component):
     theta : float, optional
         Position angle, east from north (rad).
     e : float, optional
-        Projected ellipticity (1 - axis ratio).
+        Ellipticity (1 - axis ratio) between the major (x) axis and the
+        first minor (y) axis -- i.e. the ellipticity of the face-on
+        projected ellipse.
+    eratio : float, optional
+        Ratio in [0, 1] of the second minor (z) axis's ellipticity to e:
+        z-axis ellipticity = eratio * e. Default is 1, which makes both
+        minor axes equal (a prolate/oblate spheroid rather than a fully
+        triaxial ellipsoid).
     inc : float, optional
         Inclination angle (0 = face-on). Typically tied to a host Disk's
         inclination via boundto().
@@ -130,6 +144,7 @@ class Ellipsoid(Component):
 
         self._namespaces = {"radial": self.radial}
 
+        self.eratio = kwargs.get("eratio", config.Ellipsoid.eratio)
         self.inc = kwargs.get("inc", config.Ellipsoid.inc)
         self.rot = kwargs.get("rot", config.Ellipsoid.rot)
         self.losdepth = kwargs.get("losdepth", config.Ellipsoid.losdepth)
@@ -162,6 +177,7 @@ class Ellipsoid(Component):
                 yc="deg",
                 theta="rad",
                 e="",
+                eratio="",
                 inc="rad",
                 rot="rad",
                 losdepth="deg",
@@ -180,7 +196,8 @@ class Ellipsoid(Component):
                 xc="Right ascension of centroid",
                 yc="Declination of centroid",
                 theta="Position angle (east from north)",
-                e="Projected ellipticity (1 - axis ratio)",
+                e="Ellipticity between the major axis and the first (in-plane) minor axis",
+                eratio="Ratio of the second (vertical) minor axis's ellipticity to e",
                 inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
                 rot="Rotation applied after inclining, in the ellipsoid's own tilted frame",
                 losdepth="Half line-of-sigt extent for integration",
@@ -189,6 +206,67 @@ class Ellipsoid(Component):
         )
 
         self._initialized = True
+
+    @property
+    def e(self):  # noqa: D102
+        return self._e
+
+    @e.setter
+    def e(self, value):  # noqa: D102
+        if not isinstance(
+            value, (types.LambdaType, types.FunctionType, _BoundTo)
+        ):
+            wstring = None
+            if isinstance(value, numpyro.distributions.Distribution):
+                if value.support.lower_bound < 0:
+                    wstring = "The e prior support includes values"
+            elif value < 0:
+                wstring = "The e parameter is"
+            if wstring is not None:
+                warnings.warn(
+                    f"{wstring} less than 0. "
+                    "This might lead to unphysical models.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        self._e = value
+
+    @property
+    def eratio(self):  # noqa: D102
+        return self._eratio
+
+    @eratio.setter
+    def eratio(self, value):  # noqa: D102
+        if not isinstance(
+            value, (types.LambdaType, types.FunctionType, _BoundTo)
+        ):
+            wstring = None
+            if isinstance(value, numpyro.distributions.Distribution):
+                if value.support.upper_bound > 1:
+                    wstring = "The eratio prior support includes values"
+            elif value > 1:
+                wstring = "The eratio parameter is"
+            if wstring is not None:
+                warnings.warn(
+                    f"{wstring} greater than 1. "
+                    "This might lead to unphysical models.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                wstring = None
+            if isinstance(value, numpyro.distributions.Distribution):
+                if value.support.lower_bound < 0:
+                    wstring = "The eratio prior support includes values"
+            elif value < 0:
+                wstring = "The eratio parameter is"
+            if wstring is not None:
+                warnings.warn(
+                    f"{wstring} less than 0. "
+                    "This might lead to unphysical models.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        self._eratio = value
 
     def getmap(self, img, convolve=False):
         """
@@ -261,6 +339,7 @@ class Ellipsoid(Component):
             "yc",
             "theta",
             "e",
+            "eratio",
             "inc",
             "rot",
             "losdepth",
@@ -315,7 +394,8 @@ class Ellipsoid(Component):
         -------
         dict
             Keyword arguments for _evaluate: radial's shape parameters
-            (re, Ie, ns) plus xc, yc, theta, e, inc, rot, losdepth, losbins.
+            (re, Ie, ns) plus xc, yc, theta, e, eratio, inc, rot, losdepth,
+            losbins.
         """
         # radial profile shape parameters (re, Ie, ns)
         kwarg = {
@@ -329,6 +409,7 @@ class Ellipsoid(Component):
             "yc",
             "theta",
             "e",
+            "eratio",
             "inc",
             "rot",
             "losdepth",
@@ -338,10 +419,11 @@ class Ellipsoid(Component):
         return kwarg
 
     @staticmethod
-    def _ellipsoid_profile(xt, yt, zt, Ie, re, e, ns):
-        """Evaluate an ellipsoidal Sersic-like density on a 3D grid."""
-        rs = re * (1 - e)
-        m = jp.sqrt((xt / rs) ** 2 + (yt / re) ** 2 + (zt / rs) ** 2)
+    def _ellipsoid_profile(xt, yt, zt, Ie, re, e, eratio, ns):
+        """Evaluate a triaxial-ellipsoid Sersic-like density on a 3D grid."""
+        rs1 = re * (1 - e)
+        rs2 = re * (1 - eratio * e)
+        m = jp.sqrt((xt / re) ** 2 + (yt / rs1) ** 2 + (zt / rs2) ** 2)
         return Sersic.profile(m, Ie, 1.0, ns)
 
     def _evaluate(self, img, **kwarg):
@@ -358,9 +440,9 @@ class Ellipsoid(Component):
         img : Image
             Image object containing grid and WCS information.
         **kwarg : dict
-            All parameters, including geometric (xc, yc, theta, inc, rot,
-            losdepth, losbins) and radial profile-specific ones (re, Ie, ns,
-            e).
+            All parameters, including geometric (xc, yc, theta, e, eratio,
+            inc, rot, losdepth, losbins) and radial profile-specific ones
+            (re, Ie, ns).
 
         Returns
         -------
@@ -482,7 +564,8 @@ class Ellipsoid(Component):
         Print formatted table of ellipsoid parameters from the radial component.
 
         Displays parameters from both the radial sub-component (prefixed
-        as 'radial.parameter') and Ellipsoid's own xc/yc/theta/e/inc/rot.
+        as 'radial.parameter') and Ellipsoid's own
+        xc/yc/theta/e/eratio/inc/rot.
         Separates regular parameters from hyperparameters (integration
         settings).
 
@@ -596,7 +679,7 @@ class Ellipsoid(Component):
         list of str
             Combined list of parameter names: radial's shape parameters
             (prefixed 'radial.') plus Ellipsoid's own xc, yc, theta, e,
-            inc, rot, losdepth, losbins.
+            eratio, inc, rot, losdepth, losbins.
 
         Notes
         -----
@@ -610,6 +693,6 @@ class Ellipsoid(Component):
         >>> ellipsoid = Ellipsoid(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
         >>> ellipsoid.parlist()
         ['radial.re', 'radial.Ie', 'radial.ns', 'xc', 'yc', 'theta', 'e',
-         'inc', 'rot', 'losdepth', 'losbins']
+         'eratio', 'inc', 'rot', 'losdepth', 'losbins']
         """
         return list(self.units.keys())
