@@ -50,7 +50,9 @@ class Ellipsoid(Component):
         Inclination angle (0 = face-on). Typically tied to a host Disk's
         inclination via boundto().
     rot : float, optional
-        Intrinsic rotation, added on top of theta.
+        Rotation applied after inclining, within the ellipsoid's own
+        tilted frame. Only equivalent to a position-angle offset (i.e.
+        theta + rot) when inc = 0.
     losdepth : float, optional
         Half line-of-sight extent for integration.
     losbins : int, optional
@@ -180,7 +182,7 @@ class Ellipsoid(Component):
                 theta="Position angle (east from north)",
                 e="Projected ellipticity (1 - axis ratio)",
                 inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
-                rot="Intrinsic rotation relative to theta (added to position angle theta)",
+                rot="Rotation applied after inclining, in the ellipsoid's own tilted frame",
                 losdepth="Half line-of-sigt extent for integration",
                 losbins="Number of points for line-of-sight integration",
             )
@@ -413,7 +415,9 @@ class Ellipsoid(Component):
         inc : float, optional
             Inclination angle (0 = face-on, pi/2 = edge-on) (rad). Default is 0.
         rot : float, optional
-            Intrinsic rotation, added on top of theta (rad). Default is 0.
+            Rotation applied after inclining, within the already-inclined
+            frame (rad). Default is 0. Only equivalent to a position-angle
+            offset (i.e. theta + rot) when inc = 0 -- see Notes.
 
         Returns
         -------
@@ -427,8 +431,14 @@ class Ellipsoid(Component):
         1. Center coordinates on (xc, yc) and apply spherical geometry correction (cos(dec))
         2. Rotate by position angle theta, with a 90-degree offset to match Disk's convention
         3. Create the line-of-sight grid from -losdepth to +losdepth and broadcast to 4D
-        4. Incline around the y-axis
-        5. Apply the intrinsic rotation rot, adding onto theta
+        4. Incline around the y-axis, mixing the position-angle-rotated x with the line-of-sight coordinate
+        5. Rotate by rot within that already-inclined (x, y) frame
+
+        Because step 4 mixes the line-of-sight coordinate into x before
+        step 5 runs, rot is not simply an additive offset to theta except
+        in the face-on case (inc = 0): for inc != 0, rotating by rot after
+        inclining is a genuinely different transform from inclining after
+        rotating by theta + rot.
         """
         ssize, ysize, xsize = grid.x.shape
 
@@ -457,7 +467,10 @@ class Ellipsoid(Component):
         cosi = jp.cos(inc - 0.5 * jp.pi)
         zt, xt = xt * cosi - zt * sini, xt * sini + zt * cosi
 
-        # Rotate by rot (plain CCW, adds to theta).
+        # Rotate by rot in the already-inclined (x, y) frame -- xt already
+        # carries a line-of-sight (z) contribution from the inclination
+        # step above, so this is only equivalent to a theta offset when
+        # inc == 0.
         sinr = jp.sin(rot)
         cosr = jp.cos(rot)
         xt, yt = xt * cosr + yt * sinr, -xt * sinr + yt * cosr
