@@ -91,6 +91,7 @@ def zoo():
     - Point: Point source model
     - Background: Polynomial background model
     - Disk: 3D disk model with finite thickness
+    - Bar: 3D bar model evaluated via line-of-sight integration
 
     Examples
     --------
@@ -109,6 +110,7 @@ def zoo():
     Point
     Background
     Disk
+    Bar
     """
     print("\nRadial models")
     print("=============")
