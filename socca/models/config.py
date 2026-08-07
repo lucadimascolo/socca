@@ -203,6 +203,7 @@ class Ellipsoid:
     yc: float = None
     theta: float = 0.00
     e: float = 0.00
+    eratio: float = 1.00
     inc: float = 0.00
     rot: float = 0.00
     losdepth: float = 10.00 / 60.00 / 60.00

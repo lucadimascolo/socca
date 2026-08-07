@@ -603,10 +603,12 @@ $$
 where $(x_0, y_0)$ are the sky-plane coordinates of a given pixel, and $m(l)$ is the dimensionless ellipsoidal radius (already normalized by the ellipsoid's semi-axes, so it evaluates to 1 on the ellipsoid's surface) at line-of-sight position $l$:
 
 $$
-m(l) = \sqrt{\left(\frac{x_t(l)}{r_s}\right)^2 + \left(\frac{y_t(l)}{r_e}\right)^2 + \left(\frac{z_t(l)}{r_s}\right)^2}, \qquad r_s = r_e (1 - e).
+m(l) = \sqrt{\left(\frac{x_t(l)}{r_e}\right)^2 + \left(\frac{y_t(l)}{r_{s,1}}\right)^2 + \left(\frac{z_t(l)}{r_{s,2}}\right)^2}, \qquad r_{s,1} = r_e (1 - e), \quad r_{s,2} = r_e (1 - e_{\mathrm{ratio}}\, e).
 $$
 
-$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and then applying the rotation $\mathrm{rot}$ within that already-inclined frame -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above. $e$ is the ellipticity setting the ratio between the minor and major semi-axes.
+$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and then applying the rotation $\mathrm{rot}$ within that already-inclined frame -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above.
+
+The ellipsoid has one major semi-axis, $r_e$, along $x_t$, and two minor semi-axes along $y_t$ and $z_t$ that need not be equal. $e$ sets the ellipticity between the major axis and the $y_t$ minor axis -- the plane $(x_t, y_t)$ is exactly the plane visible in projection when the ellipsoid is seen face-on ($\mathrm{inc}=0$), so $e$ is the ellipticity of the face-on projected ellipse. $e_{\mathrm{ratio}} \in [0, 1]$ then sets the $z_t$ minor axis's ellipticity as a fraction of $e$ (default 1, making both minor axes equal -- a prolate/oblate spheroid rather than a fully triaxial ellipsoid).
 
 ```{caution}
 Because inclining mixes the line-of-sight coordinate into $x_t$ *before* $\mathrm{rot}$ is applied, $\mathrm{rot}$ is **not** simply an additive offset to $\theta$ (i.e. equivalent to using $\theta + \mathrm{rot}$ as the position angle) except in the face-on case $\mathrm{inc} = 0$. For $\mathrm{inc} \neq 0$, it is a genuine rotation of the ellipsoid within its own already-inclined frame -- e.g. letting a bar's long axis point in a different direction than the disk's line of nodes, even though both share the same inclination.
@@ -625,7 +627,8 @@ radial.ns      [] : 5.0000E-01 | Sersic index
 xc          [deg] : None       | Right ascension of centroid
 yc          [deg] : None       | Declination of centroid
 theta       [rad] : 0.0000E+00 | Position angle (east from north)
-e              [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
+e              [] : 0.0000E+00 | Ellipticity between the major axis and the first (in-plane) minor axis
+eratio         [] : 1.0000E+00 | Ratio of the second (vertical) minor axis's ellipticity to e
 inc         [rad] : 0.0000E+00 | Inclination angle (0=face-on); Typically inherited from a Disk object
 rot         [rad] : 0.0000E+00 | Rotation applied after inclining, in the ellipsoid's own tilted frame
 
@@ -635,13 +638,14 @@ losdepth    [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
 losbins        [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
-Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-components, `Ellipsoid` only delegates the brightness-shape parameters (`re`, `Ie`, `ns` for the default `Sersic` profile) to its `radial` sub-component. Position, orientation, ellipticity, inclination, rotation, and the line-of-sight integration hyperparameters (`xc`, `yc`, `theta`, `e`, `inc`, `rot`, `losdepth`, `losbins`) live directly on `Ellipsoid` itself:
+Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-components, `Ellipsoid` only delegates the brightness-shape parameters (`re`, `Ie`, `ns` for the default `Sersic` profile) to its `radial` sub-component. Position, orientation, both ellipticities, inclination, rotation, and the line-of-sight integration hyperparameters (`xc`, `yc`, `theta`, `e`, `eratio`, `inc`, `rot`, `losdepth`, `losbins`) live directly on `Ellipsoid` itself:
 
 ```python
 >>> from socca.models import Ellipsoid, Sersic
 >>> comp = Ellipsoid(radial=Sersic(re=2.00E-04, Ie=10.00, ns=0.25))
 >>> comp.xc, comp.yc = 180.50, 45.20
 >>> comp.theta, comp.e = 0.50, 0.70
+>>> comp.eratio = 0.40  # z-axis flattened less than the y-axis
 >>> comp.inc, comp.rot = 1.00, 0.20
 ```
 
