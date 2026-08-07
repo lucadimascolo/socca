@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.4.0](https://github.com/lucadimascolo/socca/compare/v1.3.0...v1.4.0) (2026-08-07)
+
+
+### Features
+
+* add Bar constructor, profile, and kwarg builder ([6dab3e5](https://github.com/lucadimascolo/socca/commit/6dab3e5b4bf69ef3d963b6fafe17cc9345decfa6))
+* add Bar.getmap for fixed-parameter model evaluation ([b68cc9a](https://github.com/lucadimascolo/socca/commit/b68cc9ae9d86a3be1351298fa74ce93d0b51940e))
+* add BoundTo for tying parameters into namespaced sub-components ([505f90d](https://github.com/lucadimascolo/socca/commit/505f90de11dcb65a514329b2966b59f3a87f57ad))
+* add xc/yc/theta/rs to BarGeometry and namespace Bar's units ([a7d4384](https://github.com/lucadimascolo/socca/commit/a7d43847124df52dcf091fa6128f561e7b9827e0))
+* introduce BarGeometry helper and Bar.parameters()/parlist() ([cd744ad](https://github.com/lucadimascolo/socca/commit/cd744ad366eb6d8ee973074b90e4c3a633e759cd))
+* register Bar in the models package and fix Disk/Bar id merging ([a27d10b](https://github.com/lucadimascolo/socca/commit/a27d10b1d8ff84fd7855cf26311af597b88fc42d))
+* scaffold Bar model with line-of-sight grid construction ([8aa63fa](https://github.com/lucadimascolo/socca/commit/8aa63fa78fe8e614dc6e22afe031ea80650bbf57))
+* switch Bar to ellipticity-based geometry and add BarGeometry defaults ([24ecb88](https://github.com/lucadimascolo/socca/commit/24ecb88f77d3b56d9335a142873ae6e8b1abe6d0))
+* warn on out-of-range ellipticity/radius/angle-span parameters ([45ba3d8](https://github.com/lucadimascolo/socca/commit/45ba3d86534a341e9d037aa56a81173509e75db1))
+
+
+### Bug Fixes
+
+* apply Bar's intrinsic rotation before inclining, not after ([18bd6c7](https://github.com/lucadimascolo/socca/commit/18bd6c79166d1c2846807fbc9bb8b11c31be48e5))
+* correct Bar position-angle rotation sign so PA starts along N/S ([1f0e7d8](https://github.com/lucadimascolo/socca/commit/1f0e7d82c061516827e6fab847096bc44a9640a7))
+* correct double scaling of Bar's Sersic radius ([ad3a8a6](https://github.com/lucadimascolo/socca/commit/ad3a8a6c04c558a46f3382372ab05aaf8e6ea2e2))
+* correct rot's description -- not simply an offset to theta ([9506650](https://github.com/lucadimascolo/socca/commit/950665011940435610123d34460af2c1887b93a2))
+* correct the Ellipsoid profile equation in the components tutorial ([5cd7865](https://github.com/lucadimascolo/socca/commit/5cd7865bad7e7b12e19d417c364ea7dba7926c7d))
+* make the boundto() tie marker private and callable ([98561bc](https://github.com/lucadimascolo/socca/commit/98561bc88909538610da8b520bb687f34dcbbb2f))
+* recognize _BoundTo as tied in all .parameters() displays ([45bda29](https://github.com/lucadimascolo/socca/commit/45bda2957330b6e15ae78fe9b3b56e9826c11588))
+* resolve boundto() ties when calling a component's getmap() directly ([da841f8](https://github.com/lucadimascolo/socca/commit/da841f8243f22599e4ac30c465b029c98cbe3154))
+* rework Bar's PA/inclination/rotation convention in getgrid ([02c9476](https://github.com/lucadimascolo/socca/commit/02c94767c8d363895deb5b5e99350218d61a6f29))
+* update variable name for the ellipticity ratio parameter ([7a69ff2](https://github.com/lucadimascolo/socca/commit/7a69ff29ad935844545bb66fabbd0063aab58fb4))
+
+
+### Documentation
+
+* add API reference page for socca.models.bar ([afac756](https://github.com/lucadimascolo/socca/commit/afac756986ed0482cc64c6e5735ade768195a704))
+* document the Bar model in the components tutorial ([09d8853](https://github.com/lucadimascolo/socca/commit/09d885384f8c9c95e5d8abb8f1cc1f02d87bdd92))
+* mention Bar in zoo()'s docstring ([5f080fa](https://github.com/lucadimascolo/socca/commit/5f080faf86fee2886a06aa3941c20d321dd05019))
+* note the new range/span validation in the Ellipsoid tutorial ([d7f134e](https://github.com/lucadimascolo/socca/commit/d7f134e240a99e8606053533f31b8f68368f9f0e))
+* point CONTRIBUTING.md at main, fix a stale issue-tracker link ([e7a8639](https://github.com/lucadimascolo/socca/commit/e7a8639d5d19d07e06dc4355a432d491789db3f4))
+* rename Bar to Ellipsoid in examples/docs, note galactic bars as a use case ([c509576](https://github.com/lucadimascolo/socca/commit/c509576bae0deb26d3204a34481a8b47c9a57258))
+* replace examples/test_bar.py with 03_bar.py ([4f0f69b](https://github.com/lucadimascolo/socca/commit/4f0f69b7d413a614a25ca547028f39f7154d4cf3))
+* write real docstrings for Bar, closing out ruff's docstring debt ([73f16d9](https://github.com/lucadimascolo/socca/commit/73f16d9d28876ef5713646cb4bc8f0a92b813cd5))
+
 ## [1.3.0](https://github.com/lucadimascolo/socca/compare/v1.2.0...v1.3.0) (2026-07-30)
 
 
