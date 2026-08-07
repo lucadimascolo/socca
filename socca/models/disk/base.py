@@ -250,8 +250,10 @@ class Disk(Component):
                 else:
                     continue
 
-                # Evaluate tied parameters (lambda functions)
-                if callable(val):
+                # Evaluate tied parameters
+                if isinstance(val, _BoundTo):
+                    val = val.resolve()
+                elif callable(val):
                     sig = inspect.signature(val)
                     params = list(sig.parameters.keys())
                     if params:
@@ -270,6 +272,10 @@ class Disk(Component):
         kwarg["inc"] = self.vertical.inc
         kwarg["losdepth"] = self.vertical.losdepth
         kwarg["losbins"] = self.vertical.losbins
+
+        for key in ["xc", "yc", "theta", "inc", "losdepth", "losbins"]:
+            if isinstance(kwarg[key], _BoundTo):
+                kwarg[key] = kwarg[key].resolve()
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
