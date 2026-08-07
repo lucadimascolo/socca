@@ -28,6 +28,10 @@ Disk-like model
 ===============
 Disk
 
+Bar-like model
+===============
+Bar
+
 Other models
 ============
 Point
@@ -584,6 +588,78 @@ By default, the radial profile is modeled using a Sérsic profile, while the ver
 >>> from socca.models.disk.vertical import ExponentialHeight
 >>> comp = Disk(radial=Exponential(), vertical=ExponentialHeight())
 ```
+
+## Bar model
+The `Bar` class implements a three-dimensional model for describing barred structures, such as galactic bars, evaluated via line-of-sight integration in the same spirit as `Disk`. Unlike `Disk`, which combines separate radial and vertical profiles, `Bar` projects a single ellipsoidal profile, elongated along its major axis and inclined/rotated with respect to the line of sight:
+
+$$
+I(r) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} I_e \exp\left\{-b_n\left[\left(\frac{m}{r_e}\right)^{1/n}-1\right]\right\} \mathrm{d}l,
+$$
+
+where the ellipsoidal radius $m$ is defined as
+
+$$
+m = \sqrt{\left(\frac{x_t}{r_s}\right)^2 + \left(\frac{y_t}{r_e}\right)^2 + \left(\frac{z_t}{r_s}\right)^2}, \qquad r_s = r_e (1 - e),
+$$
+
+$(x_t, y_t, z_t)$ are bar-frame coordinates obtained from the sky-plane grid by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and applying the intrinsic bar rotation $\mathrm{rot}$ (added on top of $\theta$), and $e$ is the ellipticity setting the ratio between the bar's minor and major semi-axes.
+
+```python
+>>> from socca.models import Bar
+>>> comp = Bar()
+>>> comp.parameters()
+
+Model parameters
+================
+radial.re   [deg] : None       | Effective radius
+radial.Ie [image] : None       | Surface brightness at re
+radial.ns      [] : 5.0000E-01 | Sersic index
+xc          [deg] : None       | Right ascension of centroid
+yc          [deg] : None       | Declination of centroid
+theta       [rad] : 0.0000E+00 | Position angle (east from north)
+e              [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
+inc         [rad] : 0.0000E+00 | Inclination angle (0=face-on); Typically inherited from a Disk object
+rot         [rad] : 0.0000E+00 | Intrinsic bar rotation relative to theta (added to position angle theta)
+
+Hyperparameters
+===============
+losdepth    [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+losbins        [] : 2.0000E+02 | Number of points for line-of-sight integration
+```
+
+Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-components, `Bar` only delegates the brightness-shape parameters (`re`, `Ie`, `ns` for the default `Sersic` profile) to its `radial` sub-component. Position, orientation, ellipticity, inclination, rotation, and the line-of-sight integration hyperparameters (`xc`, `yc`, `theta`, `e`, `inc`, `rot`, `losdepth`, `losbins`) live directly on `Bar` itself:
+
+```python
+>>> from socca.models import Bar, Sersic
+>>> comp = Bar(radial=Sersic(re=2.00E-04, Ie=10.00, ns=0.25))
+>>> comp.xc, comp.yc = 180.50, 45.20
+>>> comp.theta, comp.e = 0.50, 0.70
+>>> comp.inc, comp.rot = 1.00, 0.20
+```
+
+```{important}
+If `xc`, `yc`, `theta`, or `e` are set on the `radial` profile before it is passed to `Bar` (and not also passed as a `Bar` keyword argument), `Bar` inherits that value; if both are set, `Bar`'s value takes precedence and a warning is raised. Either way, `radial` no longer carries these parameters afterwards -- they belong to `Bar` alone.
+```
+
+Since a galactic bar is typically embedded within, and shares the same orientation as, a host `Disk`, `Bar`'s position, position angle, and inclination are commonly tied to those of a `Disk` component using [`boundto()`](./tutorial_priors.md):
+
+```python
+>>> from socca.models import Disk, Bar
+>>>
+>>> disk = Disk()
+>>> disk.radial.xc, disk.radial.yc = 180.50, 45.20
+>>> disk.radial.theta = 0.50
+>>> disk.vertical.inc = 1.00
+>>>
+>>> bar = Bar()
+>>> bar.xc = socca.priors.boundto(disk, "xc")
+>>> bar.yc = socca.priors.boundto(disk, "yc")
+>>> bar.theta = socca.priors.boundto(disk, "theta")
+>>> bar.inc = socca.priors.boundto(disk, "inc")
+>>> bar.e, bar.rot = 0.70, 0.20  # left free / fixed independently of the disk
+```
+
+A complete example combining a `Disk` and a tied `Bar` component in a single fit can be found in [`examples/03_bar.py`](https://github.com/lucadimascolo/socca/blob/main/examples/03_bar.py).
 
 ## Bridge/Filament models
 The bridge models in **``socca``** are designed for modeling elongated emission structures such as intracluster bridges and filaments connecting galaxy clusters. These models describe the surface brightness distribution by combining a radial profile (perpendicular to the bridge axis) with a parallel profile (along the bridge axis), allowing for flexible modeling of asymmetric, elongated emission.
