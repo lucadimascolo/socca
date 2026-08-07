@@ -606,7 +606,11 @@ $$
 m(l) = \sqrt{\left(\frac{x_t(l)}{r_s}\right)^2 + \left(\frac{y_t(l)}{r_e}\right)^2 + \left(\frac{z_t(l)}{r_s}\right)^2}, \qquad r_s = r_e (1 - e).
 $$
 
-$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and applying the intrinsic rotation $\mathrm{rot}$ (added on top of $\theta$) -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above. $e$ is the ellipticity setting the ratio between the minor and major semi-axes.
+$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and then applying the rotation $\mathrm{rot}$ within that already-inclined frame -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above. $e$ is the ellipticity setting the ratio between the minor and major semi-axes.
+
+```{caution}
+Because inclining mixes the line-of-sight coordinate into $x_t$ *before* $\mathrm{rot}$ is applied, $\mathrm{rot}$ is **not** simply an additive offset to $\theta$ (i.e. equivalent to using $\theta + \mathrm{rot}$ as the position angle) except in the face-on case $\mathrm{inc} = 0$. For $\mathrm{inc} \neq 0$, it is a genuine rotation of the ellipsoid within its own already-inclined frame -- e.g. letting a bar's long axis point in a different direction than the disk's line of nodes, even though both share the same inclination.
+```
 
 ```python
 >>> from socca.models import Ellipsoid
@@ -623,7 +627,7 @@ yc          [deg] : None       | Declination of centroid
 theta       [rad] : 0.0000E+00 | Position angle (east from north)
 e              [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 inc         [rad] : 0.0000E+00 | Inclination angle (0=face-on); Typically inherited from a Disk object
-rot         [rad] : 0.0000E+00 | Intrinsic rotation relative to theta (added to position angle theta)
+rot         [rad] : 0.0000E+00 | Rotation applied after inclining, in the ellipsoid's own tilted frame
 
 Hyperparameters
 ===============
