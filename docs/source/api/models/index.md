@@ -7,5 +7,6 @@ base
 radial
 bridge
 disk
+bar
 misc
 ```

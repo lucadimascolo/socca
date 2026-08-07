@@ -36,17 +36,22 @@ class Bar(Component):
         for Sersic). Default is Sersic(). Any xc/yc/theta/e already set on
         it are inherited by Bar unless also passed as a Bar keyword
         argument, in which case Bar's value wins and a warning is raised.
+    xc, yc : float, optional
+        Right ascension and declination of the bar centroid (deg).
+    theta : float, optional
+        Position angle, east from north (rad).
+    e : float, optional
+        Projected ellipticity (1 - axis ratio).
+    inc : float, optional
+        Inclination angle (0 = face-on). Typically tied to a host Disk's
+        inclination via boundto().
+    rot : float, optional
+        Intrinsic bar rotation, added on top of theta.
+    losdepth : float, optional
+        Half line-of-sight extent for integration.
+    losbins : int, optional
+        Number of points for line-of-sight integration.
     **kwargs : dict
-        xc, yc, theta, e : float, optional
-            Position (deg), position angle east from north (rad), and
-            projected ellipticity (1 - axis ratio) of the bar.
-        inc : float, optional
-            Inclination angle (0 = face-on). Typically tied to a host
-            Disk's inclination via boundto().
-        rot : float, optional
-            Intrinsic bar rotation, added on top of theta.
-        losdepth, losbins : float, int, optional
-            Half line-of-sight extent and number of integration points.
         Additional keyword arguments passed to Component.
 
     Attributes
@@ -399,12 +404,9 @@ class Bar(Component):
         Notes
         -----
         The transformation sequence:
-        1. Center coordinates on (xc, yc) and apply spherical geometry
-           correction (cos(dec))
-        2. Rotate by position angle theta (with a 90-degree offset to match
-           Disk's convention)
-        3. Create the line-of-sight grid from -losdepth to +losdepth and
-           broadcast to 4D
+        1. Center coordinates on (xc, yc) and apply spherical geometry correction (cos(dec))
+        2. Rotate by position angle theta, with a 90-degree offset to match Disk's convention
+        3. Create the line-of-sight grid from -losdepth to +losdepth and broadcast to 4D
         4. Incline around the y-axis
         5. Apply the intrinsic bar rotation rot, adding onto theta
         """
