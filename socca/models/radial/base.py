@@ -12,6 +12,7 @@ import numpyro.distributions
 from .. import config
 from ..base import Component
 from ..base import _warn_span
+from ...priors import _BoundTo
 from .truncation import Truncation, HyperTangent
 
 
@@ -242,6 +243,19 @@ class Profile(Component):
             _keys += ["rt", "wt"]
 
         kwarg = {key: getattr(self, key) for key in _keys if key != "r"}
+
+        for key, val in kwarg.items():
+            if isinstance(val, _BoundTo):
+                kwarg[key] = val.resolve()
+            elif callable(val):
+                sig = inspect.signature(val)
+                params = list(sig.parameters.keys())
+                if params:
+                    args = [
+                        getattr(self, p.replace(f"{self.id}_", ""))
+                        for p in params
+                    ]
+                    kwarg[key] = val(*args)
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):

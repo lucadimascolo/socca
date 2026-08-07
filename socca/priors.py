@@ -492,11 +492,30 @@ class _BoundTo:
     represent the binding; this class carries the resolved key instead.
     """
 
-    def __init__(self, key):
+    def __init__(self, key, comp, attr):
         self.key = key
+        self._comp = comp
+        self._attr = attr
 
     def __call__(self, value):
         """Return the bound value unchanged, matching the lambda it replaces."""
+        return value
+
+    def resolve(self):
+        """
+        Return the current value of the referenced parameter directly.
+
+        Model.getmap()/getmodel() resolve ties by looking `key` up in
+        their flattened parameter dict. A single component's own
+        getmap(), called outside of a Model, has no such dict -- this
+        walks the referenced component/attribute directly instead.
+        Resolves recursively if the referenced value is itself tied.
+        """
+        value = self._comp
+        for part in self._attr.split("."):
+            value = getattr(value, part)
+        if isinstance(value, _BoundTo):
+            value = value.resolve()
         return value
 
 
@@ -549,6 +568,12 @@ def boundto(comp, var):
     may have attributes the parent doesn't actually expose as a parameter
     (e.g. Ellipsoid.radial is a full Sersic profile, but Ellipsoid keeps
     xc/yc/theta/e on itself rather than delegating to radial).
+
+    Tied parameters resolve correctly both through Model.getmap()/
+    getmodel() and when calling a single component's own getmap()
+    directly (outside of a Model) -- the latter reads the referenced
+    component/attribute directly, since it has no flattened parameter
+    dict to resolve `key` against.
     """
     if isinstance(comp, str):
         comp = eval(comp)
@@ -557,9 +582,10 @@ def boundto(comp, var):
     if namespaces:
         for namespace in namespaces:
             if f"{namespace}.{var}" in comp.units:
-                return _BoundTo(f"{comp.id}_{namespace}.{var}")
+                attr = f"{namespace}.{var}"
+                return _BoundTo(f"{comp.id}_{attr}", comp, attr)
 
-    return _BoundTo(f"{comp.id}_{var}")
+    return _BoundTo(f"{comp.id}_{var}", comp, var)
 
 
 # pocoMC prior refactor for numpyro

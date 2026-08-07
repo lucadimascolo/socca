@@ -329,7 +329,9 @@ class Ellipsoid(Component):
             if key == "r":
                 continue  # skip r
             val = getattr(self.radial, key)
-            if callable(val):
+            if isinstance(val, _BoundTo):
+                val = val.resolve()
+            elif callable(val):
                 sig = inspect.signature(val)
                 params = list(sig.parameters.keys())
                 if params:
@@ -353,7 +355,9 @@ class Ellipsoid(Component):
             "losbins",
         ]:
             val = getattr(self, key)
-            if callable(val):
+            if isinstance(val, _BoundTo):
+                val = val.resolve()
+            elif callable(val):
                 sig = inspect.signature(val)
                 params = list(sig.parameters.keys())
                 if params:

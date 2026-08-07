@@ -328,7 +328,9 @@ class Bridge(Component):
                 else:
                     continue
 
-                if callable(val):
+                if isinstance(val, _BoundTo):
+                    val = val.resolve()
+                elif callable(val):
                     sig = inspect.signature(val)
                     params = list(sig.parameters.keys())
                     if params:
@@ -344,6 +346,10 @@ class Bridge(Component):
         kwarg["yc"] = self.yc
         kwarg["Is"] = self.Is
         kwarg["theta"] = self.theta
+
+        for key in ["xc", "yc", "Is", "theta"]:
+            if isinstance(kwarg[key], _BoundTo):
+                kwarg[key] = kwarg[key].resolve()
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
@@ -434,7 +440,9 @@ class Bridge(Component):
                 kwarg[key] = pars[pars_key]
             else:
                 val = getattr(self.radial, attr_name)
-                if callable(val):
+                if isinstance(val, _BoundTo):
+                    val = val.resolve()
+                elif callable(val):
                     sig = inspect.signature(val)
                     params = list(sig.parameters.keys())
                     if params:
@@ -449,7 +457,9 @@ class Bridge(Component):
                 kwarg[key] = pars[pars_key]
             else:
                 val = getattr(self.parallel, attr_name)
-                if callable(val):
+                if isinstance(val, _BoundTo):
+                    val = val.resolve()
+                elif callable(val):
                     sig = inspect.signature(val)
                     params = list(sig.parameters.keys())
                     if params:
