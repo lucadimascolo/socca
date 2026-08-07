@@ -7,7 +7,7 @@ import jax.numpy as jp
 import numpyro.distributions
 
 from .. import config
-from ..base import Component
+from ..base import Component, _warn_range
 
 import warnings
 
@@ -117,6 +117,21 @@ class Background(Component):
             )
         )
         self._initialized = True
+
+    @property
+    def rs(self):  # noqa: D102
+        return self._rs
+
+    @rs.setter
+    def rs(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rs",
+            lower=0,
+            lower_strict=True,
+            note="The reference radius must be strictly positive.",
+        )
+        self._rs = value
 
     @staticmethod
     @jax.jit

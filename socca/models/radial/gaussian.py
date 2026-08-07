@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jp
 
 from .. import config
+from ..base import _warn_range
 from .base import Profile
 
 
@@ -50,6 +51,21 @@ class Gaussian(Profile):
             dict(rs="Scale radius", Is="Central surface brightness")
         )
         self._initialized = True
+
+    @property
+    def rs(self):  # noqa: D102
+        return self._rs
+
+    @rs.setter
+    def rs(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rs",
+            lower=0,
+            lower_strict=True,
+            note="The scale radius must be strictly positive.",
+        )
+        self._rs = value
 
     @staticmethod
     @jax.jit

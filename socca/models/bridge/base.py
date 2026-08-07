@@ -16,7 +16,7 @@ import numpyro.distributions
 
 import numpy as np
 
-from ..base import Component
+from ..base import Component, _warn_range, _warn_span
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
@@ -81,8 +81,18 @@ class Bridge(Component):
     MesaBridge : Harmonic mean combination for mesa-like profiles.
     """
 
-    def __init__(self, radial=Beta(), parallel=TopHat(), **kwargs):
+    def __init__(self, radial=None, parallel=None, **kwargs):
         super().__init__(**kwargs)
+
+        # radial/parallel default to fresh instances per call, not shared
+        # mutable defaults -- __init__ strips their native geometric and
+        # scale-radius/amplitude attributes below, which would otherwise
+        # corrupt a single module-level-evaluated default shared across
+        # every Bridge() call that doesn't pass its own radial/parallel.
+        if radial is None:
+            radial = Beta()
+        if parallel is None:
+            parallel = TopHat()
 
         self.xc = kwargs.get("xc", config.Bridge.xc)
         self.yc = kwargs.get("yc", config.Bridge.yc)
@@ -139,9 +149,17 @@ class Bridge(Component):
         for key in ["_scale_amp", "_scale_radius"]:
             rname = getattr(self.radial, key)
             pname = getattr(self.parallel, key)
-            delattr(self.radial, rname)
-            delattr(self.parallel, pname)
+            bkey = (
+                f"_{rname}" if f"_{rname}" in self.radial.__dict__ else rname
+            )
+            if bkey in self.radial.__dict__:
+                delattr(self.radial, bkey)
             self.radial.units.pop(rname, None)
+            bkey = (
+                f"_{pname}" if f"_{pname}" in self.parallel.__dict__ else pname
+            )
+            if bkey in self.parallel.__dict__:
+                delattr(self.parallel, bkey)
             self.parallel.units.pop(pname, None)
 
         if self.radial.id != self.id:
@@ -225,6 +243,53 @@ class Bridge(Component):
         )
 
         self.profile = None
+
+    @property
+    def rs(self):  # noqa: D102
+        return self._rs
+
+    @rs.setter
+    def rs(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rs",
+            lower=0,
+            lower_strict=True,
+            note="The scale radius must be strictly positive.",
+        )
+        self._rs = value
+
+    @property
+    def theta(self):  # noqa: D102
+        return self._theta
+
+    @theta.setter
+    def theta(self, value):  # noqa: D102
+        _warn_span(
+            value,
+            "theta",
+            jp.pi,
+            "Bridge profiles with e > 0 are symmetric under "
+            "theta -> theta + pi, so a wider prior range can make the "
+            "posterior multimodal and harder to sample.",
+        )
+        self._theta = value
+
+    @property
+    def e(self):  # noqa: D102
+        return self._e
+
+    @e.setter
+    def e(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "e",
+            lower=0,
+            upper=1,
+            upper_strict=True,
+            note="Ellipticity is typically in [0, 1).",
+        )
+        self._e = value
 
     def getmap(self, img, convolve=False):
         """
@@ -561,7 +626,7 @@ class SimpleBridge(Bridge):
     radial.beta        [] : 5.5000E-01 | Slope parameter
     """
 
-    def __init__(self, radial=Beta(), parallel=TopHat(), **kwargs):
+    def __init__(self, radial=None, parallel=None, **kwargs):
         super().__init__(radial=radial, parallel=parallel, **kwargs)
 
         _profile = [

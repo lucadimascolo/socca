@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jp
 
 from .. import config
+from ..base import _warn_range
 from .base import Profile
 
 
@@ -29,6 +30,21 @@ class Exponential(Profile):
             dict(rs="Scale radius", Is="Central surface brightness")
         )
         self._initialized = True
+
+    @property
+    def rs(self):  # noqa: D102
+        return self._rs
+
+    @rs.setter
+    def rs(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rs",
+            lower=0,
+            lower_strict=True,
+            note="The scale radius must be strictly positive.",
+        )
+        self._rs = value
 
     @staticmethod
     @jax.jit
@@ -118,6 +134,21 @@ class PolyExponential(Exponential):
             )
         )
         self._initialized = True
+
+    @property
+    def rc(self):  # noqa: D102
+        return self._rc
+
+    @rc.setter
+    def rc(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rc",
+            lower=0,
+            lower_strict=True,
+            note="The reference radius must be strictly positive.",
+        )
+        self._rc = value
 
     @staticmethod
     @jax.jit
@@ -222,6 +253,21 @@ class PolyExpoRefact(Exponential):
             )
         )
         self._initialized = True
+
+    @property
+    def rc(self):  # noqa: D102
+        return self._rc
+
+    @rc.setter
+    def rc(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rc",
+            lower=0,
+            lower_strict=True,
+            note="The reference radius must be strictly positive.",
+        )
+        self._rc = value
 
     @staticmethod
     @jax.jit
@@ -338,6 +384,21 @@ class ModExponential(Exponential):
             dict(rm="Modification radius", alpha="Modification exponent")
         )
         self._initialized = True
+
+    @property
+    def rm(self):  # noqa: D102
+        return self._rm
+
+    @rm.setter
+    def rm(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rm",
+            lower=0,
+            lower_strict=True,
+            note="The modification radius must be strictly positive.",
+        )
+        self._rm = value
 
     @staticmethod
     @jax.jit

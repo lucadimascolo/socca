@@ -10,6 +10,7 @@ import numpy as np
 from scipy.special import gammaincinv
 
 from .. import config
+from ..base import _warn_range
 from .base import Profile
 
 
@@ -50,6 +51,21 @@ class Sersic(Profile):
             )
         )
         self._initialized = True
+
+    @property
+    def re(self):  # noqa: D102
+        return self._re
+
+    @re.setter
+    def re(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "re",
+            lower=0,
+            lower_strict=True,
+            note="The effective radius must be strictly positive.",
+        )
+        self._re = value
 
     @property
     def ns(self):  # noqa: D102

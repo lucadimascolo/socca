@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jp
 
 from .. import config
-from ..base import Component
+from ..base import Component, _warn_range
 
 
 class Height(Component):
@@ -162,6 +162,21 @@ class HyperSecantHeight(Height):
         )
         self._initialized = True
 
+    @property
+    def zs(self):  # noqa: D102
+        return self._zs
+
+    @zs.setter
+    def zs(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "zs",
+            lower=0,
+            lower_strict=True,
+            note="The scale height must be strictly positive.",
+        )
+        self._zs = value
+
     @staticmethod
     @jax.jit
     def profile(z, zs, alpha):
@@ -244,6 +259,21 @@ class ExponentialHeight(Height):
         self.units.update(dict(zs="deg"))
         self.description.update(dict(zs="Scale height"))
         self._initialized = True
+
+    @property
+    def zs(self):  # noqa: D102
+        return self._zs
+
+    @zs.setter
+    def zs(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "zs",
+            lower=0,
+            lower_strict=True,
+            note="The scale height must be strictly positive.",
+        )
+        self._zs = value
 
     @staticmethod
     @jax.jit

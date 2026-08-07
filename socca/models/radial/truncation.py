@@ -5,6 +5,7 @@ from abc import abstractmethod
 import jax.numpy as jp
 
 from .. import config
+from ..base import _warn_range
 
 
 class Truncation:
@@ -47,6 +48,36 @@ class Truncation:
 
         self.units = dict(rt="deg", wt="deg")
         self.description = dict(rt="Truncation radius", wt="Truncation width")
+
+    @property
+    def rt(self):  # noqa: D102
+        return self._rt
+
+    @rt.setter
+    def rt(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "rt",
+            lower=0,
+            lower_strict=True,
+            note="The truncation radius must be strictly positive.",
+        )
+        self._rt = value
+
+    @property
+    def wt(self):  # noqa: D102
+        return self._wt
+
+    @wt.setter
+    def wt(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "wt",
+            lower=0,
+            lower_strict=True,
+            note="The truncation width must be strictly positive.",
+        )
+        self._wt = value
 
     @abstractmethod
     def profile(self, r):
