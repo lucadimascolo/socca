@@ -527,7 +527,8 @@ def boundto(comp, var):
     Bind the x-coordinate of component2 to match component1's x-coordinate:
     >>> comp2.xc = boundto(comp1, 'xc')
 
-    Bind the inclination and position angle of a 3D Bar to that of its host Disk:
+    Bind the inclination and position angle of an Ellipsoid (e.g. a
+    galactic bar) to that of its host Disk:
     >>> disk_radial = socca.models.Sersic()
     >>> disk_radial.theta = np.pi/4
     >>> disk_vertical = socca.models.disk.vertical.HyperSecantHeight()
@@ -535,19 +536,19 @@ def boundto(comp, var):
     >>>
     >>> disk = socca.models.Disk(radial=disk_radial, vertical=disk_vertical)
     >>>
-    >>> bar = socca.models.Bar(radial=socca.models.Sersic())
+    >>> bar = socca.models.Ellipsoid(radial=socca.models.Sersic())
     >>> bar.theta = socca.priors.boundto(disk, "theta")
     >>> bar.inc   = socca.priors.boundto(disk, "inc")
 
     Notes
     -----
     Always pass the top-level component, not its sub-components. For components
-    with namespaced sub-components (Disk, Bar), the correct sub-component is
-    found automatically by searching the component's own exposed parameter
+    with namespaced sub-components (Disk, Ellipsoid), the correct sub-component
+    is found automatically by searching the component's own exposed parameter
     names (its units dict) -- not the sub-component's, since a sub-component
     may have attributes the parent doesn't actually expose as a parameter
-    (e.g. Bar.radial is a full Sersic profile, but Bar keeps xc/yc/theta/e
-    on itself rather than delegating to radial).
+    (e.g. Ellipsoid.radial is a full Sersic profile, but Ellipsoid keeps
+    xc/yc/theta/e on itself rather than delegating to radial).
     """
     if isinstance(comp, str):
         comp = eval(comp)

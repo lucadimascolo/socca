@@ -192,8 +192,8 @@ class Truncation:
 
 
 @dataclass(frozen=True)
-class Bar:
-    """Default parameters for Bar's position and geometry.
+class Ellipsoid:
+    """Default parameters for Ellipsoid's position and geometry.
 
     Covers position, orientation, inclination, rotation, and
     line-of-sight integration.

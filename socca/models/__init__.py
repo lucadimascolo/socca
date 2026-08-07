@@ -16,7 +16,7 @@ from . import config
 from .base import Component
 from .misc import Point, Background
 from .disk import Disk
-from .bar import Bar
+from .ellipsoid import Ellipsoid
 from .bridge import SimpleBridge, MesaBridge
 from .radial import (
     Profile,
@@ -91,7 +91,8 @@ def zoo():
     - Point: Point source model
     - Background: Polynomial background model
     - Disk: 3D disk model with finite thickness
-    - Bar: 3D bar model evaluated via line-of-sight integration
+    - Ellipsoid: 3D triaxial-ellipsoid model evaluated via line-of-sight
+      integration (e.g. a galactic bar)
 
     Examples
     --------
@@ -110,7 +111,7 @@ def zoo():
     Point
     Background
     Disk
-    Bar
+    Ellipsoid
     """
     print("\nRadial models")
     print("=============")
@@ -145,9 +146,9 @@ def zoo():
     print("===============")
     print("Disk")
 
-    print("\nBar-like model")
-    print("===============")
-    print("Bar")
+    print("\nEllipsoid-like model")
+    print("====================")
+    print("Ellipsoid")
 
     print("\nOther models")
     print("============")
