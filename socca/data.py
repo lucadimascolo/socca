@@ -686,7 +686,9 @@ class Image:
             )
 
         if self.noise.__class__.__name__ != "NormalRI":
-            kernel = jp.fft.irfft2(jp.abs(jp.fft.rfft2(kernel)))
+            kernel = jp.fft.irfft2(
+                jp.abs(jp.fft.rfft2(kernel)), s=kernel.shape
+            )
             kernel = jp.fft.ifftshift(kernel)
         else:
             warnings.warn(
@@ -720,13 +722,39 @@ class Convolve:
         self._fft = jp.fft.rfft2
         self._ifft = jp.fft.irfft2
 
-        self._fft_shift = 1.00 + 0j
-        if self.image_shape[0] % 2 != 0:
-            freq = jp.fft.fftfreq(self.padded_shape[0])[:, None]
-            self._fft_shift = jp.exp(2.00j * jp.pi * freq)
-
         self.psf_fft = self._fft(self.kernel, self.padded_shape)
-        self.psf_fft = self.psf_fft * self._fft_shift
+
+        self._crop_start = tuple(
+            int(i)
+            for i in jp.unravel_index(
+                jp.argmax(self.kernel), self.kernel.shape
+            )
+        )
+
+    def crop(self, data_fft):
+        """
+        Inverse-FFT and crop a Fourier-domain array from the kernel's peak.
+
+        Use this directly (instead of __call__) for data that has already
+        been multiplied by self.psf_fft in Fourier space -- e.g. point
+        sources rendered via FFTspec's phase-ramp pulses -- so the crop
+        stays consistent with where __call__ places the kernel's peak.
+        FFTspec.ifft's own crop offset assumes a delta at the image's
+        geometric center and knows nothing about the kernel's peak
+        location, so it cannot be substituted here.
+
+        Parameters
+        ----------
+        data_fft : jax.numpy.ndarray
+            Fourier-domain array of shape self.psf_fft.shape.
+
+        Returns
+        -------
+        jax.numpy.ndarray
+            Image-space array with shape image_shape.
+        """
+        data = self._ifft(data_fft, self.padded_shape)
+        return jax.lax.dynamic_slice(data, self._crop_start, self.image_shape)
 
     def __call__(self, image):
         """
@@ -743,16 +771,4 @@ class Convolve:
             Convolved image with the same shape as the input.
         """
         _image = self._fft(image, self.padded_shape)
-        _image = self._ifft(_image * self.psf_fft, self.padded_shape)
-
-        start = tuple(
-            (f - o) // 2 for f, o in zip(self.padded_shape, self.image_shape)
-        )
-
-        if self.image_shape[0] % 2 == 0:
-            start = (start[0] + 1, start[1])
-
-        if self.image_shape[1] % 2 == 0:
-            start = (start[0], start[1] + 1)
-
-        return jax.lax.dynamic_slice(_image, start, self.image_shape)
+        return self.crop(_image * self.psf_fft)
