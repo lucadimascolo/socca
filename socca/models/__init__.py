@@ -703,9 +703,9 @@ class Model:
 
         if img.psf is not None:
             msmo = img.convolve(msmo)
-            mpts = mpts * img.convolve.psf_fft
-
-        mpts = img.fft.ifft(mpts).real
+            mpts = img.convolve.crop(mpts * img.convolve.psf_fft).real
+        else:
+            mpts = img.fft.ifft(mpts).real
         msmo = msmo + mpts
 
         if doexp:
