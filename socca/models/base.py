@@ -63,13 +63,37 @@ def _warn_range(
 
 
 def _warn_span(value, name, span, note=""):
-    """Warn if a prior distribution's support is wider than `span`."""
+    """
+    Warn about a prior distribution whose support is span or wider.
+
+    Two independent conditions are checked. A prior wider than `span`
+    triggers `note` -- typically a caution that this needlessly
+    duplicates the same physical solution at two points in the prior
+    (e.g. a position angle prior wider than its symmetry period). A
+    prior that is at least `span` wide -- including exactly `span`,
+    the normal way to mark a periodic parameter's full range -- also
+    triggers a second, separate warning explaining that it will
+    automatically be sampled as periodic (see `Component.periodic`
+    and `fitter.run`'s `periodic` argument).
+    """
     if isinstance(value, numpyro.distributions.Distribution):
         extent = value.support.upper_bound - value.support.lower_bound
         if extent > span:
             warnings.warn(
                 f"The {name} prior support spans more than "
                 f"{np.degrees(span):.0f} deg. {note}",
+                UserWarning,
+                stacklevel=3,
+            )
+        if extent >= span:
+            warnings.warn(
+                f"The {name} prior spans a full "
+                f"{np.degrees(span):.0f}-degree period, so it will "
+                "automatically be treated as periodic if sampled with "
+                "the nautilus, dynesty, or pocomc backends. Pass "
+                "periodic=[...] to run() with this parameter's name to "
+                "choose a different set, or periodic=[] to disable "
+                "this entirely.",
                 UserWarning,
                 stacklevel=3,
             )

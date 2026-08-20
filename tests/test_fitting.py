@@ -418,8 +418,8 @@ class TestPeriodicAutoDetection:
         )
         np.testing.assert_allclose(qvals[other_idx], expected_other)
 
-    def test_nautilus_auto_injects_periodic_and_warns(self, periodic_fitter):
-        """A full-period theta prior triggers a warning and gets forwarded as periodic=[...] to nautilus.Sampler."""
+    def test_nautilus_auto_injects_periodic(self, periodic_fitter):
+        """A full-period theta prior gets forwarded as periodic=[...] to nautilus.Sampler, without warning again at run() time (the warning already fired when theta's prior was set)."""
         import socca.fitting.methods.nautilus as nautilus_mod
 
         theta_idx = periodic_fitter.labels.index("comp_00_theta")
@@ -435,13 +435,16 @@ class TestPeriodicAutoDetection:
                 None,
             )
             inst.log_z = -1.0
-            with pytest.warns(UserWarning, match="periodic"):
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
                 periodic_fitter.run(method="nautilus", n_live=10)
+            msgs = [str(wi.message) for wi in w]
 
+        assert not any("periodic" in m.lower() for m in msgs)
         assert mock_cls.call_args.kwargs["periodic"] == [theta_idx]
 
     def test_explicit_periodic_overrides_auto_detection(self, periodic_fitter):
-        """Passing periodic= explicitly suppresses auto-detection (and its warning), and is forwarded as-is."""
+        """Passing periodic= explicitly suppresses auto-detection and is forwarded as-is."""
         import socca.fitting.methods.nautilus as nautilus_mod
 
         n_free = len(periodic_fitter.labels)

@@ -405,22 +405,6 @@ class fitter:
                     )
                     if extent >= period:
                         auto_periodic.append(pi)
-                        warnings.warn(
-                            f"{self.labels[pi]}'s prior spans a full "
-                            f"{np.degrees(period):.0f}-degree period, so "
-                            "it will be sampled as periodic, wrapping "
-                            f"every {period:.4g} rad. This only affects "
-                            "how the sampler proposes/bounds this "
-                            "parameter -- posterior summaries (e.g. "
-                            "parameters(), getquantiles()) are "
-                            "unaffected. To choose a different set of "
-                            "periodic parameters yourself, pass "
-                            "periodic=[...] to run() with the parameter "
-                            f"name(s) (e.g. periodic=['{self.labels[pi]}']"
-                            "), or periodic=[] to disable periodic "
-                            "sampling entirely.",
-                            UserWarning,
-                        )
                 if auto_periodic:
                     kwargs["periodic"] = auto_periodic
 
