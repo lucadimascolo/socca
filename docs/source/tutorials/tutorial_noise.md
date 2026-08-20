@@ -84,7 +84,7 @@ As in the case of `NormalCorrelated`, the noise properties can be specified eith
 >>> noise = NormalFourier(cube=noise_cube, ftype="real")
 ```
 
-The optional argument `ftype` controls the type of Fourier transform used when estimating the covariance from the noise cube. By default, a real-to-complex 2D Fourier transform is used (`ftype="real"`), in order to minimize the memory usage and computational cost. If needed, it is possible to use a complex-to-complex 2D Fourier transform by specifying `ftype="full"`. 
+The optional argument `ftype` controls the type of Fourier transform used when estimating the covariance from the noise cube. By default, a real-to-complex 2D Fourier transform is used (`ftype="real"`), in order to minimize the memory usage and computational cost. If needed, it is possible to use a complex-to-complex 2D Fourier transform by specifying `ftype="full"`. The two options yield numerically equivalent likelihoods: `NormalFourier` accounts for the Fourier modes discarded by the real-to-complex transform when normalizing and evaluating the likelihood, so `ftype` is purely a memory/compute tradeoff and does not need to match the convention used by any external reference pipeline.
 
 Other optional keyword arguments include `apod`, which specifies an apodization map applied to the data before Fourier transforming (though, by default, no apodization is applied). Finally, as in the case of `NormalCorrelated`, the `smooth` and `kernel` arguments control the optional smoothing of the Fourier-space covariance matrix when estimated from the noise realizations. As above, the default is 3 smoothing iterations using a 5-point stencil kernel.
 
