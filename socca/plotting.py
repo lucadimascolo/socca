@@ -10,6 +10,8 @@ import warnings
 
 import corner
 
+from .fitting.methods.utils import circular_recenter
+
 from astropy.wcs.utils import wcs_to_celestial_frame
 from astropy.coordinates import (
     ICRS,
@@ -189,12 +191,27 @@ class Plotter:
         component = self.fit.mod._comp_filter(component)
         component = [f"comp_{ci:02d}" for ci in component]
 
+        # Periodic parameters (e.g. a position angle symmetric under
+        # theta -> theta + pi) are recentered on their circular mean here,
+        # once, up front -- a posterior straddling the wrap boundary looks
+        # like two disjoint clusters to naive statistics otherwise, both
+        # for the axis-limit quantiles below and for corner.corner()'s own
+        # internal quantile/title computation, which has no per-parameter
+        # override to patch around instead.
+        samples = np.array(self.fit.samples, dtype=float)
+        circ_means = {}
+        for pi, period in enumerate(getattr(self.fit, "periodic", [])):
+            if period is not None:
+                samples[:, pi], circ_means[pi] = circular_recenter(
+                    samples[:, pi], self.fit.weights, period
+                )
+
         if edges is None:
             if sigma is None:
                 edges = None
             else:
                 edges = []
-                for s in self.fit.samples.T:
+                for s in samples.T:
                     q = corner.quantile(
                         s, [0.16, 0.50, 0.84], weights=self.fit.weights
                     )
@@ -206,6 +223,8 @@ class Plotter:
 
         labels = []
         for li, label in enumerate(self.fit.labels):
+            if li in circ_means:
+                label = f"{label} (rel. to circ. mean)"
             if self.fit.units[li] is not None and len(self.fit.units[li]) > 0:
                 labels.append(f"{label}\n[{self.fit.units[li]}]")
             else:
@@ -229,10 +248,17 @@ class Plotter:
 
         truths = kwargs.pop("truths", None)
         if truths is not None:
-            truths = np.array(truths)[indices]
+            truths = np.array(truths, dtype=float)[indices]
+            for ti, idx in enumerate(indices):
+                if idx in circ_means:
+                    period = self.fit.periodic[idx]
+                    mean = circ_means[idx]
+                    truths[ti] = (truths[ti] - mean + period / 2.00) % (
+                        period
+                    ) - period / 2.00
 
         corner.corner(
-            data=self.fit.samples[:, indices],
+            data=samples[:, indices],
             weights=self.fit.weights,
             labels=labels[indices],
             range=edges[indices] if edges is not None else None,

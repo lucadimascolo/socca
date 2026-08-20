@@ -207,6 +207,10 @@ class Model:
             Class names of each component in the model.
         units : dict
             Dictionary mapping parameter names to their physical units.
+        periodic : dict
+            Dictionary mapping parameter names to their period, for
+            parameters that are periodic (e.g. an elliptical profile's
+            ``theta``). Keys absent from this dict are not periodic.
 
         Examples
         --------
@@ -226,6 +230,7 @@ class Model:
         self.tied = []
         self.type = []
         self.units = {}
+        self.periodic = {}
         self.conversions = {}
 
         if prof is not None:
@@ -320,6 +325,8 @@ class Model:
             if input_unit != native_unit:
                 self.conversions[key] = _cfactor(input_unit, native_unit)
             self.units[key] = input_unit
+            if p in prof.periodic:
+                self.periodic[key] = prof.periodic[p]
 
         self.components.append(prof)
         self.ncomp += 1

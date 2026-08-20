@@ -97,6 +97,10 @@ class Component:
         Mapping from parameter names to their physical units.
     description : dict
         Mapping from parameter names to their descriptions.
+    periodic : dict
+        Mapping from parameter names to their period, for parameters that
+        are periodic (e.g. an elliptical profile's ``theta``, symmetric
+        under ``theta -> theta + pi``). Absent keys are not periodic.
     """
 
     idcls = 0
@@ -127,6 +131,7 @@ class Component:
         self.units = {}
         self._input_units = {}
         self.description = {}
+        self.periodic = {}
         self._initialized = False
 
     def __setattr__(self, name, value):
