@@ -439,12 +439,16 @@ class NormalFourier:
                 Custom smoothing kernel. If None, uses a 5-point stencil.
             - tol : float, optional
                 Only used when the covariance is estimated from ``cube``.
-                Fourier modes with estimated power below ``tol`` times the
-                median power are excluded from the likelihood (their icov
-                is set to 0), rather than kept with an inflated weight.
-                Default is None, in which case it is derived automatically
-                from the spread of ``log(cov)`` via a robust (MAD-based)
-                outlier threshold.
+                Fourier modes whose raw (pre-smoothing) power estimate
+                falls below ``tol`` times their own local (smoothed) power
+                are excluded from the likelihood (their icov is set to 0),
+                rather than kept with an inflated weight. Comparing against
+                this local reference, rather than a single global scale,
+                means the cutoff doesn't misfire on a noise spectrum with
+                genuine, smoothly-varying dynamic range. Default is None,
+                in which case it is derived automatically from the spread
+                of ``log(raw / smoothed)`` via a robust (MAD-based) outlier
+                threshold.
         """
         if ftype not in ["real", "rfft", "full", "fft"]:
             raise ValueError(
@@ -479,8 +483,13 @@ class NormalFourier:
                 self.apod = jp.asarray(self.apod.astype(float))
                 self.apod = jp.squeeze(self.apod)
 
-                cov = jp.fft.fft2(cube * self.apod[None, ...], axes=(-2, -1))
-                cov = jp.mean(jp.abs(cov) ** 2, axis=0) / jp.mean(self.apod**2)
+                cov_raw = jp.fft.fft2(
+                    cube * self.apod[None, ...], axes=(-2, -1)
+                )
+                cov_raw = jp.mean(jp.abs(cov_raw) ** 2, axis=0) / jp.mean(
+                    self.apod**2
+                )
+                cov = cov_raw
 
                 smooth = kwargs.get("smooth", 3)
                 if smooth > 0:
@@ -501,36 +510,21 @@ class NormalFourier:
                     for _ in range(smooth):
                         cov = jp.array(convolve(cov, kernel, boundary="wrap"))
 
-                # Modes whose estimated power is implausibly low relative to
-                # the bulk of the spectrum are more likely a statistical
-                # fluke of averaging over a finite noise-realization cube
-                # than real signal -- excluding them outright (rather than
-                # capping/inflating their weight, as a regularized inverse
-                # would) keeps a handful of such modes from dominating the
-                # likelihood through a runaway icov. `tol` sets the cutoff
-                # as a fraction of the median power; if not given, it is
-                # derived from the spread of log(cov) itself via a robust
-                # (MAD-based) outlier threshold -- the same estimator
-                # Normal/NormalRI already use elsewhere for noise levels --
-                # so it adapts to how noisy this particular cube's estimate
-                # is, rather than a fixed magic number.
+                positive = jp.logical_and(cov_raw > 0.00, cov > 0.00)
+                ratio = jp.where(
+                    positive, cov_raw / jp.where(cov > 0.00, cov, 1.00), 0.00
+                )
+
                 tol = kwargs.get("tol", None)
-                positive = cov > 0.00
                 if tol is None:
-                    logcov = jp.log(cov.at[positive].get())
-                    madcov = median_abs_deviation(
-                        np.array(logcov), scale="normal"
+                    lograt = jp.log(ratio.at[positive].get())
+                    madrat = median_abs_deviation(
+                        np.array(lograt), scale="normal"
                     )
-                    tol = float(jp.exp(-5.00 * madcov))
+                    tol = float(jp.exp(-5.00 * madrat))
 
-                covtyp = jp.median(cov.at[positive].get())
-                cov = cov.at[cov < tol * covtyp].set(jp.inf)
+                cov = cov.at[ratio < tol].set(jp.inf)
 
-                # The covariance is always built and smoothed on the full,
-                # physically periodic Fourier grid, then trimmed to the
-                # rfft2 half-plane if requested -- smoothing directly on a
-                # truncated grid would wrap around a boundary that isn't
-                # actually periodic.
                 if ftype in ["real", "rfft"]:
                     cov = cov[..., : cube.shape[-1] // 2 + 1]
             elif cov is not None and cube is not None:
@@ -594,12 +588,6 @@ class NormalFourier:
 
         self.cmask = self.icov != 0.00
 
-        # rfft2 drops the conjugate-redundant half of the Fourier plane.
-        # Interior columns each stand in for a dropped conjugate partner
-        # (weight 2); the DC and, if present, Nyquist columns are already
-        # complete on their own (weight 1). This makes ftype="real" exactly
-        # reproduce the ftype="full" likelihood, which sums over the whole
-        # (self-redundant) plane and gets this weighting for free.
         if self.ftype in ["real", "rfft"]:
             weight = jp.full(self.icov.shape, 2.00)
             weight = weight.at[..., 0].set(1.00)
