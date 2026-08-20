@@ -471,10 +471,7 @@ class NormalFourier:
                 self.apod = jp.asarray(self.apod.astype(float))
                 self.apod = jp.squeeze(self.apod)
 
-                fft = (
-                    jp.fft.rfft2 if ftype in ["real", "rfft"] else jp.fft.fft2
-                )
-                cov = fft(cube * self.apod[None, ...], axes=(-2, -1))
+                cov = jp.fft.fft2(cube * self.apod[None, ...], axes=(-2, -1))
                 cov = jp.mean(jp.abs(cov) ** 2, axis=0) / jp.mean(self.apod**2)
 
                 smooth = kwargs.get("smooth", 3)
@@ -495,6 +492,14 @@ class NormalFourier:
 
                     for _ in range(smooth):
                         cov = jp.array(convolve(cov, kernel, boundary="wrap"))
+
+                # The covariance is always built and smoothed on the full,
+                # physically periodic Fourier grid, then trimmed to the
+                # rfft2 half-plane if requested -- smoothing directly on a
+                # truncated grid would wrap around a boundary that isn't
+                # actually periodic.
+                if ftype in ["real", "rfft"]:
+                    cov = cov[..., : cube.shape[-1] // 2 + 1]
             elif cov is not None and cube is not None:
                 warnings.warn(
                     "Both covariance matrix and noise cube provided. \
@@ -556,13 +561,32 @@ class NormalFourier:
 
         self.cmask = self.icov != 0.00
 
-        self.norm = jp.log(2.00 * jp.pi / self.icov.at[self.cmask].get()).sum()
+        # rfft2 drops the conjugate-redundant half of the Fourier plane.
+        # Interior columns each stand in for a dropped conjugate partner
+        # (weight 2); the DC and, if present, Nyquist columns are already
+        # complete on their own (weight 1). This makes ftype="real" exactly
+        # reproduce the ftype="full" likelihood, which sums over the whole
+        # (self-redundant) plane and gets this weighting for free.
+        if self.ftype in ["real", "rfft"]:
+            weight = jp.full(self.icov.shape, 2.00)
+            weight = weight.at[..., 0].set(1.00)
+            if self.data.shape[-1] % 2 == 0:
+                weight = weight.at[..., -1].set(1.00)
+        else:
+            weight = jp.ones(self.icov.shape)
+
+        self.norm = jp.sum(
+            weight.at[self.cmask].get()
+            * jp.log(2.00 * jp.pi / self.icov.at[self.cmask].get())
+        )
+
+        icov_weighted = weight * self.icov
 
         def _logpdf(xs):
             factor = self._logpdf(
                 xs,
                 self.data,
-                self.icov,
+                icov_weighted,
                 self.mask,
                 self.cmask,
                 self.apod,
