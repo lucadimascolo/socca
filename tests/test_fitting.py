@@ -14,6 +14,7 @@ from socca.fitting.methods.utils import (
     circular_quantile,
     circular_recenter,
     get_imp_weights,
+    weighted_quantile,
 )
 import socca.models as models
 import socca.noise as noise
@@ -60,6 +61,45 @@ class TestGetImpWeights:
         assert np.isclose(weights.sum(), 1.0)
 
 
+class TestWeightedQuantile:
+    """Tests for weighted_quantile (NumPy<2.0-compatible weighted quantile)."""
+
+    def test_uniform_weights_matches_unweighted_quantile(self):
+        """Uniform weights must reproduce the plain inverted_cdf quantile."""
+        rng = np.random.default_rng(0)
+        a = rng.normal(size=500)
+        weights = np.ones(500)
+        result = weighted_quantile(a, [0.16, 0.50, 0.84], weights)
+        expected = np.quantile(a, [0.16, 0.50, 0.84], method="inverted_cdf")
+        np.testing.assert_allclose(result, expected)
+
+    def test_nonuniform_weights_shift_the_quantile(self):
+        """Heavily up-weighting the low tail should pull the median down."""
+        a = np.arange(10.0)
+        weights = np.ones(10)
+        weights[0] = 100.0
+        result = weighted_quantile(a, 0.50, weights)
+        assert result < 2.0
+
+    def test_scalar_quantile_returns_scalar_shape(self):
+        """A scalar `quantiles` input should drop the leading axis, like np.quantile."""
+        a = np.arange(10.0)
+        weights = np.ones(10)
+        result = weighted_quantile(a, 0.50, weights)
+        assert np.asarray(result).shape == ()
+
+    def test_axis0_on_2d_array(self):
+        """axis=0 on a 2D array reduces over samples per column independently."""
+        rng = np.random.default_rng(1)
+        a = rng.normal(size=(300, 4))
+        weights = rng.uniform(0.1, 1.0, size=300)
+        result = weighted_quantile(a, 0.50, weights, axis=0)
+        assert result.shape == (4,)
+        for k in range(4):
+            expected = weighted_quantile(a[:, k], 0.50, weights)
+            assert result[k] == pytest.approx(float(expected))
+
+
 class TestCircularQuantile:
     """Tests for circular_recenter/circular_quantile (periodic statistics)."""
 
@@ -70,9 +110,7 @@ class TestCircularQuantile:
         theta = rng.normal(0.0, 0.15, n) % np.pi
         weights = np.ones(n) / n
 
-        naive = np.quantile(
-            theta, [0.16, 0.50, 0.84], method="inverted_cdf", weights=weights
-        )
+        naive = weighted_quantile(theta, [0.16, 0.50, 0.84], weights)
         circ = circular_quantile(theta, weights, np.pi, [0.16, 0.50, 0.84])
 
         # Naive quantile spuriously spans most of the period.
@@ -91,9 +129,7 @@ class TestCircularQuantile:
         theta = rng.normal(np.pi / 2.00, 0.15, n) % np.pi
         weights = np.ones(n) / n
 
-        naive = np.quantile(
-            theta, [0.16, 0.50, 0.84], method="inverted_cdf", weights=weights
-        )
+        naive = weighted_quantile(theta, [0.16, 0.50, 0.84], weights)
         circ = circular_quantile(theta, weights, np.pi, [0.16, 0.50, 0.84])
 
         np.testing.assert_allclose(circ, naive, atol=1e-6)
@@ -377,11 +413,8 @@ class TestPeriodicAutoDetection:
         np.testing.assert_allclose(qvals[theta_idx], expected_theta)
 
         other_idx = 0 if theta_idx != 0 else 1
-        expected_other = np.quantile(
-            samples[:, other_idx],
-            [0.16, 0.50, 0.84],
-            method="inverted_cdf",
-            weights=weights,
+        expected_other = weighted_quantile(
+            samples[:, other_idx], [0.16, 0.50, 0.84], weights
         )
         np.testing.assert_allclose(qvals[other_idx], expected_other)
 
