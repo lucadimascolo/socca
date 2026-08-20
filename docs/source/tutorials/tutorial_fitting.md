@@ -85,19 +85,25 @@ The `fit.sampler` attribute provides direct access to the underlying sampler obj
 
 Some parameters are inherently periodic. A position angle `theta`, for instance, only determines an elliptical or bar-like profile up to a rotation by $\pi$ (`theta` and `theta + \pi` describe the same shape), so a prior spanning the full period leaves "low" and "high" ill-defined right at the wrap boundary. **``socca``** tracks which parameters are periodic, and their period, on each component (e.g. `theta` on [radial profiles](./tutorial_components.md) and `Bridge`, and both `theta` and `rot` on [`Ellipsoid`](./tutorial_components.md), all have a period of $\pi$).
 
-When calling `run()` with the `nautilus`, `dynesty`, or `pocomc` backends, any free parameter whose prior spans its full period is automatically detected and passed to the sampler as periodic, with a warning such as:
+Assigning such a parameter a prior that spans its full period warns immediately, right when the prior is set -- not later when `run()` is called:
 
-```
-UserWarning: comp_00_theta's prior spans a full 180-degree period, so it
-will be sampled as periodic, wrapping every 3.142 rad. This only affects
-how the sampler proposes/bounds this parameter -- posterior summaries
-(parameters(), getquantiles(), etc.) are unaffected. To choose a
-different set of periodic parameters yourself, pass periodic=[...] to
-run() with the parameter name(s) (e.g. periodic=['comp_00_theta']), or
-periodic=[] to disable periodic sampling entirely.
+```python
+>>> from socca.models import Beta
+>>> from socca.priors import uniform
+>>> import jax.numpy as jp
+>>>
+>>> comp = Beta()
+>>> comp.theta = uniform(0.00, jp.pi)
+UserWarning: The theta prior spans a full 180-degree period, so it will
+automatically be treated as periodic if sampled with the nautilus,
+dynesty, or pocomc backends. Pass periodic=[...] to run() with this
+parameter's name to choose a different set, or periodic=[] to disable
+this entirely.
 ```
 
-This tells the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. To override the auto-detected set, pass `periodic=[...]` explicitly with the parameter names, exactly as they appear in `fit.labels`:
+This means that once this component is added to a model and fitted with the `nautilus`, `dynesty`, or `pocomc` backends, the parameter is automatically detected and passed to the sampler as periodic -- telling the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. This detection happens silently at `run()` time; the warning above, at prior-assignment time, is the only heads-up you get about it.
+
+To override the auto-detected set, pass `periodic=[...]` explicitly to `run()` with the parameter names, exactly as they appear in `fit.labels`:
 
 ```python
 >>> fit.labels

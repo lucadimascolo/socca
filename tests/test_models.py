@@ -235,6 +235,27 @@ class TestProfile:
         with pytest.raises(ValueError, match="greater than 1"):
             beta.e = priors.uniform(0.0, 1.5)
 
+    def test_theta_narrow_prior_no_warning(self, recwarn):
+        """Test that a theta prior narrower than its period does not warn."""
+        beta = models.Beta()
+        beta.theta = priors.uniform(-np.pi / 4, np.pi / 4)
+        assert len(recwarn) == 0
+
+    def test_theta_exact_period_warns_periodic(self, recwarn):
+        """A theta prior exactly spanning its period warns that it will be sampled as periodic, at set time (not just at fit.run())."""
+        beta = models.Beta()
+        beta.theta = priors.uniform(0.00, np.pi)
+        assert len(recwarn) == 1
+        assert "periodic" in str(recwarn[0].message)
+
+    def test_theta_wider_than_period_warns_twice(self, recwarn):
+        """A theta prior wider than its period warns about both avoidable multimodality and periodic sampling."""
+        beta = models.Beta()
+        beta.theta = priors.uniform(-np.pi, np.pi)
+        messages = [str(w.message) for w in recwarn]
+        assert any("multimodal" in m for m in messages)
+        assert any("periodic" in m for m in messages)
+
 
 class TestBeta:
     """Tests for Beta profile."""
@@ -789,6 +810,13 @@ class TestEllipsoid:
         ell = models.Ellipsoid()
         ell.theta = priors.uniform(-np.pi / 4, np.pi / 4)
         assert len(recwarn) == 0
+
+    def test_theta_exact_period_warns_periodic(self, recwarn):
+        """A theta prior exactly spanning 180deg (the normal way to mark it periodic) warns about automatic periodic sampling."""
+        ell = models.Ellipsoid()
+        ell.theta = priors.uniform(0.00, np.pi)
+        assert len(recwarn) == 1
+        assert "periodic" in str(recwarn[0].message)
 
     def test_rot_wide_prior_warns(self):
         """Test that a rot prior spanning more than 180deg warns."""
