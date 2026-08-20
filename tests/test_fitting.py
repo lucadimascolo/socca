@@ -1,5 +1,8 @@
 """Tests for socca.fitting module."""
 
+from unittest.mock import patch
+import warnings
+
 import jax.numpy as jp
 import numpy as np
 import pytest
@@ -7,7 +10,11 @@ from astropy.io import fits
 
 import socca.data as data
 import socca.fitting as fitting
-from socca.fitting.methods.utils import get_imp_weights
+from socca.fitting.methods.utils import (
+    circular_quantile,
+    circular_recenter,
+    get_imp_weights,
+)
 import socca.models as models
 import socca.noise as noise
 import socca.priors as priors
@@ -51,6 +58,57 @@ class TestGetImpWeights:
         logw = np.random.randn(100)
         weights = get_imp_weights(logw)
         assert np.isclose(weights.sum(), 1.0)
+
+
+class TestCircularQuantile:
+    """Tests for circular_recenter/circular_quantile (periodic statistics)."""
+
+    def test_wrapped_boundary_quantile(self):
+        """A posterior clustered at the wrap point must not be reported as a spurious ~half-period-wide spread by a naive quantile."""
+        rng = np.random.default_rng(0)
+        n = 20000
+        theta = rng.normal(0.0, 0.15, n) % np.pi
+        weights = np.ones(n) / n
+
+        naive = np.quantile(
+            theta, [0.16, 0.50, 0.84], method="inverted_cdf", weights=weights
+        )
+        circ = circular_quantile(theta, weights, np.pi, [0.16, 0.50, 0.84])
+
+        # Naive quantile spuriously spans most of the period.
+        assert naive[2] - naive[0] > 1.0
+        # Circular quantile correctly recovers a tight interval, wrapping
+        # through the 0/pi boundary.
+        upper = (circ[2] - circ[1] + np.pi / 2.00) % np.pi - np.pi / 2.00
+        lower = (circ[1] - circ[0] + np.pi / 2.00) % np.pi - np.pi / 2.00
+        assert upper == pytest.approx(0.15, abs=0.02)
+        assert lower == pytest.approx(0.15, abs=0.02)
+
+    def test_non_wrapping_matches_naive_quantile(self):
+        """Away from the wrap boundary, circular and naive quantiles must agree (circular handling shouldn't distort the ordinary case)."""
+        rng = np.random.default_rng(0)
+        n = 20000
+        theta = rng.normal(np.pi / 2.00, 0.15, n) % np.pi
+        weights = np.ones(n) / n
+
+        naive = np.quantile(
+            theta, [0.16, 0.50, 0.84], method="inverted_cdf", weights=weights
+        )
+        circ = circular_quantile(theta, weights, np.pi, [0.16, 0.50, 0.84])
+
+        np.testing.assert_allclose(circ, naive, atol=1e-6)
+
+    def test_recenter_returns_mean_in_range(self):
+        """circular_recenter's returned mean must lie in [0, period)."""
+        rng = np.random.default_rng(1)
+        n = 5000
+        theta = rng.normal(0.0, 0.10, n) % np.pi
+        weights = np.ones(n) / n
+
+        recentered, mean = circular_recenter(theta, weights, np.pi)
+        assert 0.00 <= mean < np.pi
+        # Recentered samples no longer straddle the wrap boundary.
+        assert recentered.max() - recentered.min() < 1.0
 
 
 class TestFitter:
@@ -261,6 +319,138 @@ class TestFitterRunMethod:
         """Test that invalid method raises ValueError."""
         with pytest.raises(ValueError, match="Unknown sampling method"):
             simple_fitter.run(method="invalid_method")
+
+
+class TestPeriodicAutoDetection:
+    """Tests for automatic periodic-prior detection in fitter.run()."""
+
+    @pytest.fixture
+    def periodic_fitter(self, simple_hdu, gaussian_psf):
+        """Fitter with a free theta prior spanning a full (pi) period."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        xc = simple_hdu.header["CRVAL1"]
+        yc = simple_hdu.header["CRVAL2"]
+
+        gaussian = models.Gaussian(
+            xc=priors.uniform(xc - 0.01, xc + 0.01),
+            yc=priors.uniform(yc - 0.01, yc + 0.01),
+            rs=0.005,
+            Is=10.0,
+            theta=priors.uniform(0.00, np.pi),
+        )
+        mod = models.Model(gaussian)
+        return fitting.fitter(img=img, mod=mod)
+
+    def test_fit_periodic_populated(self, periodic_fitter):
+        """fit.periodic is parallel to fit.labels: pi at theta's position, None everywhere else."""
+        assert len(periodic_fitter.periodic) == len(periodic_fitter.labels)
+        theta_idx = periodic_fitter.labels.index("comp_00_theta")
+        assert periodic_fitter.periodic[theta_idx] == pytest.approx(np.pi)
+        assert all(
+            p is None
+            for i, p in enumerate(periodic_fitter.periodic)
+            if i != theta_idx
+        )
+
+    def test_getquantiles_uses_circular_for_periodic_columns(
+        self, periodic_fitter
+    ):
+        """fitter.getquantiles dispatches per column: circular_quantile for periodic parameters, plain weighted quantile otherwise."""
+        rng = np.random.default_rng(0)
+        n = 2000
+        theta_idx = periodic_fitter.labels.index("comp_00_theta")
+        n_free = len(periodic_fitter.labels)
+
+        samples = rng.normal(0.5, 0.05, (n, n_free))
+        samples[:, theta_idx] = rng.normal(0.0, 0.10, n) % np.pi
+        weights = np.ones(n) / n
+
+        periodic_fitter.samples = samples
+        periodic_fitter.weights = weights
+
+        qvals = periodic_fitter.getquantiles([0.16, 0.50, 0.84])
+        assert qvals.shape == (n_free, 3)
+
+        expected_theta = circular_quantile(
+            samples[:, theta_idx], weights, np.pi, [0.16, 0.50, 0.84]
+        )
+        np.testing.assert_allclose(qvals[theta_idx], expected_theta)
+
+        other_idx = 0 if theta_idx != 0 else 1
+        expected_other = np.quantile(
+            samples[:, other_idx],
+            [0.16, 0.50, 0.84],
+            method="inverted_cdf",
+            weights=weights,
+        )
+        np.testing.assert_allclose(qvals[other_idx], expected_other)
+
+    def test_nautilus_auto_injects_periodic_and_warns(self, periodic_fitter):
+        """A full-period theta prior triggers a warning and gets forwarded as periodic=[...] to nautilus.Sampler."""
+        import socca.fitting.methods.nautilus as nautilus_mod
+
+        theta_idx = periodic_fitter.labels.index("comp_00_theta")
+        n_free = len(periodic_fitter.labels)
+
+        with patch.object(
+            nautilus_mod.nautilus, "Sampler", autospec=True
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.posterior.return_value = (
+                np.zeros((5, n_free)),
+                np.zeros(5),
+                None,
+            )
+            inst.log_z = -1.0
+            with pytest.warns(UserWarning, match="periodic"):
+                periodic_fitter.run(method="nautilus", n_live=10)
+
+        assert mock_cls.call_args.kwargs["periodic"] == [theta_idx]
+
+    def test_explicit_periodic_overrides_auto_detection(self, periodic_fitter):
+        """Passing periodic= explicitly suppresses auto-detection (and its warning), and is forwarded as-is."""
+        import socca.fitting.methods.nautilus as nautilus_mod
+
+        n_free = len(periodic_fitter.labels)
+
+        with patch.object(
+            nautilus_mod.nautilus, "Sampler", autospec=True
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.posterior.return_value = (
+                np.zeros((5, n_free)),
+                np.zeros(5),
+                None,
+            )
+            inst.log_z = -1.0
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                periodic_fitter.run(method="nautilus", n_live=10, periodic=[])
+            msgs = [str(wi.message) for wi in w]
+
+        assert not any("periodic" in m.lower() for m in msgs)
+        assert mock_cls.call_args.kwargs["periodic"] == []
+
+    def test_numpyro_never_receives_periodic(self, periodic_fitter):
+        """Backend gating: numpyro must never get an auto-injected periodic kwarg -- run_numpyro forwards leftover kwargs straight into mcmc.run(), which would TypeError on an unrecognized one."""
+        import socca.fitting.methods.numpyro as numpyro_mod
+
+        with patch.object(
+            numpyro_mod.numpyro.infer, "MCMC", autospec=True
+        ) as mock_mcmc_cls:
+            inst = mock_mcmc_cls.return_value
+            inst.get_samples.return_value = {
+                label: np.zeros(5) for label in periodic_fitter.labels
+            }
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                periodic_fitter.run(
+                    method="numpyro", num_warmup=5, num_samples=5
+                )
+            msgs = [str(wi.message) for wi in w]
+
+        assert not any("periodic" in m.lower() for m in msgs)
+        assert "periodic" not in inst.run.call_args.kwargs
 
 
 class TestFitterIntegration:
