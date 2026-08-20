@@ -26,6 +26,7 @@ from .methods import (
     run_optimizer,
 )
 from .methods.utils import circular_quantile
+from .methods.utils import weighted_quantile
 
 from ..pool.mpi import MPI_RANK
 from ..pool.mpi import root_only
@@ -536,12 +537,7 @@ class fitter:
             [
                 circular_quantile(samp, self.weights, period, quantiles)
                 if period is not None
-                else np.quantile(
-                    samp,
-                    quantiles,
-                    method="inverted_cdf",
-                    weights=self.weights,
-                )
+                else weighted_quantile(samp, quantiles, self.weights)
                 for period, samp in zip(self.periodic, self.samples.T)
             ]
         )
@@ -681,27 +677,9 @@ class fitter:
                     mbkg.append(mbkg_)
                     del mbkg_
 
-                mraw = np.quantile(
-                    mraw,
-                    0.50,
-                    axis=0,
-                    method="inverted_cdf",
-                    weights=self.weights,
-                )
-                msmo = np.quantile(
-                    msmo,
-                    0.50,
-                    axis=0,
-                    method="inverted_cdf",
-                    weights=self.weights,
-                )
-                mbkg = np.quantile(
-                    mbkg,
-                    0.50,
-                    axis=0,
-                    method="inverted_cdf",
-                    weights=self.weights,
-                )
+                mraw = weighted_quantile(mraw, 0.50, self.weights, axis=0)
+                msmo = weighted_quantile(msmo, 0.50, self.weights, axis=0)
+                mbkg = weighted_quantile(mbkg, 0.50, self.weights, axis=0)
 
         if isinstance(what, str):
             if what.lower() == "all":
