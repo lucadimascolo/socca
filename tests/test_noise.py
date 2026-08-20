@@ -277,6 +277,32 @@ class TestNormalFourier:
         with pytest.raises(ValueError, match="requires full image"):
             n(data, mask)
 
+    @pytest.mark.parametrize("nrow,ncol", [(8, 8), (8, 9), (9, 8), (9, 9)])
+    def test_real_full_ftype_equivalence(self, nrow, ncol):
+        """ftype='real' must give the same logpdf as ftype='full'.
+
+        rfft2 drops conjugate-redundant Fourier modes; the mode-multiplicity
+        weighting in NormalFourier must exactly compensate for this,
+        regardless of row/column parity (i.e. whether a Nyquist column
+        exists).
+        """
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(50, nrow, ncol))
+        data = rng.normal(size=(nrow, ncol))
+        model = jp.array(rng.normal(size=(nrow, ncol))).flatten()
+        mask = np.ones((nrow, ncol), dtype=int)
+
+        n_real = noise.NormalFourier(cube=cube, ftype="real")
+        n_full = noise.NormalFourier(cube=cube, ftype="full")
+
+        n_real(data, mask)
+        n_full(data, mask)
+
+        logp_real = float(n_real.logpdf(model))
+        logp_full = float(n_full.logpdf(model))
+
+        assert logp_real == pytest.approx(logp_full, rel=1e-8)
+
 
 class TestNormalRI:
     """Tests for NormalRI noise model."""
