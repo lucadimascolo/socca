@@ -197,14 +197,20 @@ class Plotter:
         # like two disjoint clusters to naive statistics otherwise, both
         # for the axis-limit quantiles below and for corner.corner()'s own
         # internal quantile/title computation, which has no per-parameter
-        # override to patch around instead.
+        # override to patch around instead. Shifting back by +mean keeps
+        # the plotted values themselves genuine (locally unwrapped)
+        # parameter values -- e.g. a small negative angle rather than one
+        # near the period -- instead of an offset-from-mean that would
+        # need a "(rel. to circ. mean)" caveat on the axis label.
         samples = np.array(self.fit.samples, dtype=float)
         circ_means = {}
         for pi, period in enumerate(getattr(self.fit, "periodic", [])):
             if period is not None:
-                samples[:, pi], circ_means[pi] = circular_recenter(
+                recentered, mean = circular_recenter(
                     samples[:, pi], self.fit.weights, period
                 )
+                samples[:, pi] = recentered + mean
+                circ_means[pi] = mean
 
         if edges is None:
             if sigma is None:
@@ -223,8 +229,6 @@ class Plotter:
 
         labels = []
         for li, label in enumerate(self.fit.labels):
-            if li in circ_means:
-                label = f"{label} (rel. to circ. mean)"
             if self.fit.units[li] is not None and len(self.fit.units[li]) > 0:
                 labels.append(f"{label}\n[{self.fit.units[li]}]")
             else:
@@ -253,9 +257,11 @@ class Plotter:
                 if idx in circ_means:
                     period = self.fit.periodic[idx]
                     mean = circ_means[idx]
-                    truths[ti] = (truths[ti] - mean + period / 2.00) % (
-                        period
-                    ) - period / 2.00
+                    truths[ti] = (
+                        (truths[ti] - mean + period / 2.00) % period
+                        - period / 2.00
+                        + mean
+                    )
 
         corner.corner(
             data=samples[:, indices],
