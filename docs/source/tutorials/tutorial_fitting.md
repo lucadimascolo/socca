@@ -89,19 +89,25 @@ When calling `run()` with the `nautilus`, `dynesty`, or `pocomc` backends, any f
 
 ```
 UserWarning: comp_00_theta's prior spans a full 180-degree period, so it
-will be sampled as periodic (index 3 in fit.labels, wrapping every 3.142
-rad -- this only affects how the sampler proposes/bounds this parameter;
-the reported posterior is unaffected). To pick a different set of
-periodic parameters, pass periodic=[...] to run() with the 0-based
-fit.labels indices to treat as periodic, or periodic=[] to disable this
-detection entirely.
+will be sampled as periodic, wrapping every 3.142 rad. This only affects
+how the sampler proposes/bounds this parameter -- posterior summaries
+(parameters(), getquantiles(), etc.) are unaffected. To choose a
+different set of periodic parameters yourself, pass periodic=[...] to
+run() with the parameter name(s) (e.g. periodic=['comp_00_theta']), or
+periodic=[] to disable periodic sampling entirely.
 ```
 
-This tells the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. The `periodic` argument forwarded to the underlying sampler is a list of **0-based indices into `fit.labels`**, matching the parameter order of `fit.samples`' columns. To override the auto-detected set, pass it explicitly:
+This tells the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. To override the auto-detected set, pass `periodic=[...]` explicitly with the parameter names, exactly as they appear in `fit.labels`:
 
 ```python
->>> fit.run(method='nautilus', periodic=[3])   # only index 3 is periodic
->>> fit.run(method='nautilus', periodic=[])    # disable periodic sampling
+>>> fit.labels
+['comp_00_xc', 'comp_00_yc', 'comp_00_theta', 'comp_00_e', 'comp_00_re']
+>>> fit.run(method='nautilus', periodic=['comp_00_theta'])
+>>> fit.run(method='nautilus', periodic=[])                # disable periodic sampling
+```
+
+```{note}
+Integer indices into `fit.labels` are also accepted (and are what actually gets forwarded to the underlying sampler), but parameter names are recommended since they don't depend on remembering each parameter's position.
 ```
 
 ```{note}

@@ -266,6 +266,33 @@ class fitter:
             prior.append(self.mod.priors[key].icdf(p))
         return jp.array(prior)
 
+    #   Resolve a periodic= entry (name or index) to a fit.labels index
+    #   --------------------------------------------------------
+    def _periodic_index(self, p):
+        """
+        Resolve one `periodic=[...]` entry to an integer index into `fit.labels`.
+
+        Parameters
+        ----------
+        p : str or int
+            Either a free-parameter name (as it appears in `fit.labels`,
+            e.g. `'comp_00_theta'`) or an already-resolved integer index.
+
+        Returns
+        -------
+        int
+            The corresponding index into `fit.labels`.
+        """
+        if isinstance(p, str):
+            try:
+                return self.labels.index(p)
+            except ValueError:
+                raise ValueError(
+                    f"'{p}' is not a free parameter of this fit. "
+                    f"Available parameters: {self.labels}"
+                ) from None
+        return p
+
     #   Main sampler function
     #   --------------------------------------------------------
     def run(
@@ -353,6 +380,11 @@ class fitter:
                 if key != "kwargs" and key in local_vars
             }
 
+            if "periodic" in kwargs:
+                kwargs["periodic"] = [
+                    self._periodic_index(p) for p in kwargs["periodic"]
+                ]
+
             if "periodic" not in kwargs and self.method in (
                 "nautilus",
                 "dynesty",
@@ -376,16 +408,17 @@ class fitter:
                         warnings.warn(
                             f"{self.labels[pi]}'s prior spans a full "
                             f"{np.degrees(period):.0f}-degree period, so "
-                            f"it will be sampled as periodic (index {pi} "
-                            "in fit.labels, wrapping every "
-                            f"{period:.4g} rad -- this only affects how "
-                            "the sampler proposes/bounds this parameter; "
-                            "the reported posterior is unaffected). To "
-                            "pick a different set of periodic parameters, "
-                            "pass periodic=[...] to run() with the "
-                            "0-based fit.labels indices to treat as "
-                            "periodic, or periodic=[] to disable this "
-                            "detection entirely.",
+                            "it will be sampled as periodic, wrapping "
+                            f"every {period:.4g} rad. This only affects "
+                            "how the sampler proposes/bounds this "
+                            "parameter -- posterior summaries (e.g. "
+                            "parameters(), getquantiles()) are "
+                            "unaffected. To choose a different set of "
+                            "periodic parameters yourself, pass "
+                            "periodic=[...] to run() with the parameter "
+                            f"name(s) (e.g. periodic=['{self.labels[pi]}']"
+                            "), or periodic=[] to disable periodic "
+                            "sampling entirely.",
                             UserWarning,
                         )
                 if auto_periodic:

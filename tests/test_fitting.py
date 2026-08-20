@@ -464,6 +464,38 @@ class TestPeriodicAutoDetection:
         assert not any("periodic" in m.lower() for m in msgs)
         assert mock_cls.call_args.kwargs["periodic"] == []
 
+    def test_explicit_periodic_accepts_parameter_names(self, periodic_fitter):
+        """periodic=[...] accepts fit.labels parameter names, resolved to indices before being forwarded to the sampler."""
+        import socca.fitting.methods.nautilus as nautilus_mod
+
+        theta_idx = periodic_fitter.labels.index("comp_00_theta")
+        n_free = len(periodic_fitter.labels)
+
+        with patch.object(
+            nautilus_mod.nautilus, "Sampler", autospec=True
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.posterior.return_value = (
+                np.zeros((5, n_free)),
+                np.zeros(5),
+                None,
+            )
+            inst.log_z = -1.0
+            periodic_fitter.run(
+                method="nautilus",
+                n_live=10,
+                periodic=["comp_00_theta"],
+            )
+
+        assert mock_cls.call_args.kwargs["periodic"] == [theta_idx]
+
+    def test_explicit_periodic_rejects_unknown_name(self, periodic_fitter):
+        """An unknown parameter name in periodic=[...] raises a clear error instead of silently mis-indexing."""
+        with pytest.raises(ValueError, match="not a free parameter"):
+            periodic_fitter.run(
+                method="nautilus", n_live=10, periodic=["not_a_real_param"]
+            )
+
     def test_numpyro_never_receives_periodic(self, periodic_fitter):
         """Backend gating: numpyro must never get an auto-injected periodic kwarg -- run_numpyro forwards leftover kwargs straight into mcmc.run(), which would TypeError on an unrecognized one."""
         import socca.fitting.methods.numpyro as numpyro_mod
