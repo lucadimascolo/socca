@@ -375,10 +375,17 @@ class fitter:
                         auto_periodic.append(pi)
                         warnings.warn(
                             f"{self.labels[pi]}'s prior spans a full "
-                            f"{np.degrees(period):.0f}-degree period -- "
-                            "automatically treating it as periodic for "
-                            "sampling. Pass periodic=[...] to run() "
-                            "explicitly to override.",
+                            f"{np.degrees(period):.0f}-degree period, so "
+                            f"it will be sampled as periodic (index {pi} "
+                            "in fit.labels, wrapping every "
+                            f"{period:.4g} rad -- this only affects how "
+                            "the sampler proposes/bounds this parameter; "
+                            "the reported posterior is unaffected). To "
+                            "pick a different set of periodic parameters, "
+                            "pass periodic=[...] to run() with the "
+                            "0-based fit.labels indices to treat as "
+                            "periodic, or periodic=[] to disable this "
+                            "detection entirely.",
                             UserWarning,
                         )
                 if auto_periodic:

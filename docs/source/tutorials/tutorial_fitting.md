@@ -80,6 +80,34 @@ After the sampling is completed, the key results are stored in the following att
 The `fit.sampler` attribute provides direct access to the underlying sampler object (e.g., `nautilus.Sampler`, `dynesty.NestedSampler`, `pocomc.Sampler`, or `emcee.EnsembleSampler`), which can be useful for accessing additional diagnostics or methods specific to each sampling library. For `emcee`, additional attributes include `fit.tau` (integrated autocorrelation time per parameter) and `fit.tau_history` (convergence history).
 ```
 
+(periodic-parameters)=
+### Periodic parameters
+
+Some parameters are inherently periodic. A position angle `theta`, for instance, only determines an elliptical or bar-like profile up to a rotation by $\pi$ (`theta` and `theta + \pi` describe the same shape), so a prior spanning the full period leaves "low" and "high" ill-defined right at the wrap boundary. **``socca``** tracks which parameters are periodic, and their period, on each component (e.g. `theta` on [radial profiles](./tutorial_components.md) and `Bridge`, and both `theta` and `rot` on [`Ellipsoid`](./tutorial_components.md), all have a period of $\pi$).
+
+When calling `run()` with the `nautilus`, `dynesty`, or `pocomc` backends, any free parameter whose prior spans its full period is automatically detected and passed to the sampler as periodic, with a warning such as:
+
+```
+UserWarning: comp_00_theta's prior spans a full 180-degree period, so it
+will be sampled as periodic (index 3 in fit.labels, wrapping every 3.142
+rad -- this only affects how the sampler proposes/bounds this parameter;
+the reported posterior is unaffected). To pick a different set of
+periodic parameters, pass periodic=[...] to run() with the 0-based
+fit.labels indices to treat as periodic, or periodic=[] to disable this
+detection entirely.
+```
+
+This tells the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. The `periodic` argument forwarded to the underlying sampler is a list of **0-based indices into `fit.labels`**, matching the parameter order of `fit.samples`' columns. To override the auto-detected set, pass it explicitly:
+
+```python
+>>> fit.run(method='nautilus', periodic=[3])   # only index 3 is periodic
+>>> fit.run(method='nautilus', periodic=[])    # disable periodic sampling
+```
+
+```{note}
+This only changes how the *sampler* proposes/bounds periodic dimensions during sampling. It does not affect how results are summarized afterwards: `fit.getquantiles()`, `parameters()`, and `fit.plot.corner()` always use `fit.periodic` (derived once from the model's periodicity metadata, independent of what was passed to `run()`) to compute circular-aware quantiles and recenter posterior plots on the circular mean. See {ref}`Printing best-fit parameters <printing-best-fit-parameters>` below and the {ref}`Corner plot <corner-plot>` guide.
+```
+
 ### Point-estimate optimization
 
 For fast point estimates, the `'optimizer'` method runs L-BFGS-B optimization via `scipy.optimize.minimize`. By default it finds the **maximum likelihood estimate (MLE)**; setting `target='map'` adds the log-prior to the objective and finds the **maximum a posteriori (MAP)** estimate instead:
@@ -242,6 +270,7 @@ This serializes the entire `fit` object, including the model, data, and all samp
 
 ## Checking the results
 
+(printing-best-fit-parameters)=
 ### Printing best-fit parameters
 
 For a quick summary of the inferred parameters, the `parameters()` method prints the best-fit values along with their associated uncertainties (computed from the 16th and 84th percentiles of the posterior distributions). For instance, for the model in the "[Getting started](./tutorial_quickstart.md)" tutorial, you would get:
@@ -266,7 +295,13 @@ re    :  4.1755E-04 [+3.3501E-06/-3.2982E-06]
 Ie    :  3.0145E-01 [+2.9658E-03/-2.9120E-03]
 ```
 
-Both median value and uncertainties for each parameter are computed from the weighted posterior samples stored in `fit.samples` and `fit.weights`.
+Both median value and uncertainties for each parameter are computed from the weighted posterior samples stored in `fit.samples` and `fit.weights`. For {ref}`periodic parameters <periodic-parameters>` (listed in `fit.periodic`), these are computed with a circular-aware quantile that recenters the samples on their circular mean before taking quantiles, so a posterior straddling the wrap boundary (e.g. clustered around `theta = 0` &equiv; `theta = pi`) is still summarized correctly instead of spuriously spanning most of the period.
+
+The underlying quantiles can also be retrieved directly via `fit.getquantiles()`, which returns an array of shape `(n_free_parameters, n_quantiles)` and dispatches to the same circular-aware logic per parameter:
+
+```python
+>>> fit.getquantiles(quantiles=[0.16, 0.50, 0.84])
+```
 
 ```{warning}
 The uncertainties reported by `parameters()` are marginal uncertainties derived from the 1D posterior distributions. For parameters with significant correlations, the full covariance structure should be examined using the corner plot or by directly analyzing `fit.samples`.

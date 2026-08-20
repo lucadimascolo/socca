@@ -50,6 +50,7 @@ Colormaps can be specified in multiple ways via the `cmaps` argument:
 ...                                           'residuals': 'coolwarm'})
 ```
 
+(corner-plot)=
 ## Corner plot
 
 Visualize the posterior distributions using the [corner](https://corner.readthedocs.io/) library:
@@ -92,5 +93,9 @@ The `component` argument allows selecting which model components to include in t
 ```
 
 Any additional keyword arguments are passed directly to the underlying `corner.corner()` function, allowing full customization of the plot appearance.
+
+```{note}
+For {ref}`periodic parameters <periodic-parameters>` (e.g. a position angle `theta`), the plotted samples are recentered on their circular mean before the axis limits and histograms are computed, so a posterior straddling the wrap boundary is shown as a single tight cluster rather than two disjoint ones at either edge. The corresponding axis label is annotated with `(rel. to circ. mean)` to indicate this, and any `truths` value for that parameter is shifted the same way before plotting.
+```
 
 See the "[Getting started](./tutorial_quickstart.md)" guide for example outputs of these plotting functions.
