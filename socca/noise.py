@@ -437,6 +437,14 @@ class NormalFourier:
                 Default is 3.
             - kernel : array_like, optional
                 Custom smoothing kernel. If None, uses a 5-point stencil.
+            - tol : float, optional
+                Only used when the covariance is estimated from ``cube``.
+                Fourier modes with estimated power below ``tol`` times the
+                median power are excluded from the likelihood (their icov
+                is set to 0), rather than kept with an inflated weight.
+                Default is None, in which case it is derived automatically
+                from the spread of ``log(cov)`` via a robust (MAD-based)
+                outlier threshold.
         """
         if ftype not in ["real", "rfft", "full", "fft"]:
             raise ValueError(
@@ -492,6 +500,31 @@ class NormalFourier:
 
                     for _ in range(smooth):
                         cov = jp.array(convolve(cov, kernel, boundary="wrap"))
+
+                # Modes whose estimated power is implausibly low relative to
+                # the bulk of the spectrum are more likely a statistical
+                # fluke of averaging over a finite noise-realization cube
+                # than real signal -- excluding them outright (rather than
+                # capping/inflating their weight, as a regularized inverse
+                # would) keeps a handful of such modes from dominating the
+                # likelihood through a runaway icov. `tol` sets the cutoff
+                # as a fraction of the median power; if not given, it is
+                # derived from the spread of log(cov) itself via a robust
+                # (MAD-based) outlier threshold -- the same estimator
+                # Normal/NormalRI already use elsewhere for noise levels --
+                # so it adapts to how noisy this particular cube's estimate
+                # is, rather than a fixed magic number.
+                tol = kwargs.get("tol", None)
+                positive = cov > 0.00
+                if tol is None:
+                    logcov = jp.log(cov.at[positive].get())
+                    madcov = median_abs_deviation(
+                        np.array(logcov), scale="normal"
+                    )
+                    tol = float(jp.exp(-5.00 * madcov))
+
+                covtyp = jp.median(cov.at[positive].get())
+                cov = cov.at[cov < tol * covtyp].set(jp.inf)
 
                 # The covariance is always built and smoothed on the full,
                 # physically periodic Fourier grid, then trimmed to the
