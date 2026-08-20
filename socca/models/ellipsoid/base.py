@@ -189,6 +189,7 @@ class Ellipsoid(Component):
                 losbins="",
             )
         )
+        self.periodic.update(dict(theta=jp.pi, rot=jp.pi))
 
         self.description.update(
             {

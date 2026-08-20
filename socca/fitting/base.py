@@ -5,6 +5,7 @@ from functools import partial
 import jax
 import jax.numpy as jp
 import numpy as np
+import numpyro.distributions
 
 from ..plotting import Plotter
 
@@ -24,6 +25,7 @@ from .methods import (
     run_emcee,
     run_optimizer,
 )
+from .methods.utils import circular_quantile
 
 from ..pool.mpi import MPI_RANK
 from ..pool.mpi import root_only
@@ -103,6 +105,10 @@ class fitter:
         self.labels = [self.mod.params[idx] for idx in self.mod.paridx]
         self.units = [
             self.mod.units[self.mod.params[idx]] for idx in self.mod.paridx
+        ]
+        self.periodic = [
+            self.mod.periodic.get(self.mod.params[idx])
+            for idx in self.mod.paridx
         ]
 
         self.plot = Plotter(self)
@@ -345,6 +351,38 @@ class fitter:
                 for key in sampler_params
                 if key != "kwargs" and key in local_vars
             }
+
+            if "periodic" not in kwargs and self.method in (
+                "nautilus",
+                "dynesty",
+                "pocomc",
+            ):
+                auto_periodic = []
+                for pi, idx in enumerate(self.mod.paridx):
+                    period = self.periodic[pi]
+                    if period is None:
+                        continue
+                    prior = self.mod.priors[self.mod.params[idx]]
+                    if not isinstance(
+                        prior, numpyro.distributions.Distribution
+                    ):
+                        continue
+                    extent = (
+                        prior.support.upper_bound - prior.support.lower_bound
+                    )
+                    if extent >= period:
+                        auto_periodic.append(pi)
+                        warnings.warn(
+                            f"{self.labels[pi]}'s prior spans a full "
+                            f"{np.degrees(period):.0f}-degree period -- "
+                            "automatically treating it as periodic for "
+                            "sampling. Pass periodic=[...] to run() "
+                            "explicitly to override.",
+                            UserWarning,
+                        )
+                if auto_periodic:
+                    kwargs["periodic"] = auto_periodic
+
             sampler_methods[self.method](**sampler_kwargs, **kwargs)
         else:
             raise ValueError(f"Unknown sampling method: {self.method}")
@@ -471,6 +509,43 @@ class fitter:
         with open(filename, "wb") as f:
             dill.dump(odict, f, dill.HIGHEST_PROTOCOL)
 
+    #   Compute per-parameter posterior quantiles
+    #   --------------------------------------------------------
+    def getquantiles(self, quantiles=[0.16, 0.50, 0.84]):
+        """
+        Compute weighted posterior quantiles for each free parameter.
+
+        Parameters declared periodic (`self.periodic`, e.g. a position
+        angle symmetric under theta -> theta + pi) use `circular_quantile`
+        so the result is correct even when the posterior straddles the
+        wrap boundary; all other parameters use an ordinary weighted
+        quantile.
+
+        Parameters
+        ----------
+        quantiles : array_like, optional
+            Quantiles to compute, in [0, 1]. Default is [0.16, 0.50, 0.84].
+
+        Returns
+        -------
+        ndarray
+            Array of shape (n_free_parameters, len(quantiles)), in the
+            same parameter order as `self.labels`/`self.periodic`.
+        """
+        return np.array(
+            [
+                circular_quantile(samp, self.weights, period, quantiles)
+                if period is not None
+                else np.quantile(
+                    samp,
+                    quantiles,
+                    method="inverted_cdf",
+                    weights=self.weights,
+                )
+                for period, samp in zip(self.periodic, self.samples.T)
+            ]
+        )
+
     #   Generate best-fit/median model
     #   --------------------------------------------------------
     def getmodel(
@@ -591,17 +666,7 @@ class fitter:
             msmo = msmo - mbkg
         else:
             if usebest:
-                p = np.array(
-                    [
-                        np.quantile(
-                            samp,
-                            0.50,
-                            method="inverted_cdf",
-                            weights=self.weights,
-                        )
-                        for samp in self.samples.T
-                    ]
-                )
+                p = self.getquantiles([0.50])[:, 0]
                 mraw, msmo, mbkg, _ = gm(p)
                 msmo = msmo - mbkg
             else:
@@ -790,6 +855,12 @@ class fitter:
         print("\nBest-fit parameters")
         print("=" * 40)
 
+        qvals = (
+            None
+            if self.method == "optimizer"
+            else self.getquantiles([0.16, 0.50, 0.84])
+        )
+
         # Group parameters by component
         components = {}
         for pi, label in enumerate(self.labels):
@@ -816,17 +887,19 @@ class fitter:
                         f"{param:<{max_len}} : {self.results.parameters[pi]:11.4E}"
                     )
                 else:
-                    samp = self.samples[:, pi]
+                    period = self.periodic[pi]
+                    p16, p50, p84 = qvals[pi]
 
-                    p16, p50, p84 = np.quantile(
-                        samp,
-                        q=[0.16, 0.50, 0.84],
-                        method="inverted_cdf",
-                        weights=self.weights,
-                    )
-
-                    upper = p84 - p50
-                    lower = p50 - p16
+                    if period is not None:
+                        upper = (p84 - p50 + period / 2.00) % period - (
+                            period / 2.00
+                        )
+                        lower = (p50 - p16 + period / 2.00) % period - (
+                            period / 2.00
+                        )
+                    else:
+                        upper = p84 - p50
+                        lower = p50 - p16
 
                     print(
                         f"{param:<{max_len}} : {p50:11.4E} [+{upper:10.4E}/-{lower:10.4E}]"

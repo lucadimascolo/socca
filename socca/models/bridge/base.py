@@ -111,6 +111,7 @@ class Bridge(Component):
                 e="",
             )
         )
+        self.periodic.update(dict(theta=jp.pi))
         self.description.update(
             dict(
                 xc="Right ascension of the bridge centroid",

@@ -81,6 +81,7 @@ class Profile(Component):
         self.cbox = kwargs.get("cbox", config.Profile.cbox)
 
         self.units.update(dict(xc="deg", yc="deg", theta="rad", e="", cbox=""))
+        self.periodic.update(dict(theta=jp.pi))
 
         self.description.update(
             dict(
