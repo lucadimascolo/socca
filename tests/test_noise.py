@@ -310,13 +310,19 @@ class TestNormalFourier:
         data = rng.normal(size=(16, 16))
         mask = np.ones((16, 16), dtype=int)
 
-        n = noise.NormalFourier(cube=cube, ftype="real", smooth=0)
+        n = noise.NormalFourier(cube=cube, ftype="real")
         n(data, mask)
 
         assert bool(jp.all(n.cmask))
 
     def test_auto_tol_excludes_crushed_mode(self):
-        """A single artificially crushed Fourier mode should be excluded."""
+        """A single artificially crushed Fourier mode should be excluded.
+
+        Needs smoothing (the default) to have an effect: the exclusion
+        compares each mode's raw estimate to its own local (smoothed)
+        neighborhood, so with no smoothing there's nothing to compare
+        against.
+        """
         rng = np.random.default_rng(0)
         cube = rng.normal(size=(200, 16, 16))
         fft = np.fft.fft2(cube, axes=(-2, -1))
@@ -325,7 +331,7 @@ class TestNormalFourier:
         data = rng.normal(size=(16, 16))
         mask = np.ones((16, 16), dtype=int)
 
-        n = noise.NormalFourier(cube=cube, ftype="real", smooth=0)
+        n = noise.NormalFourier(cube=cube, ftype="real")
         n(data, mask)
 
         assert not bool(n.cmask[3, 5])
@@ -340,10 +346,42 @@ class TestNormalFourier:
         data = rng.normal(size=(16, 16))
         mask = np.ones((16, 16), dtype=int)
 
-        n = noise.NormalFourier(cube=cube, ftype="real", smooth=0, tol=0.00)
+        n = noise.NormalFourier(cube=cube, ftype="real", tol=0.00)
         n(data, mask)
 
         assert bool(n.cmask[3, 5])
+
+    def test_red_noise_spectrum_does_not_over_exclude(self):
+        """A genuinely red/pink (steeply k-dependent) noise spectrum should not trip the exclusion just for being legitimately low-power at high k.
+
+        Regression test: an earlier version compared each mode's power to
+        the *global* median, which flagged a large, contiguous band of
+        legitimately low-power (but perfectly well-estimated) high-k modes
+        as "outliers" whenever the spectrum had broad smooth dynamic range
+        -- 26% of modes excluded on real data. Comparing against each
+        mode's own local (smoothed) neighborhood instead should keep the
+        excluded fraction small regardless of the spectrum's overall shape.
+        """
+        rng = np.random.default_rng(0)
+        nside = 32
+        kx = np.fft.fftfreq(nside)[:, None]
+        ky = np.fft.fftfreq(nside)[None, :]
+        kk = np.sqrt(kx**2 + ky**2)
+        kk[0, 0] = kk[kk > 0].min()
+        filt = 1.00 / kk
+
+        white = rng.normal(size=(300, nside, nside))
+        cube = np.fft.ifft2(
+            np.fft.fft2(white, axes=(-2, -1)) * filt, axes=(-2, -1)
+        ).real
+        data = rng.normal(size=(nside, nside))
+        mask = np.ones((nside, nside), dtype=int)
+
+        n = noise.NormalFourier(cube=cube, ftype="real")
+        n(data, mask)
+
+        excluded_fraction = float((~n.cmask).mean())
+        assert excluded_fraction < 0.05
 
 
 class TestNormalRI:
