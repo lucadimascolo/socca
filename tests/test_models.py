@@ -198,6 +198,43 @@ class TestProfile:
         assert beta.e is not None or beta.e == 0.0
         assert beta.cbox is not None or beta.cbox == 0.0
 
+    def test_e_accepts_tied_lambda(self):
+        """Test that e can be set to a tied lambda without raising."""
+        beta = models.Beta()
+        beta.e = lambda comp_00_e1: comp_00_e1
+        assert callable(beta.e)
+
+    def test_e_accepts_boundto(self):
+        """Test that e can be set to a _BoundTo without raising."""
+        beta = models.Beta()
+        other = models.Beta()
+        beta.e = priors.boundto(other, "e")
+        assert isinstance(beta.e, priors._BoundTo)
+
+    def test_e_accepts_none(self):
+        """Test that e can be set to None without raising."""
+        beta = models.Beta()
+        beta.e = None
+        assert beta.e is None
+
+    def test_e_still_raises_for_fixed_value_above_one(self):
+        """Test that a fixed e >= 1 still raises ValueError."""
+        beta = models.Beta()
+        with pytest.raises(ValueError, match="greater than 1"):
+            beta.e = 1.5
+
+    def test_e_still_raises_for_fixed_value_below_zero(self):
+        """Test that a fixed e < 0 still raises ValueError."""
+        beta = models.Beta()
+        with pytest.raises(ValueError, match="lower than 0"):
+            beta.e = -0.1
+
+    def test_e_still_raises_for_prior_out_of_range(self):
+        """Test that a prior with out-of-range support still raises."""
+        beta = models.Beta()
+        with pytest.raises(ValueError, match="greater than 1"):
+            beta.e = priors.uniform(0.0, 1.5)
+
 
 class TestBeta:
     """Tests for Beta profile."""
