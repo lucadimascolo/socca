@@ -303,6 +303,48 @@ class TestNormalFourier:
 
         assert logp_real == pytest.approx(logp_full, rel=1e-8)
 
+    def test_clean_cube_excludes_no_modes(self):
+        """A well-behaved noise cube should not trip the auto tol cutoff."""
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(200, 16, 16))
+        data = rng.normal(size=(16, 16))
+        mask = np.ones((16, 16), dtype=int)
+
+        n = noise.NormalFourier(cube=cube, ftype="real", smooth=0)
+        n(data, mask)
+
+        assert bool(jp.all(n.cmask))
+
+    def test_auto_tol_excludes_crushed_mode(self):
+        """A single artificially crushed Fourier mode should be excluded."""
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(200, 16, 16))
+        fft = np.fft.fft2(cube, axes=(-2, -1))
+        fft[:, 3, 5] *= 1.00e-08
+        cube = np.fft.ifft2(fft, axes=(-2, -1)).real
+        data = rng.normal(size=(16, 16))
+        mask = np.ones((16, 16), dtype=int)
+
+        n = noise.NormalFourier(cube=cube, ftype="real", smooth=0)
+        n(data, mask)
+
+        assert not bool(n.cmask[3, 5])
+
+    def test_tol_zero_disables_exclusion(self):
+        """tol=0.0 should keep every mode, even a crushed one."""
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(200, 16, 16))
+        fft = np.fft.fft2(cube, axes=(-2, -1))
+        fft[:, 3, 5] *= 1.00e-08
+        cube = np.fft.ifft2(fft, axes=(-2, -1)).real
+        data = rng.normal(size=(16, 16))
+        mask = np.ones((16, 16), dtype=int)
+
+        n = noise.NormalFourier(cube=cube, ftype="real", smooth=0, tol=0.00)
+        n(data, mask)
+
+        assert bool(n.cmask[3, 5])
+
 
 class TestNormalRI:
     """Tests for NormalRI noise model."""
