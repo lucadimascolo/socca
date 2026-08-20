@@ -3,6 +3,7 @@
 from abc import abstractmethod
 from functools import partial
 import inspect
+import types
 import warnings
 
 import jax
@@ -150,6 +151,12 @@ class Profile(Component):
 
     @e.setter
     def e(self, value):  # noqa: D102
+        if value is None or isinstance(
+            value, (types.LambdaType, types.FunctionType, _BoundTo)
+        ):
+            self._e = value
+            return
+
         wsuffix = "Ellipticity must be in the range [0, 1)."
         wstring = None
         if isinstance(value, numpyro.distributions.Distribution):
