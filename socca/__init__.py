@@ -31,7 +31,17 @@ from . import priors
 from . import noise
 from . import models
 from . import units
+from . import utils
 
 from .fitting import fitter, load
 
-__all__ = ["data", "priors", "noise", "models", "units", "fitter", "load"]
+__all__ = [
+    "data",
+    "priors",
+    "noise",
+    "models",
+    "units",
+    "utils",
+    "fitter",
+    "load",
+]
