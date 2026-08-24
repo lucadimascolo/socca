@@ -90,6 +90,24 @@ Other optional keyword arguments include `apod`, which specifies an apodization 
 
 When the covariance is estimated from a `cube` of noise realizations, individual Fourier modes can occasionally end up with an implausibly low estimated power just by chance, especially with a small number of realizations -- inverting these naively would let a handful of modes dominate the likelihood. Rather than regularizing the inverse (e.g. capping it at some floor), `NormalFourier` excludes any mode whose raw (pre-smoothing) power estimate falls below a fraction `tol` of its own local (smoothed) power, in the same way it already excludes modes with exactly zero power. Comparing against this local reference, rather than a single global scale, means the cutoff doesn't misfire on a noise spectrum with genuine, smoothly-varying dynamic range (e.g. red/pink noise falling off by orders of magnitude from low-*k* to high-*k*). By default `tol` is derived automatically from the spread of `log(raw / smoothed)` via a robust (MAD-based) outlier threshold, so it adapts to how noisy the specific noise cube's estimate is; it can also be set explicitly, e.g. `NormalFourier(cube=noise_cube, tol=1.00e-04)`. This only applies when the covariance is estimated from `cube` -- a covariance passed explicitly via `cov` or `icov` is used as given.
 
+### Non-diagonal ("banded") Fourier covariance treatment
+
+Apodizing the data before Fourier transforming is itself a real-space multiplication, which is a *convolution* in Fourier space -- it couples neighboring Fourier modes. By default (`covmodel="diagonal"`), `NormalFourier` only corrects for the resulting overall change in power (via the `mean(apod**2)` normalization) and otherwise still treats Fourier modes as independent, ignoring this coupling. For smooth, modest apodization windows the coupling is fairly local, so `NormalFourier` also offers an opt-in `covmodel="banded"` treatment that accounts for it directly, via a banded (non-diagonal) covariance and a banded Cholesky factorization:
+
+```python
+>>> noise = NormalFourier(
+...     cube=noise_cube, covmodel="banded", apod=apod_map, radius=8,
+... )
+```
+
+`covmodel="banded"` requires `cube` (not `cov`/`icov`), and estimates the intrinsic (pre-apodization) noise power spectrum from the *raw*, unapodized cube -- the known apodization window is then applied analytically to build the mode-coupling covariance, rather than reusing the windowed periodogram that `covmodel="diagonal"` estimates. This means `covmodel="diagonal"` and `covmodel="banded"` on the same `cube` generally give different covariance *estimates*, not just different likelihood treatments of the same estimate.
+
+Two additional keyword arguments control the banded treatment: `radius` (default `8`) sets the coupling truncation radius, in Fourier-index units -- modes further apart than `radius` are treated as exactly uncorrelated -- and `ridge` (default `0.0`) adds optional diagonal loading before factorization, as a fallback if truncation leaves the banded covariance not strictly positive-definite (try increasing `radius` or `ridge` if factorization fails). `tol`-based mode exclusion is not applied under `covmodel="banded"`.
+
+```{warning}
+`covmodel="banded"` is substantially more expensive than the default. Setup performs a one-time banded Cholesky factorization (which can take anywhere from seconds to well over a minute depending on image size and `radius`), and *every* likelihood evaluation performs a sequential banded triangular solve that, unlike every other noise model in `socca`, does not fully vectorize or parallelize. Consider this cost carefully for samplers that require many likelihood evaluations. The banded covariance is also an approximation in a second sense: coupling that would wrap around the row-major degrees-of-freedom ordering (modes within `radius` of the `ky=0`/`ky=ny` edge) is not captured, in addition to the `radius` truncation itself.
+```
+
 ```{warning}
 The likelihood is evaluated by Fourier transforming the apodized residuals between model and data, weighting each Fourier mode by the inverse noise covariance, and summing over the Fourier modes with non-zero inverse covariance. Given the Fourier-space nature of this noise model, it is not possible to handle masked pixels in the input data.
 ```

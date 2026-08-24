@@ -383,6 +383,197 @@ class TestNormalFourier:
         excluded_fraction = float((~n.cmask).mean())
         assert excluded_fraction < 0.05
 
+    def test_covmodel_options(self):
+        """Both covmodel values are accepted and stored."""
+        icov = np.ones((4, 3))
+        assert noise.NormalFourier(icov=icov).covmodel == "diagonal"
+        n = noise.NormalFourier(icov=icov, covmodel="diagonal")
+        assert n.covmodel == "diagonal"
+
+    def test_invalid_covmodel_raises_error(self):
+        """An unknown covmodel raises ValueError."""
+        with pytest.raises(ValueError, match="covmodel must be"):
+            noise.NormalFourier(icov=np.ones((4, 3)), covmodel="invalid")
+
+    def test_banded_covmodel_requires_cube(self):
+        """covmodel='banded' needs cube, and rejects cov/icov."""
+        with pytest.raises(ValueError, match="requires a noise"):
+            noise.NormalFourier(icov=np.ones((4, 3)), covmodel="banded")
+
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(50, 8, 8))
+        with pytest.raises(ValueError, match="does not accept cov/icov"):
+            noise.NormalFourier(
+                cov=np.ones((8, 5)), cube=cube, covmodel="banded"
+            )
+
+    def test_banded_covmodel_sets_expected_attributes(self):
+        """Setup produces finite, correctly-shaped banded-mode attributes."""
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(50, 8, 8))
+        n = noise.NormalFourier(cube=cube, covmodel="banded", radius=3)
+
+        assert n.chol_banded.shape[1] == 64
+        assert n.chol_rows.shape == (64, n.bandwidth)
+        assert n.chol_diag.shape == (64,)
+        assert bool(jp.all(jp.isfinite(n.chol_diag)))
+        assert bool(jp.isfinite(n.norm_full))
+
+    @pytest.mark.parametrize("nrow,ncol", [(8, 8), (8, 9), (9, 8), (9, 9)])
+    def test_banded_reduces_to_diagonal_when_unwindowed(self, nrow, ncol):
+        """covmodel='banded' with apod=1 must match covmodel='diagonal'.
+
+        With no apodization there is no mode coupling to approximate, so
+        the two covariance treatments should agree on logpdf to tight
+        tolerance, independent of grid parity.
+        """
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(300, nrow, ncol))
+        data = rng.normal(size=(nrow, ncol))
+        model = jp.array(rng.normal(size=(nrow, ncol))).flatten()
+        mask = np.ones((nrow, ncol), dtype=int)
+        apod = jp.ones((nrow, ncol))
+
+        n_diag = noise.NormalFourier(cube=cube, ftype="real", smooth=0)
+        n_banded = noise.NormalFourier(
+            cube=cube,
+            covmodel="banded",
+            apod=apod,
+            radius=max(nrow, ncol),
+            smooth=0,
+        )
+
+        n_diag(data, mask)
+        n_banded(data, mask)
+
+        logp_diag = float(n_diag.logpdf(model))
+        logp_banded = float(n_banded.logpdf(model))
+
+        assert logp_diag == pytest.approx(logp_banded, rel=1e-8)
+
+    def test_banded_matches_dense_reference_away_from_seam(self):
+        """The banded covariance must match a from-scratch dense reference.
+
+        Builds the same real covariance two independent ways: densely, by
+        applying the real linear map (apodize -> FFT -> extract the
+        reduced real degrees of freedom) to a basis of the image and
+        propagating a circulant pixel-space covariance through it; and via
+        the production banded-kernel construction. They should agree
+        exactly for mode pairs that don't need to wrap around the
+        ky=0/ny degrees-of-freedom seam (a documented limitation of the
+        banded storage, checked separately).
+        """
+        rng = np.random.default_rng(1)
+        ny, nx = 12, 12
+        radius = 5
+
+        raw = rng.uniform(0.5, 3.0, size=(ny, nx))
+        iy, ix = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
+        my, mx = (-iy) % ny, (-ix) % nx
+        spectrum = 0.50 * (raw + raw[my, mx])
+
+        yy, xx = np.mgrid[0:ny, 0:nx]
+        apod = (
+            0.20
+            + 0.80
+            * np.cos(np.pi * (yy - ny / 2) / ny) ** 2
+            * np.cos(np.pi * (xx - nx / 2) / nx) ** 2
+        )
+
+        dof = noise.NormalFourier._dof_index_maps(ny, nx)
+        n = len(dof)
+        npix = ny * nx
+
+        c = np.real(np.fft.ifft2(spectrum)) / npix
+        mm, nn = np.meshgrid(np.arange(npix), np.arange(npix), indexing="ij")
+        my_, mx_ = np.divmod(mm, nx)
+        ny_, nx_ = np.divmod(nn, nx)
+        sigma_pixel = c[(my_ - ny_) % ny, (mx_ - nx_) % nx]
+
+        a = np.zeros((n, npix))
+        for j in range(npix):
+            e = np.zeros((ny, nx))
+            e.flat[j] = 1.00
+            r = np.fft.fft2(apod * e)
+            for i, (part, ky, kx) in enumerate(dof):
+                a[i, j] = r[ky, kx].real if part == 0 else r[ky, kx].imag
+
+        sigma_dense = a @ sigma_pixel @ a.T
+
+        ab = noise.NormalFourier._build_banded_covariance(
+            apod, spectrum, dof, radius, 0.00
+        )
+        bandwidth = ab.shape[0] - 1
+
+        away = np.array([radius < ky < ny - 1 - radius for (_, ky, _) in dof])
+
+        max_rel = 0.00
+        for j in range(n):
+            if not away[j]:
+                continue
+            for k in range(bandwidth + 1):
+                i = j + k
+                if i >= n or not away[i]:
+                    continue
+                diff = abs(ab[k, j] - sigma_dense[i, j])
+                max_rel = max(max_rel, diff / np.max(np.abs(sigma_dense)))
+
+        assert max_rel < 1.00e-10
+
+    def test_banded_logpdf_finite_and_differentiable(self):
+        """Logpdf under covmodel='banded' is finite and has finite grad."""
+        import jax
+
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(50, 8, 8))
+        data = rng.normal(size=(8, 8))
+        model = jp.array(rng.normal(size=(8, 8))).flatten()
+        mask = np.ones((8, 8), dtype=int)
+
+        n = noise.NormalFourier(cube=cube, covmodel="banded", radius=3)
+        n(data, mask)
+
+        assert bool(jp.isfinite(n.logpdf(model)))
+
+        grad = jax.grad(n.logpdf)(model)
+        assert bool(jp.all(jp.isfinite(grad)))
+
+    def test_banded_logpdf_vmap_compatible(self):
+        """Logpdf under covmodel='banded' composes with jax.vmap."""
+        import jax
+
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(50, 8, 8))
+        data = rng.normal(size=(8, 8))
+        mask = np.ones((8, 8), dtype=int)
+        batch = jp.array(rng.normal(size=(4, 64)))
+
+        n = noise.NormalFourier(cube=cube, covmodel="banded", radius=3)
+        n(data, mask)
+
+        out = jax.vmap(n.logpdf)(batch)
+        assert out.shape == (4,)
+        assert bool(jp.all(jp.isfinite(out)))
+
+    def test_banded_noise_model_is_picklable(self):
+        """A covmodel='banded' noise object survives a dill round trip."""
+        import dill
+
+        rng = np.random.default_rng(0)
+        cube = rng.normal(size=(50, 8, 8))
+        data = rng.normal(size=(8, 8))
+        model = jp.array(rng.normal(size=(8, 8))).flatten()
+        mask = np.ones((8, 8), dtype=int)
+
+        n = noise.NormalFourier(cube=cube, covmodel="banded", radius=3)
+        n(data, mask)
+
+        reloaded = dill.loads(dill.dumps(n))
+
+        assert float(reloaded.logpdf(model)) == pytest.approx(
+            float(n.logpdf(model)), rel=1e-10
+        )
+
 
 class TestNormalRI:
     """Tests for NormalRI noise model."""

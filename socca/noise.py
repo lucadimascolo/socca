@@ -10,6 +10,7 @@ import warnings
 
 from astropy.convolution import convolve, CustomKernel
 from astropy.io import fits
+from scipy.linalg import cholesky_banded
 from scipy.stats import median_abs_deviation
 
 from .pool.mpi import MPI_RANK
@@ -404,9 +405,27 @@ class NormalFourier:
         Image data array. This is set when the model is called.
     mask : jax.numpy.ndarray
         Image mask array. This is set when the model is called.
+    covmodel : str
+        Covariance treatment: 'diagonal' (default) or 'banded'.
+    chol_banded : jax.numpy.ndarray
+        Banded Cholesky factor of the non-diagonal covariance. Only set
+        when ``covmodel='banded'``.
+    bandwidth : int
+        Bandwidth of ``chol_banded``. Only set when ``covmodel='banded'``.
+    norm_full : float
+        Normalization constant for the banded log-pdf. Only set when
+        ``covmodel='banded'``.
     """
 
-    def __init__(self, cov=None, icov=None, cube=None, ftype="real", **kwargs):
+    def __init__(
+        self,
+        cov=None,
+        icov=None,
+        cube=None,
+        ftype="real",
+        covmodel="diagonal",
+        **kwargs,
+    ):
         """
         Initialize Fourier-space noise model.
 
@@ -426,6 +445,21 @@ class NormalFourier:
 
             - 'real' or 'rfft': real-to-complex FFT (for real input data)
             - 'full' or 'fft': complex-to-complex FFT (for complex input data)
+        covmodel : str, optional, default 'diagonal'
+            Covariance treatment in Fourier space:
+
+            - 'diagonal': treat Fourier modes as independent (current
+              default behavior).
+            - 'banded': account for the mode-coupling induced by
+              apodization via a banded, non-diagonal covariance and a
+              banded Cholesky factorization. Requires ``cube``. The
+              intrinsic noise power spectrum is estimated from the raw
+              (unapodized) cube, and the known apodization window is
+              applied analytically, rather than reusing the windowed
+              periodogram used by ``covmodel='diagonal'`` -- so the two
+              modes generally yield different covariance estimates from
+              the same ``cube``, not just different likelihood treatments
+              of the same estimate. See ``radius`` and ``ridge`` below.
         **kwargs : dict
             Additional keyword arguments:
 
@@ -438,17 +472,43 @@ class NormalFourier:
             - kernel : array_like, optional
                 Custom smoothing kernel. If None, uses a 5-point stencil.
             - tol : float, optional
-                Only used when the covariance is estimated from ``cube``.
-                Fourier modes whose raw (pre-smoothing) power estimate
-                falls below ``tol`` times their own local (smoothed) power
-                are excluded from the likelihood (their icov is set to 0),
-                rather than kept with an inflated weight. Comparing against
-                this local reference, rather than a single global scale,
-                means the cutoff doesn't misfire on a noise spectrum with
-                genuine, smoothly-varying dynamic range. Default is None,
-                in which case it is derived automatically from the spread
-                of ``log(raw / smoothed)`` via a robust (MAD-based) outlier
-                threshold.
+                Only used when the covariance is estimated from ``cube``
+                and ``covmodel='diagonal'``. Fourier modes whose raw
+                (pre-smoothing) power estimate falls below ``tol`` times
+                their own local (smoothed) power are excluded from the
+                likelihood (their icov is set to 0), rather than kept
+                with an inflated weight. Comparing against this local
+                reference, rather than a single global scale, means the
+                cutoff doesn't misfire on a noise spectrum with genuine,
+                smoothly-varying dynamic range. Default is None, in which
+                case it is derived automatically from the spread of
+                ``log(raw / smoothed)`` via a robust (MAD-based) outlier
+                threshold. Not applied when ``covmodel='banded'``.
+            - radius : int, optional, default 8
+                Only used when ``covmodel='banded'``. Coupling truncation
+                radius, in Fourier-index units, for the banded covariance.
+                Modes further apart than ``radius`` are treated as exactly
+                uncorrelated. This also bounds the inner sum used to
+                evaluate the coupling kernel itself.
+            - ridge : float, optional, default 0.0
+                Only used when ``covmodel='banded'``. Diagonal loading
+                added to the banded covariance before factorization, as a
+                fallback if truncation leaves it not strictly
+                positive-definite. If factorization fails with
+                ``ridge=0.0``, try increasing ``radius`` or ``ridge``.
+
+        Warning
+        -------
+        ``covmodel='banded'`` is substantially more expensive than the
+        default: setup performs a one-time banded Cholesky factorization,
+        and every likelihood evaluation performs a sequential banded
+        triangular solve that, unlike every other noise model in this
+        module, does not fully vectorize/parallelize. Consider this cost
+        for samplers requiring many likelihood evaluations. The banded
+        covariance is also an approximation in a second sense: coupling
+        that wraps around the row-major degrees-of-freedom ordering
+        (modes within ``radius`` of the ``ky=0``/``ky=ny`` edge) is not
+        captured, in addition to the ``radius`` truncation itself.
         """
         if ftype not in ["real", "rfft", "full", "fft"]:
             raise ValueError(
@@ -456,7 +516,25 @@ class NormalFourier:
             )
         self.ftype = ftype
 
+        if covmodel not in ["diagonal", "banded"]:
+            raise ValueError("covmodel must be either 'diagonal' or 'banded'.")
+        self.covmodel = covmodel
+
         self.apod = kwargs.get("apod", None)
+
+        if self.covmodel == "banded":
+            if cube is None:
+                raise ValueError(
+                    "covmodel='banded' requires a noise realization cube "
+                    "(cube=...)."
+                )
+            if cov is not None or icov is not None:
+                raise ValueError(
+                    "covmodel='banded' does not accept cov/icov; "
+                    "provide cube instead."
+                )
+            self._init_banded(cube, kwargs)
+            return
 
         if icov is not None:
             self.cov = None
@@ -492,23 +570,8 @@ class NormalFourier:
                 cov = cov_raw
 
                 smooth = kwargs.get("smooth", 3)
-                if smooth > 0:
-                    kernel = kwargs.get("kernel", None)
-                    if kernel is None:
-                        kernel = (
-                            np.array(
-                                [
-                                    [0.00, 1.00, 0.00],
-                                    [1.00, 1.00, 1.00],
-                                    [0.00, 1.00, 0.00],
-                                ]
-                            )
-                            / 5.00
-                        )
-                        kernel = CustomKernel(kernel)
-
-                    for _ in range(smooth):
-                        cov = jp.array(convolve(cov, kernel, boundary="wrap"))
+                kernel = kwargs.get("kernel", None)
+                cov = self._smooth_spectrum(cov, smooth, kernel)
 
                 positive = jp.logical_and(cov_raw > 0.00, cov > 0.00)
                 ratio = jp.where(
@@ -544,6 +607,341 @@ class NormalFourier:
         mask_icov = jp.logical_or(self.icov == jp.inf, jp.isnan(self.icov))
         self.icov = self.icov.at[mask_icov].set(0.00)
         del mask_icov
+
+    #   Shared spectrum-smoothing helper
+    #   --------------------------------------------------------
+    @staticmethod
+    def _smooth_spectrum(spectrum, smooth, kernel):
+        """
+        Smooth a Fourier-space power spectrum with a wrap-boundary kernel.
+
+        Parameters
+        ----------
+        spectrum : jax.numpy.ndarray
+            Power spectrum to smooth.
+        smooth : int
+            Number of smoothing iterations. No-op if not positive.
+        kernel : array_like or None
+            Custom smoothing kernel. If None, uses a 5-point stencil.
+
+        Returns
+        -------
+        jax.numpy.ndarray
+            Smoothed spectrum.
+        """
+        if smooth <= 0:
+            return spectrum
+
+        if kernel is None:
+            kernel = (
+                np.array(
+                    [
+                        [0.00, 1.00, 0.00],
+                        [1.00, 1.00, 1.00],
+                        [0.00, 1.00, 0.00],
+                    ]
+                )
+                / 5.00
+            )
+            kernel = CustomKernel(kernel)
+
+        for _ in range(smooth):
+            spectrum = jp.array(convolve(spectrum, kernel, boundary="wrap"))
+        return spectrum
+
+    #   Non-redundant real degrees-of-freedom basis for the rfft2 half-plane
+    #   --------------------------------------------------------
+    @staticmethod
+    def _dof_index_maps(ny, nx):
+        """
+        Build the non-redundant real degrees-of-freedom basis.
+
+        A real ``ny x nx`` image has exactly ``ny*nx`` real degrees of
+        freedom. This enumerates them over the ``rfft2`` half-plane
+        (``kx`` in ``0..nx//2``): interior columns contribute both the
+        real and imaginary part of each mode; the self-conjugate-in-kx
+        columns (``kx=0`` and, if ``nx`` is even, ``kx=nx//2``) keep only
+        one representative per ``{ky, ny-ky}`` pair, with the fully
+        self-conjugate points (``ky=0``, and ``ky=ny//2`` if ``ny`` even)
+        contributing only their (real) real part.
+
+        Parameters
+        ----------
+        ny, nx : int
+            Image shape.
+
+        Returns
+        -------
+        list of tuple
+            ``(part, ky, kx)`` triples, ``part=0`` for the real part and
+            ``part=1`` for the imaginary part, in row-major, Re/Im
+            interleaved order.
+        """
+        kx_half = nx // 2 + 1
+        dof = []
+        for ky in range(ny):
+            for kx in range(kx_half):
+                selfconj_kx = kx == 0 or (nx % 2 == 0 and kx == nx // 2)
+                if not selfconj_kx:
+                    dof.append((0, ky, kx))
+                    dof.append((1, ky, kx))
+                    continue
+                selfconj_ky = ky == 0 or (ny % 2 == 0 and ky == ny // 2)
+                if selfconj_ky:
+                    dof.append((0, ky, kx))
+                elif ky <= (ny - 1) // 2:
+                    dof.append((0, ky, kx))
+                    dof.append((1, ky, kx))
+        return dof
+
+    @staticmethod
+    def _canonicalize(ky, kx, ny, nx):
+        """
+        Map any Fourier-index pair to its non-redundant representative.
+
+        Parameters
+        ----------
+        ky, kx : numpy.ndarray
+            Fourier-index arrays (any integers, wrapped internally).
+        ny, nx : int
+            Image shape.
+
+        Returns
+        -------
+        cky, ckx : numpy.ndarray
+            The representative index, always with ``ckx`` in
+            ``0..nx//2``, matching a position produced by
+            ``_dof_index_maps``.
+        reflected : numpy.ndarray of bool
+            True where the representative is the complex conjugate of
+            the input mode rather than the mode itself.
+        """
+        ky = ky % ny
+        kx = kx % nx
+
+        reflect_kx = kx > nx // 2
+        ky = np.where(reflect_kx, (-ky) % ny, ky)
+        kx = np.where(reflect_kx, (-kx) % nx, kx)
+
+        selfconj_kx = (kx == 0) | ((nx % 2 == 0) & (kx == nx // 2))
+        selfconj_ky = (ky == 0) | ((ny % 2 == 0) & (ky == ny // 2))
+        reflect_ky = selfconj_kx & ~selfconj_ky & (ky > (ny - 1) // 2)
+        ky = np.where(reflect_ky, (-ky) % ny, ky)
+
+        return ky, kx, reflect_kx ^ reflect_ky
+
+    #   Banded non-diagonal Fourier covariance construction
+    #   --------------------------------------------------------
+    @classmethod
+    def _build_banded_covariance(cls, apod, spectrum, dof, radius, ridge):
+        """
+        Build the banded, non-diagonal Fourier covariance.
+
+        Apodization couples neighboring Fourier modes (a real-space
+        multiplication is a convolution in Fourier space). This computes
+        the real covariance of the reduced degrees-of-freedom basis
+        (``_dof_index_maps``) induced by that coupling, truncated to
+        modes within ``radius`` of each other, directly from the
+        deterministic apodization window and the intrinsic (pre-window)
+        noise power spectrum -- without ever forming a dense matrix.
+
+        The degrees-of-freedom basis is flattened row-major over ``ky``,
+        so coupling that wraps around the ``ky=0``/``ky=ny`` seam (modes
+        within ``radius`` of that edge) falls outside any single global
+        band and is dropped rather than captured -- a known approximation
+        on top of the ``radius`` truncation itself, affecting a fraction
+        of modes of order ``radius / ny``.
+
+        Parameters
+        ----------
+        apod : numpy.ndarray
+            Apodization window, shape ``(ny, nx)``.
+        spectrum : numpy.ndarray
+            Intrinsic (pre-apodization) noise power spectrum, shape
+            ``(ny, nx)``.
+        dof : list of tuple
+            Output of ``_dof_index_maps(ny, nx)``.
+        radius : int
+            Coupling truncation radius, in Fourier-index units. Also
+            bounds the inner sum used to evaluate the coupling kernel.
+            Couplings that Hermitian reflection maps far apart in the
+            degrees-of-freedom ordering (rare, near the ``kx=nx//2``
+            boundary) are dropped rather than allowed to grow the band.
+        ridge : float
+            Diagonal loading added before returning.
+
+        Returns
+        -------
+        numpy.ndarray
+            Lower-banded storage (``scipy.linalg.cholesky_banded``
+            convention) of the truncated covariance, shape
+            ``(bandwidth + 1, len(dof))``.
+        """
+        ny, nx = apod.shape
+        kx_half = nx // 2 + 1
+        n = len(dof)
+        npix = ny * nx
+
+        idx_re = -np.ones((ny, kx_half), dtype=int)
+        idx_im = -np.ones((ny, kx_half), dtype=int)
+        for j, (part, ky, kx) in enumerate(dof):
+            if part == 0:
+                idx_re[ky, kx] = j
+            else:
+                idx_im[ky, kx] = j
+
+        w = np.fft.fft2(apod)
+        p_n = spectrum
+
+        ky_grid, kx_grid = np.mgrid[0:ny, 0:kx_half]
+
+        radius_y = min(radius, (ny - 1) // 2)
+        radius_x = min(radius, (nx - 1) // 2)
+        offsets_y = range(-radius_y, radius_y + 1)
+        offsets_x = range(-radius_x, radius_x + 1)
+
+        bandwidth_bound = 2 * radius_y * kx_half + 2 * radius_x + 1
+        ab = np.zeros((bandwidth_bound + 1, n))
+        max_row = 0
+
+        for dy in offsets_y:
+            for dx in offsets_x:
+                gamma = np.zeros((ny, kx_half), dtype=complex)
+                pival = np.zeros((ny, kx_half), dtype=complex)
+                for vy in offsets_y:
+                    for vx in offsets_x:
+                        wv = w[vy % ny, vx % nx]
+                        wv_delta = w[(vy + dy) % ny, (vx + dx) % nx]
+                        pn_shift = np.roll(
+                            np.roll(p_n, vy, axis=0), vx, axis=1
+                        )[:, :kx_half]
+                        gamma += wv * np.conj(wv_delta) * pn_shift
+
+                        w_neg_v = w[(-vy) % ny, (-vx) % nx]
+                        pn_shift2 = np.roll(
+                            np.roll(p_n, -vy, axis=0), -vx, axis=1
+                        )[:, :kx_half]
+                        iy2 = (2 * ky_grid + dy + vy) % ny
+                        ix2 = (2 * kx_grid + dx + vx) % nx
+                        pival += w_neg_v * pn_shift2 * w[iy2, ix2]
+
+                gamma /= npix**2
+                pival /= npix**2
+
+                cky, ckx, reflected = cls._canonicalize(
+                    ky_grid + dy, kx_grid + dx, ny, nx
+                )
+
+                g = np.where(reflected, pival, gamma)
+                p = np.where(reflected, gamma, pival)
+
+                a_ = 0.50 * (g.real + p.real)
+                b_ = 0.50 * (g.real - p.real)
+                d_ = 0.50 * (g.imag + p.imag)
+                c_ = 0.50 * (p.imag - g.imag)
+
+                j_re, j_im = idx_re, idx_im
+                i_re, i_im = idx_re[cky, ckx], idx_im[cky, ckx]
+
+                blocks = (
+                    (a_, j_re, i_re),
+                    (b_, j_im, i_im),
+                    (c_, j_re, i_im),
+                    (d_, j_im, i_re),
+                )
+                for val, jarr, iarr in blocks:
+                    valid = (jarr >= 0) & (iarr >= 0)
+                    if not np.any(valid):
+                        continue
+                    jj = jarr[valid]
+                    ii = iarr[valid]
+                    vv = val[valid]
+                    row = np.where(ii >= jj, ii - jj, jj - ii)
+                    col = np.where(ii >= jj, jj, ii)
+                    inband = row < ab.shape[0]
+                    ab[row[inband], col[inband]] = vv[inband]
+                    if np.any(inband):
+                        max_row = max(max_row, int(row[inband].max()))
+
+        ab = ab[: max_row + 1]
+        ab[0] += ridge
+        return ab
+
+    #   Set up banded (non-diagonal) covariance model
+    #   --------------------------------------------------------
+    def _init_banded(self, cube, kwargs):
+        """
+        Initialize the banded non-diagonal Fourier covariance model.
+
+        Estimates the intrinsic noise power spectrum from the raw
+        (unapodized) cube, then builds and factorizes the banded
+        covariance induced by the known apodization window. See
+        ``covmodel`` in ``__init__``.
+
+        Parameters
+        ----------
+        cube : array_like
+            3D array of noise realizations.
+        kwargs : dict
+            Keyword arguments forwarded from ``__init__`` (``apod``,
+            ``smooth``, ``kernel``, ``radius``, ``ridge``).
+        """
+        cube = jp.array(cube)
+
+        self.apod = kwargs.get(
+            "apod", jp.ones((cube.shape[-2], cube.shape[-1]))
+        )
+        self.apod = jp.asarray(self.apod.astype(float))
+        self.apod = jp.squeeze(self.apod)
+
+        spectrum = jp.fft.fft2(cube, axes=(-2, -1))
+        spectrum = jp.mean(jp.abs(spectrum) ** 2, axis=0)
+
+        smooth = kwargs.get("smooth", 3)
+        kernel = kwargs.get("kernel", None)
+        spectrum = self._smooth_spectrum(spectrum, smooth, kernel)
+
+        radius = kwargs.get("radius", 8)
+        ridge = kwargs.get("ridge", 0.00)
+
+        ny, nx = cube.shape[-2], cube.shape[-1]
+        dof = self._dof_index_maps(ny, nx)
+
+        ab = self._build_banded_covariance(
+            np.asarray(self.apod), np.asarray(spectrum), dof, radius, ridge
+        )
+
+        try:
+            chol = cholesky_banded(ab, lower=True)
+        except np.linalg.LinAlgError as exc:
+            raise np.linalg.LinAlgError(
+                "Banded covariance is not positive-definite; try "
+                "increasing 'radius' or setting 'ridge' > 0."
+            ) from exc
+
+        bandwidth = chol.shape[0] - 1
+        n = len(dof)
+
+        cols = np.arange(n)[:, None] - 1 - np.arange(bandwidth)[None, :]
+        valid = cols >= 0
+        cols_clip = np.clip(cols, 0, n - 1)
+        rows = np.arange(1, bandwidth + 1)[None, :] + np.zeros_like(cols)
+        chol_rows = np.where(valid, chol[rows, cols_clip], 0.00)
+
+        self.covmodel = "banded"
+        self.radius = radius
+        self.bandwidth = bandwidth
+        self.chol_banded = jp.asarray(chol)
+        self.chol_rows = jp.asarray(chol_rows)
+        self.chol_diag = jp.asarray(chol[0])
+        self.norm_full = n * float(np.log(2.00 * np.pi)) + 2.00 * float(
+            np.sum(np.log(chol[0]))
+        )
+
+        parts = np.array([d[0] for d in dof])
+        self.dof_ky = jp.asarray(np.array([d[1] for d in dof]))
+        self.dof_kx = jp.asarray(np.array([d[2] for d in dof]))
+        self.dof_is_im = jp.asarray(parts == 1)
 
     #   Set up noise model
     #   --------------------------------------------------------
@@ -585,6 +983,25 @@ class NormalFourier:
                 "NormalFourier noise model requires full image "
                 "(no masked pixels)."
             )
+
+        if self.covmodel == "banded":
+
+            def _logpdf_full(xs):
+                return self._logpdf_full(
+                    xs,
+                    self.data,
+                    self.mask,
+                    self.apod,
+                    self.dof_ky,
+                    self.dof_kx,
+                    self.dof_is_im,
+                    self.chol_rows,
+                    self.chol_diag,
+                    self.norm_full,
+                )
+
+            self.logpdf = jax.jit(_logpdf_full)
+            return
 
         self.cmask = self.icov != 0.00
 
@@ -681,6 +1098,76 @@ class NormalFourier:
         chisq = fft((xmap - data) * apod, axes=(-2, -1))
         chisq = icov * jp.abs(chisq) ** 2
         return -0.50 * jp.sum(chisq.at[cmask].get())
+
+    #   Banded non-diagonal noise log-pdf/likelihood function
+    #   --------------------------------------------------------
+    @staticmethod
+    def _logpdf_full(
+        x,
+        data,
+        dmask,
+        apod,
+        dof_ky,
+        dof_kx,
+        dof_is_im,
+        chol_rows,
+        chol_diag,
+        norm_full,
+    ):
+        """
+        Compute log probability for banded non-diagonal Fourier noise.
+
+        Static method that solves the banded Cholesky system via a
+        sequential forward substitution, implemented as a JAX scan so it
+        stays jit/vmap/grad-compatible.
+
+        Parameters
+        ----------
+        x : jax.numpy.ndarray
+            Model values (flattened vector).
+        data : jax.numpy.ndarray
+            Observed data array (2D image).
+        dmask : jax.numpy.ndarray
+            Boolean mask for valid pixels in data space.
+        apod : jax.numpy.ndarray
+            Apodization array applied before FFT.
+        dof_ky, dof_kx : jax.numpy.ndarray
+            Fourier-index positions of the reduced real degrees of
+            freedom, in ``rfft2`` output coordinates.
+        dof_is_im : jax.numpy.ndarray
+            Boolean array selecting the imaginary (True) or real (False)
+            part of the mode at each degree of freedom.
+        chol_rows : jax.numpy.ndarray
+            Off-diagonal banded Cholesky coefficients, shape
+            ``(N, bandwidth)``, nearest-neighbor first.
+        chol_diag : jax.numpy.ndarray
+            Diagonal banded Cholesky coefficients, shape ``(N,)``.
+        norm_full : float
+            Precomputed normalization constant.
+
+        Returns
+        -------
+        float
+            Log probability of the banded non-diagonal Gaussian.
+        """
+        xmap = jp.zeros(dmask.shape)
+        xmap = xmap.at[dmask].set(x)
+
+        rfft = jp.fft.rfft2((xmap - data) * apod, axes=(-2, -1))
+        vals = rfft[dof_ky, dof_kx]
+        r = jp.where(dof_is_im, jp.imag(vals), jp.real(vals))
+
+        def step(window, inputs):
+            r_i, row_i, diag_i = inputs
+            y_i = (r_i - jp.dot(row_i, window)) / diag_i
+            window = jp.concatenate([y_i[None], window[:-1]])
+            return window, y_i
+
+        window0 = jp.zeros(chol_rows.shape[1])
+        _, y = jax.lax.scan(step, window0, (r, chol_rows, chol_diag))
+
+        chisq = jp.sum(y**2)
+        return -0.50 * chisq - 0.50 * norm_full
 
 
 # Correlated noise for radio-interferometric data
