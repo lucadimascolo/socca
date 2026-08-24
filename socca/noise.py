@@ -588,17 +588,36 @@ class NormalFourier:
 
         self.cmask = self.icov != 0.00
 
+        ny, nx = self.data.shape[-2], self.data.shape[-1]
+
         if self.ftype in ["real", "rfft"]:
             weight = jp.full(self.icov.shape, 2.00)
             weight = weight.at[..., 0].set(1.00)
-            if self.data.shape[-1] % 2 == 0:
+            if nx % 2 == 0:
                 weight = weight.at[..., -1].set(1.00)
+            selfconj_kx = [0] + (
+                [self.icov.shape[-1] - 1] if nx % 2 == 0 else []
+            )
         else:
             weight = jp.ones(self.icov.shape)
+            selfconj_kx = [0] + ([nx // 2] if nx % 2 == 0 else [])
+
+        selfconj_ky = [0] + ([ny // 2] if ny % 2 == 0 else [])
+        pair_weight = jp.full(self.icov.shape, 2.00)
+        for kyv in selfconj_ky:
+            for kxv in selfconj_kx:
+                pair_weight = pair_weight.at[kyv, kxv].set(1.00)
 
         self.norm = jp.sum(
             weight.at[self.cmask].get()
-            * jp.log(2.00 * jp.pi / self.icov.at[self.cmask].get())
+            * jp.log(
+                2.00
+                * jp.pi
+                / (
+                    pair_weight.at[self.cmask].get()
+                    * self.icov.at[self.cmask].get()
+                )
+            )
         )
 
         icov_weighted = weight * self.icov
