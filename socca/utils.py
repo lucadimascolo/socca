@@ -1,8 +1,9 @@
 """Helper utilities for image loading and array operations."""
 
+import numpy as np
 from astropy.io import fits
 
-__all__ = ["_img_loader", "_reduce_axes"]
+__all__ = ["_img_loader", "_reduce_axes", "apodization"]
 
 
 # Load image
@@ -93,3 +94,73 @@ def _reduce_axes(hdu):
                 head.pop(f"{key}{idx}_{jdx}", None)
 
     return fits.PrimaryHDU(data=data, header=head)
+
+
+# Build an apodization window
+# --------------------------------------------------------
+def apodization(shape, width, profile="cos", alpha=1.00):
+    """
+    Build a 2D apodization window with a tapered border.
+
+    Reproduces pixell's ``enmap.apod(map, width, profile, fill="zero")``:
+    an array of ones with a taper applied within `width` pixels of each
+    edge, separately (and multiplicatively) along both axes.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Shape of the output window, as (ny, nx).
+    width : int or float
+        Width of the tapered border, applied to all four edges. If
+        `width` is a float in (0, 1), it is interpreted as a fraction of
+        the respective axis length (rounded to the nearest pixel, so the
+        y- and x-axis tapers may differ for a non-square `shape`);
+        otherwise it is interpreted directly as a number of pixels. If
+        the resolved pixel width is not positive, an array of ones is
+        returned.
+    profile : str, optional
+        Shape of the taper. Either "cos" (raised-cosine, the default) or
+        "lin" (linear ramp).
+    alpha : float, optional
+        Power to which the taper is raised, controlling how sharply it
+        rises from 0 to 1. Default is 1.00 (unmodified taper); values
+        above/below 1 make it steeper/gentler near the edge.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape `shape`, with values in [0, 1].
+
+    Raises
+    ------
+    ValueError
+        If `profile` is not one of "cos" or "lin".
+    """
+    if profile not in ("cos", "lin"):
+        raise ValueError(f"Unknown apodization profile '{profile}'.")
+
+    ny, nx = shape
+    out = np.ones((ny, nx))
+
+    def resolve(width, n):
+        if 0.00 < width < 1.00:
+            width = width * n
+        return int(round(width))
+
+    wy, wx = resolve(width, ny), resolve(width, nx)
+
+    def taper(w):
+        x = np.arange(1, w + 1) / (w + 1)
+        if profile == "cos":
+            return (0.50 * (1.00 - np.cos(np.pi * x))) ** alpha
+        return x**alpha
+
+    if wy > 0:
+        prof = taper(wy)
+        out[:wy, :] *= prof[:, None]
+        out[-wy:, :] *= prof[::-1, None]
+    if wx > 0:
+        prof = taper(wx)
+        out[:, :wx] *= prof[None, :]
+        out[:, -wx:] *= prof[None, ::-1]
+    return out
