@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.5.0](https://github.com/lucadimascolo/socca/compare/v1.4.0...v1.5.0) (2026-08-25)
+
+
+### Features
+
+* accept parameter names in run(periodic=[...]) ([c422a03](https://github.com/lucadimascolo/socca/commit/c422a036d11f52f58d6494a07dc9c73871507bdc))
+* add apodization() utility for building tapered apodization windows ([5c1c09a](https://github.com/lucadimascolo/socca/commit/5c1c09aae78b2ef1de094211af85724e8b4e27c7))
+* add covmodel="banded" non-diagonal Fourier covariance treatment ([94e58ad](https://github.com/lucadimascolo/socca/commit/94e58ada5f973859bb08e3fa83dba55aaf2f9b09))
+* auto-detect periodic priors and add circular-aware quantiles ([6991656](https://github.com/lucadimascolo/socca/commit/69916563d3b9153522b71f18c79436f7e2a70c4f))
+
+
+### Bug Fixes
+
+* allow Profile.e to accept tied values ([e749007](https://github.com/lucadimascolo/socca/commit/e749007ded02a77e7be93cfe154aceb0e3aa9a6c))
+* avoid NumPy&gt;=2.0 dependency in weighted quantile calls ([d8488d2](https://github.com/lucadimascolo/socca/commit/d8488d21c5564be49a4b5b8b79b4ecd092dfe98e))
+* correct real-dof pairing weight in NormalFourier's diagonal normalization ([1f468f9](https://github.com/lucadimascolo/socca/commit/1f468f9b6261f6040ffb0c2b896fb8bfc8ca9d35))
+* crop FFT convolution from the kernel's actual peak throughout ([73b78b1](https://github.com/lucadimascolo/socca/commit/73b78b1fb73854c5904845814d92f3ac6589bbf7))
+* exclude implausibly low-power modes in NormalFourier's icov ([d69b06f](https://github.com/lucadimascolo/socca/commit/d69b06f0ae7b8b94f8bc051ecbbe2daa2a9d7ae7))
+* keep corner plot values in original units for periodic parameters ([ff326e3](https://github.com/lucadimascolo/socca/commit/ff326e3fb52145d32bfacfdb33f30ba9f6ab59fb))
+* reconcile NormalFourier's real and full Fourier likelihoods ([8adde98](https://github.com/lucadimascolo/socca/commit/8adde983a0a5b3990469d107305521fe1ca00092))
+* warn about periodic parameters when their prior is set, not at run() ([56bdff4](https://github.com/lucadimascolo/socca/commit/56bdff47e7d84154f54b6d7f645c734941bf1560))
+
+
+### Documentation
+
+* document NormalFourier's tol argument ([bc948a0](https://github.com/lucadimascolo/socca/commit/bc948a0edec8c576cc1fd73deacc08f052a9658c))
+* explain the periodic-parameter auto-detection warning and override ([aa12d03](https://github.com/lucadimascolo/socca/commit/aa12d03b99e2aff3130a9166d924599452cb5585))
+* note NormalFourier's real/full ftype are equivalent ([3deaa04](https://github.com/lucadimascolo/socca/commit/3deaa043bd07d4c13f1559277e09f7ceba614281))
+* update tol description for the local tol comparison ([cb697cf](https://github.com/lucadimascolo/socca/commit/cb697cf684b0c49745b4b342459081a99f87f1bc))
+
 ## [1.4.0](https://github.com/lucadimascolo/socca/compare/v1.3.0...v1.4.0) (2026-08-07)
 
 
