@@ -17,6 +17,8 @@ from pathlib import Path
 
 from astropy.io import fits
 
+from ..data import Convolve, FFTspec
+
 from .methods import (
     run_nautilus,
     run_dynesty,
@@ -945,7 +947,18 @@ def load(filename):
     """
     with open(filename, "rb") as f:
         odict = dill.load(f)
-    fit = fitter(img=odict["img"], mod=odict["mod"])
+
+    img = odict["img"]
+    if hasattr(img.fft, "center"):
+        warnings.warn(
+            "This file was saved with socca <= 1.4: rebuilding the FFT and "
+            "PSF operators of the image for the current conventions."
+        )
+        img.fft = FFTspec(img.hdu)
+        if img.psf is not None:
+            img.convolve = Convolve(img.psf, img.data.shape)
+
+    fit = fitter(img=img, mod=odict["mod"])
     for key in odict.keys():
         fit.__dict__[key] = odict[key]
     return fit

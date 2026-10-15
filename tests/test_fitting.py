@@ -1177,3 +1177,43 @@ class TestLikelihoodWithPSF:
         assert np.isclose(
             jitted, fit._log_likelihood(jp.asarray(pp)), rtol=1e-12
         )
+
+
+class TestLoadWithPSF:
+    """Tests for saving and loading fits with a PSF."""
+
+    @pytest.fixture
+    def psf_fitter(self, simple_hdu):
+        """Create a fitter with a PSF and a point source."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        k = np.arange(-6.0, 7.0)
+        img.addpsf(np.exp(-0.5 * ((k[:, None] - 0.4) ** 2 + k**2) / 2.0))
+        models.Component.idcls = 0
+        point = models.Point(
+            xc=simple_hdu.header["CRVAL1"] + 0.003,
+            yc=simple_hdu.header["CRVAL2"] - 0.002,
+            Ic=priors.uniform(0.0, 10.0),
+        )
+        return fitting.fitter(img, models.Model(point))
+
+    def test_roundtrip(self, psf_fitter, tmp_path):
+        """A dumped fit gives the same likelihood when loaded."""
+        pp = jp.array([4.0])
+        before = float(psf_fitter._log_likelihood(pp))
+        psf_fitter.dump(tmp_path / "fit.pickle")
+        fit = fitting.load(tmp_path / "fit.pickle")
+        assert float(fit._log_likelihood(pp)) == before
+
+    def test_legacy_operators_rebuilt(self, psf_fitter, tmp_path):
+        """Fits saved with the old FFT conventions are rebuilt on load."""
+        pp = jp.array([4.0])
+        before = float(psf_fitter._log_likelihood(pp))
+        psf_fitter.img.fft.center = jp.ones(psf_fitter.img.fft.pulse.shape)
+        psf_fitter.img.convolve.psf_fft = jp.zeros_like(
+            psf_fitter.img.convolve.psf_fft
+        )
+        psf_fitter.dump(tmp_path / "fit.pickle")
+        with pytest.warns(UserWarning, match="socca <= 1.4"):
+            fit = fitting.load(tmp_path / "fit.pickle")
+        assert not hasattr(fit.img.fft, "center")
+        assert np.isclose(float(fit._log_likelihood(pp)), before, rtol=1e-12)
