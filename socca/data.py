@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jp
 
 import numpy as np
+from scipy.fft import next_fast_len
 
 import inspect
 import warnings
@@ -53,10 +54,92 @@ def _hdu_mask(mask, hdu):
 
 
 def pad_size(shape, factor=_pad_factor):
-    """Compute the standard padded shape for convolution."""
+    """
+    Compute the standard padded shape for convolution.
+
+    Each axis is padded to at least ``factor * s - 1`` and rounded up to
+    the next fast FFT length.
+    """
     if factor < 1:
         raise ValueError("Padding factor must be >= 1.")
-    return tuple(int(factor * s - 1) for s in shape)
+    return tuple(next_fast_len(int(factor * s - 1), real=True) for s in shape)
+
+
+def _phase_ramp(shape, py, px):
+    """
+    Spectrum of a unit pulse at pixel ``(py, px)`` on an rfft2 grid.
+
+    On even axes the Nyquist term takes the real part of the ramp, as for
+    any real signal, so that sub-pixel shifts stay symmetric between axes.
+    """
+    ramp = []
+    for n, p, freq in [
+        (shape[0], py, np.fft.fftfreq),
+        (shape[1], px, np.fft.rfftfreq),
+    ]:
+        f = freq(n)
+        r = jp.exp(-2.00j * jp.pi * f * p)
+        if n % 2 == 0:
+            r = r.at[n // 2].set(jp.cos(jp.pi * p))
+        ramp.append(r)
+    return ramp[0][:, None] * ramp[1][None, :]
+
+
+def _sym_center(kernel):
+    """Single estimate of the centre of point symmetry of a stamp."""
+    shape = tuple(2 * s for s in kernel.shape)
+    spec = np.fft.fft2(kernel, shape)
+    spec = spec * spec
+    peak = np.unravel_index(np.argmax(np.fft.ifft2(spec).real), shape)
+    center = np.array(peak, dtype=float) / 2.00
+    fy = np.fft.fftfreq(shape[0])[:, None]
+    fx = np.fft.fftfreq(shape[1])[None, :]
+    spec = spec * np.exp(2.00j * np.pi * (fy * peak[0] + fx * peak[1]))
+    for ax, n in enumerate(shape):
+        a = np.moveaxis(spec, ax, 0)
+        z = np.sum(a[1 : n // 2] * np.conj(a[: n // 2 - 1]))
+        z = z + np.sum(a[n // 2 + 2 :] * np.conj(a[n // 2 + 1 : -1]))
+        center[ax] -= np.angle(z) * n / (4.00 * np.pi)
+    return center
+
+
+def _psf_center(kernel, size=128, niter=8, tol=1e-9):
+    """
+    Centre of point symmetry ``(y, x)`` of a PSF stamp, in sub-pixels.
+
+    Refined on tapered windows symmetric about the current estimate, so
+    that truncation by the stamp edges does not bias it.
+    """
+    kernel = np.nan_to_num(np.asarray(kernel, dtype=float))
+    if not np.any(kernel):
+        raise ValueError("The PSF is empty.")
+    nz = np.nonzero(np.abs(kernel) > 1e-12 * np.abs(kernel).max())
+    center = _sym_center(kernel)
+    for _ in range(niter):
+        h = np.round(2.00 * center) / 2.00
+        r = [
+            min(hh, s - 1 - hh, size, max(hh - i.min(), i.max() - hh) + 1)
+            for hh, s, i in zip(h, kernel.shape, nz)
+        ]
+        lo = [int(np.ceil(hh - rr)) for hh, rr in zip(h, r)]
+        hi = [int(np.floor(hh + rr)) + 1 for hh, rr in zip(h, r)]
+        if any(b - a < 3 for a, b in zip(lo, hi)):
+            break
+        sub = kernel[lo[0] : hi[0], lo[1] : hi[1]]
+        w = np.ones(sub.shape)
+        for ax, (a, b) in enumerate(zip(lo, hi)):
+            t = 1.00 - np.abs(np.arange(a, b) - center[ax]) / (0.50 * (b - a))
+            t = np.sin(np.pi * np.clip(t, 0.00, 0.50)) ** 2
+            w = w * np.expand_dims(t, 1 - ax)
+        new = _sym_center(sub * w) + np.array(lo)
+        done = np.max(np.abs(new - center)) < tol
+        center = new
+        if done:
+            break
+    snap = np.abs(center - np.round(center)) < 1e-6
+    center = np.where(snap, np.round(center), center)
+    center = np.clip(center, 0.00, np.array(kernel.shape) - 1.00)
+    return tuple(float(c) for c in center)
 
 
 # Coordinate grids
@@ -178,9 +261,6 @@ class FFTspec:
         Shape of the zero-padded array used for convolution.
     header : dict
         Dictionary containing relevant header keywords.
-    center : jax.numpy.ndarray
-        FFT of a unit impulse at the image centre, computed on the
-        padded grid.
     freq : list of jax.numpy.ndarray
         Frequency grids in u and v directions, defined on the padded grid.
     pulse : jax.numpy.ndarray
@@ -206,38 +286,29 @@ class FFTspec:
 
         self.padded_shape = pad_size(self.image_shape)
 
-        self.center = jp.zeros(self.image_shape)
-        self.center = self.center.at[
-            self.image_shape[0] // 2, self.image_shape[1] // 2
-        ].set(1.00)
-
-        self.center = jp.fft.rfft2(self.center, self.padded_shape)
+        fshape = (self.padded_shape[0], self.padded_shape[1] // 2 + 1)
 
         self.freq = [
             jp.array(
                 np.broadcast_to(
-                    np.fft.rfftfreq(self.padded_shape[1])[None, :],
-                    self.center.shape,
+                    np.fft.rfftfreq(self.padded_shape[1])[None, :], fshape
                 )
             ),
             jp.array(
                 np.broadcast_to(
-                    np.fft.fftfreq(self.padded_shape[0])[:, None],
-                    self.center.shape,
+                    np.fft.fftfreq(self.padded_shape[0])[:, None], fshape
                 )
             ),
         ]
 
-        dx = self.image_shape[1] // 2 - self.header["CRPIX1"] + 1.00
-        dy = self.image_shape[0] // 2 - self.header["CRPIX2"] + 1.00
+        dx = self.header["CRPIX1"] - 1.00
+        dy = self.header["CRPIX2"] - 1.00
 
-        self.pulse = self.center * jp.exp(
-            2.00j * jp.pi * (self.freq[0] * dx + self.freq[1] * dy)
-        )
+        self.pulse = _phase_ramp(self.padded_shape, dy, dx)
 
     def shift(self, xc, yc):
         """
-        Compute Fourier shift for a point source at (xc, yc).
+        Compute the spectrum of a unit point source at (xc, yc).
 
         Parameters
         ----------
@@ -249,7 +320,7 @@ class FFTspec:
         Returns
         -------
         jax.numpy.ndarray
-            Complex array representing the Fourier shift for the point source.
+            Complex spectrum of the point source on the padded grid.
         """
         dw = jp.array(
             [
@@ -259,8 +330,10 @@ class FFTspec:
             ]
         )
         dp = self.cd_inv @ dw
-        return jp.exp(
-            -2.00j * jp.pi * (self.freq[0] * dp[0] + self.freq[1] * dp[1])
+        return _phase_ramp(
+            self.padded_shape,
+            self.header["CRPIX2"] - 1.00 + dp[1],
+            self.header["CRPIX1"] - 1.00 + dp[0],
         )
 
     def fft(self, data):
@@ -270,16 +343,7 @@ class FFTspec:
     def ifft(self, data):
         """Compute inverse FFT to get image from Fourier-space data."""
         data_ = jp.fft.irfft2(data, self.padded_shape)
-
-        start = tuple(
-            (f - o) // 2 for f, o in zip(self.padded_shape, self.image_shape)
-        )
-        if self.image_shape[0] % 2 == 0:
-            start = (start[0] + 1, start[1])
-        if self.image_shape[1] % 2 == 0:
-            start = (start[0], start[1] + 1)
-
-        return jax.lax.dynamic_slice(data_, start, self.image_shape)
+        return data_[: self.image_shape[0], : self.image_shape[1]]
 
 
 # Image constructor
@@ -327,7 +391,8 @@ class Image:
         - addmask : dict, optional
             Dictionary with 'regions' and 'combine' keys for masking.
         - addpsf : dict, optional
-            Dictionary with 'img', 'normalize', and 'idx' keys for PSF.
+            Dictionary with 'img', 'normalize', 'idx', and 'center' keys
+            for PSF, passed to `addpsf`.
 
     Attributes
     ----------
@@ -449,6 +514,7 @@ class Image:
                 img=kwargs["addpsf"].get("img"),
                 normalize=kwargs["addpsf"].get("normalize", True),
                 idx=kwargs["addpsf"].get("idx", 0),
+                center=kwargs["addpsf"].get("center", "auto"),
             )
 
     def _init_noise(self):
@@ -502,7 +568,7 @@ class Image:
         Notes
         -----
         - Updates all image attributes including WCS, grid, and FFT specifications
-        - If a PSF is present, it is also cutout to match the new image size
+        - If a PSF is present, it is kept unchanged, with the same centre
         - The image center (CRPIX/CRVAL) is updated to the cutout center
         """
         cutout_data = Cutout2D(self.data, center, csize, wcs=self.wcs)
@@ -519,12 +585,9 @@ class Image:
         del cutout_resp
 
         if self.psf is not None:
-            center_psf = (
-                self.hdu.header["CRPIX1"] - 1,
-                self.hdu.header["CRPIX2"] - 1,
+            self.convolve = Convolve(
+                self.psf, self.data.shape, center=self.convolve.center
             )
-            cutout_psf = Cutout2D(self.psf, center_psf, csize, wcs=self.wcs)
-            self.addpsf(cutout_psf.data, normalize=False)
 
         cuthdu = fits.PrimaryHDU(
             data=cutout_data.data, header=cutout_data.wcs.to_header()
@@ -608,13 +671,12 @@ class Image:
 
     #   Add PSF
     #   --------------------------------------------------------
-    def addpsf(self, img, normalize=True, idx=0):
+    def addpsf(self, img, normalize=True, idx=0, center="auto"):
         """
         Add a point spread function (PSF) to the image.
 
         Loads and prepares a PSF kernel for convolution operations. The PSF
-        is normalized, resized if needed, and its FFT is precomputed for
-        efficient convolution in Fourier space.
+        FFT is precomputed for efficient convolution in Fourier space.
 
         Parameters
         ----------
@@ -630,16 +692,22 @@ class Image:
         idx : int, optional
             HDU index to load if `img` is a filename.
             Default is 0 (primary HDU).
+        center : "auto", None, or tuple of float, optional
+            PSF centre ``(y, x)`` in pixels of the stamp. "auto" (default)
+            estimates it as the centre of point symmetry, to sub-pixel
+            precision; None takes pixel ``n // 2`` along each axis, i.e.
+            no recentring.
 
         Notes
         -----
-        - If PSF dimensions exceed image dimensions, it is automatically cropped
+        - The PSF is moved so that its centre lands on the source; only
+          this translation is applied, and none for a whole-pixel centre
+        - The PSF is stored unchanged (up to normalization) in `self.psf`
+        - Only the part of the PSF that can reach the image is used
         - The PSF FFT is precomputed and stored in `self.convolve.psf_fft`
-        - PSF kernel is stored in `self.psf` for reference
-        - PSF is zero-padded to match image dimensions before FFT
         """
         if isinstance(img, (np.ndarray, jp.ndarray)):
-            kernel = img.copy()
+            kernel = np.asarray(img, dtype=float).copy()
         else:
             hdu = _img_loader(img, idx)
             hdu = _reduce_axes(hdu)
@@ -653,57 +721,20 @@ class Image:
         if normalize:
             kernel = kernel / np.sum(kernel)
 
-        kx, ky = kernel.shape
-        dx, dy = self.data.shape
-
-        if kx > dx or ky > dy:
-            warnings.warn(
-                "PSF kernel is larger than the image. "
-                "Automatically cropping to match image dimensions."
-            )
-
-            if kx > dx:
-                cx = (kx - dx) // 2
-                kernel = kernel[cx : cx + dx, :]
-
-            if ky > dy:
-                cy = (ky - dy) // 2
-                kernel = kernel[:, cy : cy + dy]
-
-        if kx < dx or ky < dy:
-            warnings.warn(
-                "PSF kernel is smaller than the image. "
-                "Automatically zero-padding to match image dimensions."
-            )
-
-            pad_width = [
-                (0, max(0, s - k))
-                for s, k in zip(self.data.shape, kernel.shape)
-            ]
-
-            kernel = np.pad(
-                kernel, pad_width, mode="constant", constant_values=0.00
-            )
-
-        if self.noise.__class__.__name__ != "NormalRI":
-            kernel = jp.fft.irfft2(
-                jp.abs(jp.fft.rfft2(kernel)), s=kernel.shape
-            )
-            kernel = jp.fft.ifftshift(kernel)
-        else:
-            warnings.warn(
-                "NormalRI assume the PSF to be already centered with respect "
-                "to the image grid. PSF centering is not applied."
-            )
-
-        self.psf = kernel
-        self.convolve = Convolve(self.psf, self.data.shape)
+        self.psf = jp.asarray(kernel)
+        if isinstance(center, str):
+            if center != "auto":
+                raise ValueError('center must be "auto", None, or (y, x).')
+            center = None
+        elif center is None:
+            center = tuple(k // 2 for k in kernel.shape)
+        self.convolve = Convolve(self.psf, self.data.shape, center=center)
 
 
 class Convolve:
     """FFT-based convolution operator with optional zero-padding."""
 
-    def __init__(self, kernel, image_shape):
+    def __init__(self, kernel, image_shape, center=None):
         """
         Initialize the convolution operator.
 
@@ -713,6 +744,17 @@ class Convolve:
             PSF kernel array.
         image_shape : tuple of int
             Shape of the images to convolve.
+        center : tuple of float, optional
+            Position ``(y, x)`` of the PSF centre in the kernel. Defaults
+            to its centre of point symmetry.
+
+        Notes
+        -----
+        The kernel is rolled so that the pixel nearest to ``center`` sits
+        at pixel ``(0, 0)`` of the padded grid, and the sub-pixel remainder
+        is removed with a phase ramp, so that convolved spectra share the
+        origin of ``FFTspec`` and are cropped from the origin of the
+        padded grid.
         """
         self.kernel = kernel
         self.image_shape = image_shape
@@ -722,26 +764,45 @@ class Convolve:
         self._fft = jp.fft.rfft2
         self._ifft = jp.fft.irfft2
 
-        self.psf_fft = self._fft(self.kernel, self.padded_shape)
+        kshape = np.shape(kernel)
+        if center is None:
+            center = _psf_center(kernel)
+        if np.ndim(center) != 1 or len(center) != 2:
+            raise ValueError("center must be a (y, x) position.")
+        if any(c < -0.50 or c > k - 0.50 for c, k in zip(center, kshape)):
+            raise ValueError("PSF center must lie within the kernel.")
+        self.center = tuple(float(c) for c in center)
 
-        self._crop_start = tuple(
-            int(i)
-            for i in jp.unravel_index(
-                jp.argmax(self.kernel), self.kernel.shape
-            )
-        )
+        frac = [c - np.round(c) for c in self.center]
+        center = [int(np.round(c)) for c in self.center]
+
+        grid = pad_size(kshape)
+        if any(frac):
+            spec = jp.fft.rfft2(jp.asarray(kernel), grid)
+            spec = spec * _phase_ramp(grid, -frac[0], -frac[1])
+            full = jp.fft.irfft2(spec, grid)
+        else:
+            full = jp.zeros(grid).at[: kshape[0], : kshape[1]].set(kernel)
+        full = jp.roll(full, (-center[0], -center[1]), axis=(0, 1))
+
+        lag = [
+            np.r_[0 : min(s, g // 2 + 1), -min(s - 1, (g - 1) // 2) : 0]
+            for s, g in zip(image_shape, grid)
+        ]
+        iy, ix = np.ix_(lag[0], lag[1])
+        padded = jp.zeros(self.padded_shape)
+        padded = padded.at[
+            iy % self.padded_shape[0], ix % self.padded_shape[1]
+        ].set(full[iy % grid[0], ix % grid[1]])
+        self.psf_fft = self._fft(padded)
 
     def crop(self, data_fft):
         """
-        Inverse-FFT and crop a Fourier-domain array from the kernel's peak.
+        Inverse-FFT a Fourier-domain array and crop it to the image shape.
 
         Use this directly (instead of __call__) for data that has already
         been multiplied by self.psf_fft in Fourier space -- e.g. point
-        sources rendered via FFTspec's phase-ramp pulses -- so the crop
-        stays consistent with where __call__ places the kernel's peak.
-        FFTspec.ifft's own crop offset assumes a delta at the image's
-        geometric center and knows nothing about the kernel's peak
-        location, so it cannot be substituted here.
+        sources rendered via FFTspec's phase-ramp pulses.
 
         Parameters
         ----------
@@ -754,7 +815,7 @@ class Convolve:
             Image-space array with shape image_shape.
         """
         data = self._ifft(data_fft, self.padded_shape)
-        return jax.lax.dynamic_slice(data, self._crop_start, self.image_shape)
+        return data[: self.image_shape[0], : self.image_shape[1]]
 
     def __call__(self, image):
         """

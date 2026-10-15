@@ -363,6 +363,150 @@ class TestPoint:
         assert "Ic" in params
 
 
+class TestPointPlacement:
+    """Tests for the position of point sources in the model image."""
+
+    @pytest.fixture(autouse=True)
+    def reset_component_counter(self):
+        """Reset component ID counter before each test."""
+        models.Component.idcls = 0
+
+    @staticmethod
+    def _image(shape):
+        header = fits.Header()
+        header["CRPIX1"] = shape[1] // 2 + 1
+        header["CRPIX2"] = shape[0] // 2 + 1
+        header["CRVAL1"] = 180.0
+        header["CRVAL2"] = 0.0
+        header["CDELT1"] = -0.001
+        header["CDELT2"] = 0.001
+        header["CTYPE1"] = "RA---TAN"
+        header["CTYPE2"] = "DEC--TAN"
+        return data.Image(fits.PrimaryHDU(np.zeros(shape), header=header))
+
+    @pytest.mark.parametrize("shape", [(32, 32), (33, 33), (32, 35)])
+    def test_point_without_psf(self, shape):
+        """Without a PSF the source lands on its WCS pixel in both maps."""
+        img = self._image(shape)
+        point = models.Point(xc=180.003, yc=0.002, Ic=2.0)
+        mod = models.Model(point)
+
+        expected = np.zeros(shape)
+        expected[shape[0] // 2 + 2, shape[1] // 2 - 3] = 2.0
+
+        mraw, msmo, _, _ = mod.getmodel(img, [])
+        np.testing.assert_allclose(mraw, expected, atol=1e-8)
+        np.testing.assert_allclose(msmo, expected, atol=1e-8)
+        np.testing.assert_allclose(point.getmap(img), expected, atol=1e-8)
+
+    @pytest.mark.parametrize("shape", [(32, 32), (33, 33), (32, 35)])
+    @pytest.mark.parametrize("kshape", [(9, 9), (8, 8), (8, 11)])
+    def test_point_with_psf(self, shape, kshape):
+        """The source lands on its WCS pixel as the input PSF stamp."""
+        img = self._image(shape)
+        m = [2 * ((k - 1) // 2) + 1 for k in kshape]
+        core = np.random.default_rng(0).random(m)
+        psf = np.zeros(kshape)
+        psf[kshape[0] - m[0] :, kshape[1] - m[1] :] = core + core[::-1, ::-1]
+        psf = psf / psf.sum()
+        img.addpsf(psf)
+
+        point = models.Point(xc=180.003, yc=0.002, Ic=2.0)
+        mod = models.Model(point)
+
+        _, msmo, _, _ = mod.getmodel(img, [])
+        msmo = np.asarray(msmo)
+        np.testing.assert_allclose(
+            point.getmap(img, convolve=True), msmo, atol=1e-12
+        )
+
+        expected = np.zeros(shape)
+        y0 = shape[0] // 2 + 2 - kshape[0] // 2
+        x0 = shape[1] // 2 - 3 - kshape[1] // 2
+        expected[y0 : y0 + kshape[0], x0 : x0 + kshape[1]] = 2.0 * psf
+        np.testing.assert_allclose(msmo, expected, atol=1e-8)
+
+    @staticmethod
+    def _square_image(n):
+        header = fits.Header()
+        header["CRPIX1"] = header["CRPIX2"] = n // 2 + 1
+        header["CRVAL1"] = 150.0
+        header["CRVAL2"] = 2.0
+        header["CDELT1"] = -1.0 / 3600
+        header["CDELT2"] = 1.0 / 3600
+        header["CTYPE1"] = "RA---TAN"
+        header["CTYPE2"] = "DEC--TAN"
+        return data.Image(fits.PrimaryHDU(np.zeros((n, n)), header=header))
+
+    @staticmethod
+    def _at(img, y, x, **kwargs):
+        ra, dec = img.wcs.all_pix2world(x, y, 0)
+        return models.Point(xc=float(ra), yc=float(dec), **kwargs)
+
+    @pytest.mark.parametrize("n", [32, 33])
+    @pytest.mark.parametrize("sigma", [None, 0.7])
+    def test_subpixel_point_transpose_symmetry(self, n, sigma):
+        """Swapping the sub-pixel offsets of a source transposes its map."""
+        maps = []
+        for y, x in [(2.3, -3.45), (-3.45, 2.3)]:
+            models.Component.idcls = 0
+            img = self._square_image(n)
+            if sigma:
+                k = np.arange(25) - 12.0
+                g = np.exp(-0.5 * (k[:, None] ** 2 + k**2) / sigma**2)
+                img.addpsf(g)
+            point = self._at(img, n // 2 + y, n // 2 + x, Ic=1.0)
+            mraw, msmo, _, _ = models.Model(point).getmodel(img, [])
+            maps.append((np.asarray(mraw), np.asarray(msmo)))
+        for a, b in zip(*maps):
+            np.testing.assert_allclose(a, b.T, atol=1e-5 * np.abs(a).max())
+
+    @pytest.mark.parametrize("psf", [True, False])
+    def test_getmodel_matches_separate_convolution(self, psf):
+        """The combined model equals the sum of its convolved components."""
+        img = self._square_image(32)
+        if psf:
+            k = np.arange(15) - 7.0
+            img.addpsf(np.exp(-0.5 * (k[:, None] ** 2 / 2.0 + k**2 / 3.0)))
+        ra, dec = img.wcs.all_pix2world(14.3, 17.6, 0)
+        sersic = models.Sersic(
+            xc=float(ra),
+            yc=float(dec),
+            theta=0.3,
+            e=0.3,
+            re=3.0 / 3600,
+            Ie=1.0,
+            ns=1.0,
+        )
+        point = self._at(img, 12, 20, Ic=3.0)
+        mod = models.Model(sersic)
+        mod.addcomponent(point)
+
+        mraw, msmo, _, _ = mod.getmodel(img, [])
+        sraw = np.asarray(mod.getmodel(img, [], component=0)[0])
+        praw = np.asarray(point.getmap(img))
+        np.testing.assert_allclose(mraw, sraw + praw, atol=1e-12)
+
+        smooth = np.asarray(img.convolve(sraw)) if psf else sraw
+        np.testing.assert_allclose(
+            msmo, smooth + point.getmap(img, convolve=psf), atol=1e-12
+        )
+
+    @pytest.mark.parametrize("csize", [15, 16])
+    def test_point_after_cutout(self, csize):
+        """After a cutout, sources still land on their WCS pixel."""
+        from astropy.coordinates import SkyCoord
+
+        img = self._square_image(64)
+        ra, dec = img.wcs.all_pix2world(32.4, 31.7, 0)
+        img.cutout(SkyCoord(float(ra), float(dec), unit="deg"), csize)
+        point = self._at(img, 4, csize - 3, Ic=1.0)
+        mraw = np.asarray(models.Model(point).getmodel(img, [])[0])
+        expected = np.zeros((csize, csize))
+        expected[4, csize - 3] = 1.0
+        np.testing.assert_allclose(mraw, expected, atol=1e-5)
+
+
 class TestBackground:
     """Tests for Background model."""
 

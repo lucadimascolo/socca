@@ -701,19 +701,23 @@ class Model:
 
             del mone
 
+        haspts = any(self.type[nc] == "Point" for nc in comp_)
+
         msmo = mraw.copy()
 
         if doresp:
             msmo *= img.response
 
-        mraw = mraw + img.fft.ifft(mpts * img.fft.center).real
+        if haspts:
+            mraw = mraw + img.fft.ifft(mpts)
 
         if img.psf is not None:
-            msmo = img.convolve(msmo)
-            mpts = img.convolve.crop(mpts * img.convolve.psf_fft).real
-        else:
-            mpts = img.fft.ifft(mpts).real
-        msmo = msmo + mpts
+            mfft = img.fft.fft(msmo)
+            if haspts:
+                mfft = mfft + mpts
+            msmo = img.convolve.crop(mfft * img.convolve.psf_fft)
+        elif haspts:
+            msmo = msmo + img.fft.ifft(mpts)
 
         if doexp:
             msmo *= img.exposure

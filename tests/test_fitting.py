@@ -1033,3 +1033,147 @@ class TestEmceeSpecific:
         assert isinstance(multi_param_fitter.sampler, emcee.EnsembleSampler)
         assert multi_param_fitter.sampler.iteration == 100
         assert multi_param_fitter.sampler.nwalkers == 10
+
+
+class TestLikelihoodWithPSF:
+    """End-to-end checks of the likelihood with a PSF."""
+
+    @staticmethod
+    def _hdu(shape, data):
+        header = fits.Header()
+        header["CRPIX1"] = shape[1] // 2 + 1
+        header["CRPIX2"] = shape[0] // 2 + 1
+        header["CRVAL1"] = 150.0
+        header["CRVAL2"] = 2.0
+        header["CDELT1"] = -1.0 / 3600
+        header["CDELT2"] = 1.0 / 3600
+        header["CTYPE1"] = "RA---TAN"
+        header["CTYPE2"] = "DEC--TAN"
+        return fits.PrimaryHDU(data, header=header)
+
+    @staticmethod
+    def _model(img, point):
+        models.Component.idcls = 0
+        ra, dec = img.wcs.all_pix2world(img.data.shape[1] // 2 + 1.3, 9.8, 0)
+        mod = models.Model(
+            models.Sersic(
+                xc=float(ra),
+                yc=float(dec),
+                theta=0.3,
+                e=0.3,
+                re=3.0 / 3600,
+                Ie=1.0,
+                ns=1.0,
+            )
+        )
+        ra, dec = img.wcs.all_pix2world(point[1], point[0], 0)
+        mod.addcomponent(
+            models.Point(
+                xc=float(ra), yc=float(dec), Ic=priors.uniform(0.0, 10.0)
+            )
+        )
+        return mod
+
+    @pytest.mark.parametrize("shape", [(24, 31), (32, 32)])
+    def test_normal_matches_direct_convolution(self, shape):
+        """Masked, responded and exposed likelihood matches a reference."""
+        from scipy.signal import fftconvolve
+
+        rng = np.random.default_rng(3)
+        sky = rng.normal(size=shape)
+        resp, expo = 0.5 + rng.random(shape), 1.0 + rng.random(shape)
+        hdu = self._hdu(shape, sky)
+        img = data.Image(
+            hdu,
+            response=fits.PrimaryHDU(resp, header=hdu.header),
+            exposure=fits.PrimaryHDU(expo, header=hdu.header),
+            noise=noise.Normal(sigma=0.7),
+        )
+        k = np.arange(-3.0, 4.0)[:, None], np.arange(-4.0, 5.0)[None, :]
+        psf = np.exp(-0.5 * ((k[1] / 1.4) ** 2 + (k[0] / 1.1) ** 2))
+        psf /= psf.sum()
+        img.addpsf(psf, normalize=False)
+        mask = np.ones(shape, int)
+        mask[3:7, 5:12] = 0
+        img.addmask([mask])
+
+        point = (shape[0] // 2 + 3, shape[1] // 2 - 4)
+        mod = self._model(img, point)
+        fit = fitting.fitter(img, mod)
+        pp = jp.array([3.0])
+
+        raw = np.asarray(mod.getmodel(img, pp, component=0)[0]) * resp
+        raw[point] += 3.0 * resp[point]
+        ref = fftconvolve(raw, psf, mode="same") * expo
+        sel = np.asarray(fit.mask)
+        expected = float(img.noise.logpdf(jp.asarray(ref[sel])))
+        assert np.isclose(float(fit._log_likelihood(pp)), expected, atol=1e-4)
+
+    def test_normalri_matches_direct_convolution(self):
+        """The NormalRI likelihood matches a reference with a dirty beam."""
+        from scipy.signal import fftconvolve
+
+        shape = (32, 32)
+        sky = np.random.default_rng(4).normal(size=shape)
+        img = data.Image(
+            self._hdu(shape, sky), noise=noise.NormalRI(sigma=1.0)
+        )
+        y, x = np.indices(shape) - 16.0
+        r = np.hypot(x, y)
+        beam = np.exp(-0.5 * r**2 / 2.0**2)
+        beam -= 0.1 * np.exp(-0.5 * ((r - 8.0) / 2.0) ** 2)
+        img.addpsf(beam, normalize=False)
+        assert img.convolve.center == (16, 16)
+
+        point = (18, 13)
+        mod = self._model(img, point)
+        fit = fitting.fitter(img, mod)
+        pp = jp.array([2.0])
+
+        raw = np.array(mod.getmodel(img, pp, component=0)[0])
+        raw[point] += 2.0
+        smo = fftconvolve(raw, beam[1:, 1:], mode="same")
+        sel = np.asarray(fit.mask).astype(bool)
+        expected = -0.5 * np.sum((smo - 2.0 * sky)[sel] * raw[sel])
+        assert np.isclose(float(fit._log_likelihood(pp)), expected, atol=1e-4)
+
+    def test_gradients_through_psf(self):
+        """Gradients in the source position and flux match finite differences."""
+        import jax
+
+        shape = (30, 37)
+        sky = np.random.default_rng(5).normal(size=shape)
+        img = data.Image(self._hdu(shape, sky), noise=noise.Normal(sigma=1.0))
+        k = np.arange(-5.0, 6.0)
+        img.addpsf(np.exp(-0.5 * (k[:, None] ** 2 / 3.0 + k**2 / 2.0)))
+        ra, dec = img.wcs.all_pix2world(17.3, 14.6, 0)
+        models.Component.idcls = 0
+        point = models.Point(
+            xc=priors.uniform(ra - 1e-3, ra + 1e-3),
+            yc=priors.uniform(dec - 1e-3, dec + 1e-3),
+            Ic=priors.uniform(0.0, 10.0),
+        )
+        fit = fitting.fitter(img, models.Model(point))
+
+        pp = np.array(
+            [
+                {"comp_00_xc": ra, "comp_00_yc": dec, "comp_00_Ic": 5.0}[p]
+                for p in fit.labels
+            ],
+            dtype=float,
+        )
+        grad = np.asarray(jax.grad(fit._log_likelihood)(jp.asarray(pp)))
+        step = {"comp_00_xc": 1e-6, "comp_00_yc": 1e-6, "comp_00_Ic": 1e-4}
+        for i, p in enumerate(fit.labels):
+            dp = np.zeros_like(pp)
+            dp[i] = step[p]
+            fd = (
+                float(fit._log_likelihood(jp.asarray(pp + dp)))
+                - float(fit._log_likelihood(jp.asarray(pp - dp)))
+            ) / (2.0 * step[p])
+            assert np.isclose(grad[i], fd, rtol=1e-4)
+
+        jitted = jax.jit(fit._log_likelihood)(jp.asarray(pp))
+        assert np.isclose(
+            jitted, fit._log_likelihood(jp.asarray(pp)), rtol=1e-12
+        )
