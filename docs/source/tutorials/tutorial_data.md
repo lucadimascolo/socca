@@ -55,7 +55,7 @@ Alternatively, a PSF model can be provided during the initialization of the `Ima
 ```
 
 ```{warning}
-The only requirement for the PSF model is that the corresponding input image has the same pixel scale of the main image, as **``socca``** does not perform any resampling of the PSF model to match the pixel scale of the input image. If the PSF model has a different size, though, it will be automatically padded or cropped to match the size of the input image. This is done to ensure that convolution operations can be performed efficiently in the Fourier domain.
+The only requirement for the PSF model is that the corresponding input image has the same pixel scale of the main image, as **``socca``** does not perform any resampling of the PSF model to match the pixel scale of the input image. The PSF model can have any size and does not need to be centred: **``socca``** estimates the centre of the PSF to sub-pixel precision (as its centre of point symmetry) and recentres it automatically. Only this translation is applied, so the shape of the PSF is preserved; PSFs centred on a pixel, such as CASA PSFs, are used with their values untouched. The recentring can be switched off with `addpsf(..., center=None)`, which takes the pixel `n // 2` as the centre, or replaced by an explicit centre with `center=(y, x)`.
 ```
 
 ## Adding a mask
