@@ -36,7 +36,8 @@ def _hdu_mask(mask, hdu):
 
     Takes a mask HDU and reprojects it to match the coordinate system and
     shape of the target HDU. The reprojected mask is converted to binary
-    values (0 or 1).
+    values (0 or 1): pixels whose interpolated mask value is below 1 (up to
+    round-off) are masked.
 
     Parameters
     ----------
@@ -53,7 +54,7 @@ def _hdu_mask(mask, hdu):
     """
     data, _ = reproject.reproject_interp(mask, hdu.header)
     data[np.isnan(data)] = 0.00
-    return np.where(data < 1.00, 0.00, 1.00)
+    return np.where(data < 1.00 - 1.00e-06, 0.00, 1.00)
 
 
 def pad_size(shape, factor=_pad_factor):
@@ -796,8 +797,7 @@ class Image:
             elif isinstance(r, np.ndarray):
                 hdu.data = hdu.data * (r == 1.00).astype(float)
             elif isinstance(r, (fits.ImageHDU, fits.PrimaryHDU)):
-                mask = _hdu_mask(mask, self.hdu)
-                hdu.data = hdu.data * mask
+                hdu.data = hdu.data * _hdu_mask(r, self.hdu)
 
         self.mask = hdu.data.astype(int).copy()
 

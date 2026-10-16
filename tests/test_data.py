@@ -340,6 +340,17 @@ class TestSkyToPixel:
             saved.all_pix2world(200.0, 40.0, 0), (ra, dec), atol=1e-10
         )
 
+    def test_wide_field_mask_is_exact(self):
+        """A mask on the image grid is exact also on wide, polar fields."""
+        header = _wcs_header((1025, 1023), 1.0, 150.0, 80.0, crpix=(1, 1))
+        img = data.Image(
+            fits.PrimaryHDU(np.zeros((1025, 1023)), header=header)
+        )
+        mask = np.ones((1025, 1023))
+        mask[100:120, 200:230] = 0
+        img.addmask([fits.PrimaryHDU(mask, header=header.copy())])
+        np.testing.assert_array_equal(img.mask, mask)
+
     def test_cutout_keeps_projection(self):
         """A cutout keeps the sky position of every pixel."""
         header = _wcs_header(**{**WCS_CASES["tan-dec80"], "shape": (256, 256)})
@@ -859,6 +870,47 @@ class TestImageAddmask:
         assert img.mask[5, 5] == 0
         assert img.mask[5, 50] == 0
         assert img.mask[50, 5] == 0
+
+
+class TestImageAddmaskHDU:
+    """Tests for masks given as FITS HDUs."""
+
+    @staticmethod
+    def _header(shape, crpix=None, cdelt=1.0, dec=2.0):
+        header = fits.Header()
+        header["NAXIS"] = 2
+        header["NAXIS1"], header["NAXIS2"] = shape[1], shape[0]
+        crpix = crpix or (shape[1] // 2 + 1, shape[0] // 2 + 1)
+        header["CRPIX1"], header["CRPIX2"] = crpix
+        header["CRVAL1"], header["CRVAL2"] = 150.0, dec
+        header["CDELT1"], header["CDELT2"] = -cdelt / 3600, cdelt / 3600
+        header["CTYPE1"], header["CTYPE2"] = "RA---TAN", "DEC--TAN"
+        return header
+
+    @pytest.mark.parametrize(
+        "shape, cdelt, dec", [((33, 31), 1.0, 2.0), ((513, 511), 10.0, 45.0)]
+    )
+    def test_same_grid_mask_is_exact(self, shape, cdelt, dec):
+        """A mask on the image's own grid masks exactly its pixels."""
+        header = self._header(shape, cdelt=cdelt, dec=dec)
+        img = data.Image(fits.PrimaryHDU(np.zeros(shape), header=header))
+        mask = np.ones(shape)
+        mask[100 % shape[0] : 100 % shape[0] + 7, 5:12] = 0
+        img.addmask([fits.PrimaryHDU(mask, header=header.copy())])
+        np.testing.assert_array_equal(img.mask, mask)
+
+    def test_other_grid_masks_overlapping_pixels(self):
+        """A mask on another grid masks every pixel it overlaps."""
+        shape = (32, 32)
+        img = data.Image(
+            fits.PrimaryHDU(np.zeros(shape), header=self._header(shape))
+        )
+        mask = np.ones(shape)
+        mask[10:14, 10:14] = 0
+        shifted = self._header(shape, crpix=(17.5, 17.5))
+        img.addmask([fits.PrimaryHDU(mask, header=shifted)])
+        masked = np.asarray(img.mask)[2:-2, 2:-2] == 0
+        assert int(masked.sum()) == 25
 
 
 class TestImageCutoutSetup:
