@@ -8,6 +8,7 @@ import numpyro.distributions
 
 from .. import config
 from ..base import Component, _warn_range
+from ...utils import _offsets
 
 import warnings
 
@@ -54,8 +55,8 @@ class Background(Component):
 
     where x' = x/rs and y' = y/rs are normalized coordinates.
 
-    - Coordinates are relative to the field center (CRVAL1, CRVAL2)
-    - x coordinate includes cos(dec) correction for spherical geometry
+    - Coordinates are tangent-plane offsets from the field centre
+    - Offsets are valid near the poles and across RA 0/360
     - Background is not PSF-convolved (assumed to vary on large scales)
     - Typically use low-order terms (0th and 1st) to avoid overfitting
     """
@@ -206,16 +207,15 @@ class Background(Component):
         Returns
         -------
         xgrid : ndarray
-            RA offsets in degrees (with cos(dec) correction).
+            East offsets in degrees.
         ygrid : ndarray
-            Dec offsets in degrees.
+            North offsets in degrees.
 
         Notes
         -----
-        The RA offset includes a cos(dec) factor to account for spherical
-        geometry, ensuring that distances are approximately correct on the sky.
+        Offsets are taken on the plane tangent to the sky at (xc, yc).
         """
-        return (grid.x - xc) * jp.cos(jp.deg2rad(yc)), grid.y - yc
+        return _offsets(grid, xc, yc)
 
     def _build_kwargs(self, pars, comp_prefix):
         """
@@ -259,9 +259,8 @@ class Background(Component):
         ndarray
             Background map on the image grid.
         """
-        yr = jp.mean(img.grid.y, axis=0) - img.hdu.header["CRVAL2"]
-        xr = jp.mean(img.grid.x, axis=0) - img.hdu.header["CRVAL1"]
-        xr = xr * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"]))
+        xr = jp.mean(img.grid.tx, axis=0)
+        yr = jp.mean(img.grid.ty, axis=0)
         return self.profile(xr, yr, **kwarg)
 
     def getmap(self, img, **kwargs):
@@ -294,7 +293,7 @@ class Background(Component):
 
         Notes
         -----
-        - Background is evaluated relative to field center (CRVAL1, CRVAL2)
+        - Background is evaluated relative to the field centre
         - Background is not PSF-convolved (assumed to vary smoothly)
         - All polynomial coefficients must have fixed values
 

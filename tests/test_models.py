@@ -507,6 +507,79 @@ class TestPointPlacement:
         np.testing.assert_allclose(mraw, expected, atol=1e-5)
 
 
+class TestRAWrap:
+    """Tests for fields and sources across right ascension 0/360."""
+
+    @pytest.fixture(autouse=True)
+    def reset_component_counter(self):
+        """Reset component ID counter before each test."""
+        models.Component.idcls = 0
+
+    @staticmethod
+    def _image(crval):
+        header = fits.Header()
+        header["CRPIX1"] = header["CRPIX2"] = 17
+        header["CRVAL1"], header["CRVAL2"] = crval, 2.0
+        header["CDELT1"], header["CDELT2"] = -1.0 / 3600, 1.0 / 3600
+        header["CTYPE1"], header["CTYPE2"] = "RA---TAN", "DEC--TAN"
+        return data.Image(fits.PrimaryHDU(np.zeros((32, 32)), header=header))
+
+    @staticmethod
+    def _component(kind, ra, dec):
+        if kind == "point":
+            return models.Point(xc=ra, yc=dec, Ic=1.0)
+        if kind == "sersic":
+            return models.Sersic(
+                xc=ra, yc=dec, theta=0.2, e=0.2, re=3.0 / 3600, Ie=1.0, ns=1.0
+            )
+        if kind == "background":
+            return models.Background(xc=ra, yc=dec, a0=0.1, a1x=0.01, a1y=0.02)
+        if kind == "bridge":
+            return models.SimpleBridge(
+                xc=ra, yc=dec, rs=5.0 / 3600, Is=1.0, theta=0.2
+            )
+        if kind == "disk":
+            disk = models.Disk(
+                radial=models.Sersic(re=3.0 / 3600, Ie=1.0, ns=1.0),
+                vertical=models.disk.vertical.HyperSecantHeight(zs=1.0 / 3600),
+            )
+            disk.radial.xc, disk.radial.yc = ra, dec
+            disk.radial.theta, disk.vertical.inc = 0.3, 0.6
+            return disk
+        ell = models.Ellipsoid(
+            radial=models.Sersic(re=3.0 / 3600, Ie=1.0, ns=1.0)
+        )
+        ell.xc, ell.yc, ell.theta, ell.e, ell.inc = ra, dec, 0.3, 0.3, 0.5
+        return ell
+
+    def _scene(self, kind, crval, dx):
+        models.Component.idcls = 0
+        img = self._image(crval)
+        ra = (crval + dx / np.cos(np.deg2rad(2.0)) / 3600.0) % 360.0
+        mod = models.Model(self._component(kind, ra, 2.0 + 1.0 / 3600))
+        return np.asarray(mod.getmodel(img, [])[1])
+
+    @pytest.mark.parametrize(
+        "kind",
+        ["point", "sersic", "background", "bridge", "disk", "ellipsoid"],
+    )
+    @pytest.mark.parametrize("crval", [0.0, 0.0005, 359.998, 359.9995])
+    @pytest.mark.parametrize("dx", [-3.0, 2.0])
+    def test_matches_scene_away_from_zero(self, kind, crval, dx):
+        """A scene across RA 0 matches the same scene at RA 150."""
+        ref = self._scene(kind, 150.0, dx)
+        out = self._scene(kind, crval, dx)
+        np.testing.assert_allclose(out, ref, atol=1e-8 * np.abs(ref).max())
+
+    def test_background_grid_wraps(self):
+        """Background.getgrid takes RA on either side of 0/360."""
+        img = self._image(0.0005)
+        a = models.Background.getgrid(img.grid, 359.9998, 2.0)
+        b = models.Background.getgrid(img.grid, -0.0002, 2.0)
+        for x, y in zip(a, b):
+            np.testing.assert_allclose(x, y, atol=1e-12)
+
+
 class TestBackground:
     """Tests for Background model."""
 

@@ -87,7 +87,7 @@ class TestFFTspec:
         assert fft_spec.image_shape == simple_hdu.data.shape
         assert fft_spec.padded_shape == data.pad_size(simple_hdu.data.shape)
         assert len(fft_spec.freq) == 2
-        assert fft_spec.header is not None
+        assert fft_spec.world2pix is not None
 
     def test_pulse_shape(self, simple_hdu):
         """Test that pulse has correct shape (rfft2 on padded grid)."""
@@ -102,21 +102,14 @@ class TestFFTspec:
         for freq in fft_spec.freq:
             assert freq.shape == fft_spec.pulse.shape
 
-    def test_header_contains_required_keys(self, simple_hdu):
-        """Test that header dictionary has required keys."""
+    def test_reference_pixel(self, simple_hdu):
+        """The reference coordinate maps onto the reference pixel."""
         fft_spec = data.FFTspec(simple_hdu)
-        required_keys = [
-            "CRPIX1",
-            "CRPIX2",
-            "CRVAL1",
-            "CRVAL2",
-            "CDELT1",
-            "CDELT2",
-            "NAXIS1",
-            "NAXIS2",
-        ]
-        for key in required_keys:
-            assert key in fft_spec.header
+        px, py = fft_spec.world2pix(
+            simple_hdu.header["CRVAL1"], simple_hdu.header["CRVAL2"]
+        )
+        assert np.isclose(px, simple_hdu.header["CRPIX1"] - 1.0, atol=1e-6)
+        assert np.isclose(py, simple_hdu.header["CRPIX2"] - 1.0, atol=1e-6)
 
     def test_shift_returns_phase(self, simple_hdu):
         """Test that shift method returns a single complex phase array."""
@@ -126,6 +119,245 @@ class TestFFTspec:
         phase = fft_spec.shift(xc, yc)
         assert phase.shape == fft_spec.pulse.shape
         assert jp.iscomplexobj(phase)
+
+
+def _wcs_header(
+    shape, cdelt, ra, dec, ctype="TAN", crpix=None, rot=0.0, sip=False
+):
+    """Celestial header with a CD matrix, optionally with SIP terms."""
+    header = fits.Header()
+    header["NAXIS"] = 2
+    header["NAXIS1"], header["NAXIS2"] = shape[1], shape[0]
+    header["CTYPE1"], header["CTYPE2"] = f"RA---{ctype}", f"DEC--{ctype}"
+    crpix = crpix or (shape[1] / 2 + 0.5, shape[0] / 2 + 0.5)
+    header["CRPIX1"], header["CRPIX2"] = crpix
+    header["CRVAL1"], header["CRVAL2"] = ra, dec
+    c, s, d = np.cos(rot), np.sin(rot), cdelt / 3600
+    header["CD1_1"], header["CD1_2"] = -d * c, d * s
+    header["CD2_1"], header["CD2_2"] = d * s, d * c
+    if sip:
+        header["CTYPE1"] += "-SIP"
+        header["CTYPE2"] += "-SIP"
+        header["A_ORDER"] = header["B_ORDER"] = 3
+        header["A_2_0"], header["A_0_2"], header["A_1_1"] = 2e-6, -1.5e-6, 1e-6
+        header["B_2_0"], header["B_0_2"], header["B_1_1"] = (
+            -1e-6,
+            2.5e-6,
+            -2e-6,
+        )
+        header["A_3_0"], header["B_0_3"] = 3e-9, 2e-9
+    return header
+
+
+WCS_CASES = {
+    "tan-dec80": dict(shape=(2048, 2048), cdelt=1.0, ra=150.0, dec=80.0),
+    "tan-corner": dict(
+        shape=(1024, 1024), cdelt=2.0, ra=150.0, dec=45.0, crpix=(1, 1)
+    ),
+    "tan-offimage": dict(
+        shape=(512, 512), cdelt=2.0, ra=150.0, dec=45.0, crpix=(-3000, 5000)
+    ),
+    "tan-rotated": dict(
+        shape=(1024, 1024), cdelt=2.0, ra=150.0, dec=45.0, rot=0.7
+    ),
+    "tan-pole": dict(shape=(512, 512), cdelt=20.0, ra=0.0, dec=89.7),
+    "tan-ra0": dict(shape=(512, 512), cdelt=2.0, ra=0.05, dec=5.0),
+    "sin": dict(
+        shape=(1080, 1080), cdelt=0.5, ra=30.0, dec=-60.0, ctype="SIN"
+    ),
+    "zea": dict(
+        shape=(1024, 1024), cdelt=30.0, ra=100.0, dec=40.0, ctype="ZEA"
+    ),
+    "arc": dict(
+        shape=(1024, 1024), cdelt=20.0, ra=100.0, dec=-70.0, ctype="ARC"
+    ),
+    "car": dict(shape=(512, 512), cdelt=60.0, ra=200.0, dec=0.0, ctype="CAR"),
+    "tan-sip": dict(
+        shape=(2048, 2048), cdelt=0.05, ra=53.0, dec=-27.0, sip=True
+    ),
+}
+
+
+class TestSkyToPixel:
+    """Tests for the world-to-pixel transform against astropy."""
+
+    @pytest.mark.parametrize("case", list(WCS_CASES))
+    def test_matches_astropy(self, case):
+        """Any projection is reproduced, also beyond the image edges."""
+        header = _wcs_header(**WCS_CASES[case])
+        ny, nx = header["NAXIS2"], header["NAXIS1"]
+        rng = np.random.default_rng(0)
+        px = rng.uniform(-0.25 * nx, 1.25 * nx, 500)
+        py = rng.uniform(-0.25 * ny, 1.25 * ny, 500)
+        ra, dec = WCS(header).celestial.all_pix2world(px, py, 0)
+        qx, qy = data.SkyToPixel(header, (ny, nx))(ra, dec)
+        assert np.max(np.hypot(qx - px, qy - py)) < 1e-5
+
+    def test_header_left_unchanged(self):
+        """The image keeps the WCS of its input header."""
+        header = _wcs_header(**WCS_CASES["tan-corner"])
+        shape = (header["NAXIS2"], header["NAXIS1"])
+        img = data.Image(fits.PrimaryHDU(np.zeros(shape), header=header))
+        for key in ["CRPIX1", "CRPIX2", "CRVAL1", "CRVAL2"]:
+            assert img.hdu.header[key] == header[key]
+
+    def test_sip_accepted_and_tpv_rejected(self):
+        """SIP distortions are supported; TPV raises."""
+        header = _wcs_header(**WCS_CASES["tan-sip"])
+        shape = (header["NAXIS2"], header["NAXIS1"])
+        data.Image(fits.PrimaryHDU(np.zeros(shape), header=header))
+        header = _wcs_header((64, 64), 1.0, 150.0, 2.0, ctype="TPV")
+        with pytest.raises(NotImplementedError, match="TPV"):
+            data.Image(fits.PrimaryHDU(np.zeros((64, 64)), header=header))
+
+    @pytest.mark.parametrize("case", ["tan-dec80", "tan-corner", "tan-sip"])
+    def test_point_lands_on_astropy_pixel(self, case):
+        """A point source lands on the pixel astropy gives for it."""
+        import socca.models as models
+
+        header = _wcs_header(**{**WCS_CASES[case], "shape": (256, 256)})
+        img = data.Image(fits.PrimaryHDU(np.zeros((256, 256)), header=header))
+        expected = np.zeros((256, 256))
+        for y, x in [(12, 200), (230, 31), (128, 128)]:
+            ra, dec = img.wcs.all_pix2world(x, y, 0)
+            models.Component.idcls = 0
+            point = models.Point(xc=float(ra), yc=float(dec), Ic=1.0)
+            mraw = np.asarray(models.Model(point).getmodel(img, [])[0])
+            expected[:] = 0.0
+            expected[y, x] = 1.0
+            np.testing.assert_allclose(mraw, expected, atol=1e-6)
+
+    def test_region_mask_uses_sip(self, tmp_path):
+        """Region masks follow the SIP distortion of the image."""
+        header = _wcs_header(**{**WCS_CASES["tan-sip"], "shape": (2048, 2048)})
+        img = data.Image(
+            fits.PrimaryHDU(np.zeros((2048, 2048)), header=header)
+        )
+        ra, dec = img.wcs.all_pix2world(1900.0, 1850.0, 0)
+        region = tmp_path / "mask.reg"
+        region.write_text(f'fk5\ncircle({ra:.10f},{dec:.10f},0.25")\n')
+        img.addmask([str(region)])
+        y, x = np.nonzero(np.asarray(img.mask) == 0)
+        assert np.hypot(x.mean() - 1900.0, y.mean() - 1850.0) < 0.5
+
+    def test_continuation_slope(self):
+        """Beyond the fitted area the transform keeps its slope."""
+        header = _wcs_header((300, 300), 120.0, 30.0, 10.0, ctype="CAR")
+        tr = data.SkyToPixel(header, (300, 300))
+        wcs = WCS(header).celestial
+        ra, dec = wcs.all_pix2world(
+            [448.0, 449.0, 451.0, 452.0], [150.0] * 4, 0
+        )
+        px, _ = (np.asarray(p) for p in tr(ra, dec))
+        assert np.isclose(px[1] - px[0], px[3] - px[2], rtol=1e-3)
+
+    def test_offsets_match_exact_tangent_plane(self):
+        """Component offsets follow the plane tangent at the component."""
+        from socca.utils import _offsets, _tangent
+
+        header = _wcs_header((512, 512), 6.0, 150.0, 80.0, crpix=(1, 1))
+        img = data.Image(fits.PrimaryHDU(np.zeros((512, 512)), header=header))
+        xc, yc = img.wcs.all_pix2world(400.0, 90.0, 0)
+        exact = np.array(
+            _tangent(img.grid.x, img.grid.y, float(xc), float(yc))
+        )
+        approx = np.array(_offsets(img.grid, float(xc), float(yc)))
+        r = np.hypot(*exact)
+        near = r < 0.05
+        err = np.hypot(*(approx - exact))[near] / np.maximum(r[near], 1e-12)
+        assert err.max() < 1e-3
+
+    def test_wide_map_without_points(self):
+        """All-sky maps work for extended components; points are refused."""
+        import socca.models as models
+
+        header = _wcs_header((90, 180), 7200.0, 180.0, 0.0, ctype="CAR")
+        img = data.Image(fits.PrimaryHDU(np.zeros((90, 180)), header=header))
+        assert img.grid.wide
+        models.Component.idcls = 0
+        ra, dec = img.wcs.all_pix2world(160.0, 45.0, 0)
+        gauss = models.Gaussian(xc=float(ra), yc=float(dec), rs=2.0, Is=1.0)
+        smo = np.asarray(models.Model(gauss).getmodel(img, [])[1])
+        assert np.all(np.isfinite(smo))
+        assert smo[45, 160] > 0.5
+        assert np.max(smo[:, :60]) < 1e-6
+        models.Component.idcls = 0
+        point = models.Point(xc=float(ra), yc=float(dec), Ic=1.0)
+        with pytest.raises(ValueError, match="too wide"):
+            models.Model(point).getmodel(img, [])
+
+    def test_tuple_center_in_image_frame(self):
+        """A tuple cutout centre is read in the frame of the image."""
+        header = _wcs_header((128, 128), 36.0, 30.0, 0.5)
+        header["CTYPE1"], header["CTYPE2"] = "GLON-TAN", "GLAT-TAN"
+        img = data.Image(
+            fits.PrimaryHDU(np.zeros((128, 128)), header=header),
+            noise=noise.Normal(sigma=1.0),
+        )
+        lon, lat = img.wcs.all_pix2world(70.0, 60.0, 0)
+        img.cutout((float(lon), float(lat)), 21)
+        np.testing.assert_allclose(
+            img.wcs.all_pix2world(10.0, 10.0, 0), (lon, lat), atol=1e-9
+        )
+
+    def test_cutout_of_casa_cube(self):
+        """Cutouts work on 4-axis CASA-like images."""
+        header = _wcs_header((64, 64), 1.0, 150.0, -45.0)
+        header["NAXIS"] = header["WCSAXES"] = 4
+        header["NAXIS3"] = header["NAXIS4"] = 1
+        header["CTYPE3"], header["CTYPE4"] = "FREQ", "STOKES"
+        header["CRPIX3"] = header["CRPIX4"] = 1.0
+        header["CRVAL3"], header["CRVAL4"] = 1e11, 1.0
+        header["CDELT3"] = header["CDELT4"] = 1.0
+        img = data.Image(
+            fits.PrimaryHDU(np.zeros((1, 1, 64, 64)), header=header),
+            noise=noise.Normal(sigma=1.0),
+        )
+        ra, dec = img.wcs.celestial.all_pix2world(30.0, 33.0, 0)
+        img.cutout((float(ra), float(dec)), 21)
+        assert img.data.shape == (21, 21)
+
+    def test_savemodel_keeps_sip(self, tmp_path):
+        """Saved models keep the SIP distortion of the image."""
+        import socca
+        import socca.models as models
+
+        header = _wcs_header(**{**WCS_CASES["tan-sip"], "shape": (256, 256)})
+        img = data.Image(
+            fits.PrimaryHDU(np.zeros((256, 256)), header=header),
+            noise=noise.Normal(sigma=1.0),
+        )
+        ra, dec = img.wcs.all_pix2world(200.0, 40.0, 0)
+        models.Component.idcls = 0
+        point = models.Point(xc=float(ra), yc=float(dec), Ic=1.0)
+        fit = socca.fitter(img, models.Model(point))
+        fit.method = "optimizer"
+        fit.results = type("R", (), {"parameters": np.zeros(0)})()
+        fit.savemodel(str(tmp_path / "model.fits"), what="raw")
+        saved = WCS(fits.getheader(tmp_path / "model.fits"))
+        assert saved.sip is not None
+        np.testing.assert_allclose(
+            saved.all_pix2world(200.0, 40.0, 0), (ra, dec), atol=1e-10
+        )
+
+    def test_cutout_keeps_projection(self):
+        """A cutout keeps the sky position of every pixel."""
+        header = _wcs_header(**{**WCS_CASES["tan-dec80"], "shape": (256, 256)})
+        img = data.Image(
+            fits.PrimaryHDU(np.zeros((256, 256)), header=header),
+            noise=noise.Normal(sigma=1.0),
+        )
+        full = img.wcs.deepcopy()
+        ra, dec = full.all_pix2world(90.0, 140.0, 0)
+        img.cutout((float(ra), float(dec)), 31)
+        assert img.hdu.header["CRVAL1"] == header["CRVAL1"]
+        x0, y0 = full.all_world2pix(*img.wcs.all_pix2world(0, 0, 0), 0)
+        y, x = np.mgrid[:31, :31]
+        np.testing.assert_allclose(
+            np.array(img.wcs.all_pix2world(x, y, 0)),
+            np.array(full.all_pix2world(x + x0, y + y0, 0)),
+            atol=1e-10,
+        )
 
 
 class TestImage:

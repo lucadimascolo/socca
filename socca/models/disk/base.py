@@ -15,6 +15,7 @@ import numpy as np
 from ..base import Component
 from ..radial import Sersic
 from ...priors import _BoundTo
+from ...utils import _offsets
 from .vertical import HyperSecantHeight
 
 
@@ -420,12 +421,11 @@ class Disk(Component):
         Notes
         -----
         The transformation sequence:
-        1. Center coordinates on (xc, yc)
-        2. Apply spherical geometry correction (cos(dec))
-        3. Rotate by position angle theta
-        4. Create line-of-sight grid from -losdepth to +losdepth
-        5. Apply inclination rotation
-        6. Compute cylindrical radius r and height z
+        1. Take east/north offsets on the plane tangent at (xc, yc)
+        2. Rotate by position angle theta
+        3. Create line-of-sight grid from -losdepth to +losdepth
+        4. Apply inclination rotation
+        5. Compute cylindrical radius r and height z
 
         The inclination is measured from face-on:
 
@@ -445,8 +445,7 @@ class Disk(Component):
         sint = jp.sin(theta)
         cost = jp.cos(theta)
 
-        xt = (grid.x - xc) * jp.cos(jp.deg2rad(yc))
-        yt = grid.y - yc
+        xt, yt = _offsets(grid, xc, yc)
 
         xt, yt = -xt * sint - yt * cost, xt * cost - yt * sint
 

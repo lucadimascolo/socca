@@ -1212,8 +1212,12 @@ class TestLoadWithPSF:
         psf_fitter.img.convolve.psf_fft = jp.zeros_like(
             psf_fitter.img.convolve.psf_fft
         )
+        del psf_fitter.img.grid.tx
+        del psf_fitter.img.fft._header
         psf_fitter.dump(tmp_path / "fit.pickle")
         with pytest.warns(UserWarning, match="socca <= 1.4"):
             fit = fitting.load(tmp_path / "fit.pickle")
         assert not hasattr(fit.img.fft, "center")
+        assert hasattr(fit.img.grid, "tx")
+        assert hasattr(fit.img.fft, "world2pix")
         assert np.isclose(float(fit._log_likelihood(pp)), before, rtol=1e-12)

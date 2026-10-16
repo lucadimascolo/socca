@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from astropy.io import fits
 
-from socca.utils import _img_loader, _reduce_axes, apodization
+from socca.utils import _img_loader, _reduce_axes, _wrap_ra, apodization
 
 
 class TestImgLoader:
@@ -223,3 +223,21 @@ class TestApodize:
 
         result_x = apodization((10, 20), 4)
         np.testing.assert_array_equal(result[5, :], result_x[5, :])
+
+
+class TestWrapRA:
+    """Tests for _wrap_ra."""
+
+    @pytest.mark.parametrize(
+        "ra, ref, expected",
+        [
+            (0.001, 359.999, 360.001),
+            (359.999, 0.001, -0.001),
+            (150.0, 150.0, 150.0),
+            (10.0, 200.0, 370.0),
+            (-0.5, 0.0, -0.5),
+        ],
+    )
+    def test_wraps_onto_reference_branch(self, ra, ref, expected):
+        """RA is moved onto the 360-degree branch centred on ref."""
+        assert np.isclose(_wrap_ra(ra, ref), expected)

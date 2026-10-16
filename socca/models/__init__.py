@@ -674,16 +674,7 @@ class Model:
 
             if self.type[nc] == "Point":
                 if doresp:
-                    dw = jp.array(
-                        [
-                            (kwarg["xc"] - img.hdu.header["CRVAL1"])
-                            * jp.cos(jp.deg2rad(img.hdu.header["CRVAL2"])),
-                            kwarg["yc"] - img.hdu.header["CRVAL2"],
-                        ]
-                    )
-                    dp = img.fft.cd_inv @ dw
-                    xpts = img.hdu.header["CRPIX1"] - 1 + dp[0]
-                    ypts = img.hdu.header["CRPIX2"] - 1 + dp[1]
+                    xpts, ypts = img.fft.world2pix(kwarg["xc"], kwarg["yc"])
                     mone *= jax.scipy.ndimage.map_coordinates(
                         img.response,
                         [jp.array([ypts]), jp.array([xpts])],

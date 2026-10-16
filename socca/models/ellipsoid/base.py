@@ -16,6 +16,7 @@ from .. import config
 from ..base import Component, _warn_range, _warn_span
 from ..radial import Sersic
 from ...priors import _BoundTo
+from ...utils import _offsets
 
 
 class Ellipsoid(Component):
@@ -522,7 +523,7 @@ class Ellipsoid(Component):
         Notes
         -----
         The transformation sequence:
-        1. Center coordinates on (xc, yc) and apply spherical geometry correction (cos(dec))
+        1. Take east/north offsets on the plane tangent at (xc, yc)
         2. Rotate by position angle theta, with a 90-degree offset to match Disk's convention
         3. Create the line-of-sight grid from -losdepth to +losdepth and broadcast to 4D
         4. Incline around the y-axis, mixing the position-angle-rotated x with the line-of-sight coordinate
@@ -536,8 +537,7 @@ class Ellipsoid(Component):
         """
         ssize, ysize, xsize = grid.x.shape
 
-        xt = (grid.x - xc) * jp.cos(jp.deg2rad(yc))  # Build x
-        yt = grid.y - yc  # Build y
+        xt, yt = _offsets(grid, xc, yc)
         zt = jp.linspace(-losdepth, losdepth, losbins)  # Build z
 
         # Rotate by Position Angle (CCW, with 90° offset to match Disk convention).

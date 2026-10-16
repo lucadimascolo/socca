@@ -21,6 +21,7 @@ from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
 from ...priors import _BoundTo
+from ...utils import _local_frame
 
 
 class Bridge(Component):
@@ -400,19 +401,17 @@ class Bridge(Component):
 
         Notes
         -----
-        The transformation accounts for spherical coordinate projection
-        using the cosine of the declination at the bridge centroid.
+        Offsets are taken on the plane tangent to the sky at the bridge
+        centroid.
         """
+        dx, dy, j = _local_frame(grid, xc, yc)
         sint = jp.sin(theta)
         cost = jp.cos(theta)
 
-        zgrid = (
-            -(grid.x - xc) * jp.cos(jp.deg2rad(yc)) * sint
-            - (grid.y - yc) * cost
-        )
-        rgrid = (grid.x - xc) * jp.cos(jp.deg2rad(yc)) * cost - (
-            grid.y - yc
-        ) * sint
+        rz = jp.array([-sint, -cost]) @ j
+        rr = jp.array([cost, -sint]) @ j
+        zgrid = rz[0] * dx + rz[1] * dy
+        rgrid = rr[0] * dx + rr[1] * dy
 
         return rgrid, zgrid
 

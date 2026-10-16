@@ -72,16 +72,16 @@ y'
 \end{bmatrix}
 =
 \begin{bmatrix}
--\cos(y_c)\sin(\theta) & -\cos(\theta) \\
-\hspace{10pt}\cos(y_c)\cos(\theta) & -\sin(\theta)
+-\sin(\theta) & -\cos(\theta) \\
+\hspace{10pt}\cos(\theta) & -\sin(\theta)
 \end{bmatrix}
 \begin{bmatrix}
-x - x_c \\
-y - y_c
+\xi \\
+\eta
 \end{bmatrix}
 $$
 
-This formulation ensures that the rotation is correctly applied in spherical coordinates, accounting for the cosine projection factor at the centroid declination $y_c$. The boxiness parameter $c$ allows for deviations from pure elliptical isophotes, with $c=0$ corresponding to perfect ellipses, while $c > 0$ produces boxy shapes and $c < 0$ yields disky isophotes (but $c > -1$ to ensure physical validity). 
+Here $(\xi, \eta)$ are the east and north offsets of each pixel from the centroid $(x_c, y_c)$ on the plane tangent to the sky at the centroid. They are derived from the tangent-plane coordinates of the image, so they remain valid near the poles and across right ascension 0/360, and are exact at the centroid. The boxiness parameter $c$ allows for deviations from pure elliptical isophotes, with $c=0$ corresponding to perfect ellipses, while $c > 0$ produces boxy shapes and $c < 0$ yields disky isophotes (but $c > -1$ to ensure physical validity). 
 
 ```{caution}
 `Profile` is an abstract base class and does not provide an implementation of any specific radial profile. All the radial profile components, however inherit from this base class and therefore share the same set of geometric parameters listed above.

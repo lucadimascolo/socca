@@ -17,7 +17,7 @@ from pathlib import Path
 
 from astropy.io import fits
 
-from ..data import Convolve, FFTspec
+from ..data import Convolve, FFTspec, WCSgrid
 
 from .methods import (
     run_nautilus,
@@ -811,7 +811,7 @@ class fitter:
             "all": "all",
         }
 
-        header = self.img.wcs.to_header()
+        header = self.img.wcs.to_header(relax=True)
 
         if isinstance(what, list):
             data = np.array([np.array(m) for m in mod])
@@ -957,6 +957,13 @@ def load(filename):
         img.fft = FFTspec(img.hdu)
         if img.psf is not None:
             img.convolve = Convolve(img.psf, img.data.shape)
+    if not hasattr(img.fft, "_header") or not hasattr(img.grid, "tx"):
+        warnings.warn(
+            "Rebuilding the coordinate operators of the image: the "
+            "likelihood may differ slightly from the one sampled."
+        )
+        img.fft = FFTspec(img.hdu)
+        img.grid = WCSgrid(img.hdu, subgrid=img.subgrid)
 
     fit = fitter(img=img, mod=odict["mod"])
     for key in odict.keys():

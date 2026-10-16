@@ -1,6 +1,6 @@
 """Image data handling and WCS coordinate grid utilities."""
 
-from .utils import _img_loader, _reduce_axes
+from .utils import _img_loader, _reduce_axes, _tangent, _wrap_ra
 from . import noise as noisepdf
 
 import jax
@@ -145,6 +145,119 @@ def _psf_center(kernel, size=128, niter=8, tol=1e-9):
     return tuple(float(c) for c in center)
 
 
+class SkyToPixel:
+    """
+    Differentiable world-to-pixel transform of an image WCS.
+
+    Positions are first projected exactly onto the plane tangent at the
+    field centre; a 2D Chebyshev series fitted to the full astropy WCS
+    (any projection, including distortions) then maps them to pixels.
+
+    Parameters
+    ----------
+    header : fits.Header
+        Image header with a celestial WCS.
+    shape : tuple of int
+        Image shape ``(ny, nx)``.
+    margin : float, optional
+        Fraction of the image size covered beyond each edge.
+    tol : float, optional
+        Target accuracy of the fit, in pixels.
+    """
+
+    def __init__(self, header, shape, margin=0.50, tol=1e-07, maxdeg=14):
+        wcs = WCS(header).celestial
+        ny, nx = shape
+        self.ra0, self.dec0 = (
+            float(c) for c in wcs.all_pix2world(0.50 * nx, 0.50 * ny, 0)
+        )
+
+        for m in [margin, 0.25, 0.10, 0.02]:
+            fit = self._fit(wcs, nx, ny, min(m, margin), tol, maxdeg)
+            if fit[-1] < 1e-04:
+                break
+        self.lo, self.hi, cx, cy, deg, self.residual = fit
+        if self.residual > 1e-02:
+            raise ValueError(
+                f"The WCS is reproduced to {self.residual:.1e} pixels only: "
+                "the field is too wide to place point sources."
+            )
+        if self.residual > 1e-04:
+            warnings.warn(
+                f"The WCS is reproduced to {self.residual:.1e} pixels only."
+            )
+        cheb = np.polynomial.chebyshev
+        self.coef = []
+        for c in (cx, cy):
+            c = c.reshape(deg + 1, deg + 1)
+            self.coef.append(
+                [jp.asarray(c)]
+                + [jp.asarray(cheb.chebder(c, axis=ax)) for ax in (0, 1)]
+            )
+
+    def _fit(self, wcs, nx, ny, margin, tol, maxdeg, n=120):
+        py, px = np.mgrid[
+            -margin * ny : (1 + margin) * ny : complex(0, n),
+            -margin * nx : (1 + margin) * nx : complex(0, n),
+        ]
+        px, py = px.ravel(), py.ravel()
+        xi, eta = (
+            np.asarray(c)
+            for c in _tangent(
+                *wcs.all_pix2world(px, py, 0), self.ra0, self.dec0
+            )
+        )
+        keep = np.isfinite(xi) & np.isfinite(eta) & (np.hypot(xi, eta) < 1e03)
+        px, py, xi, eta = px[keep], py[keep], xi[keep], eta[keep]
+        self.lo = np.array([xi.min(), eta.min()])
+        self.hi = np.array([xi.max(), eta.max()])
+        u, v = self._scale(xi, eta)
+
+        for deg in range(3, maxdeg + 1):
+            basis = np.polynomial.chebyshev.chebvander2d(u, v, [deg, deg])
+            cx = np.linalg.lstsq(basis, px, rcond=None)[0]
+            cy = np.linalg.lstsq(basis, py, rcond=None)[0]
+            residual = max(
+                np.abs(basis @ cx - px).max(), np.abs(basis @ cy - py).max()
+            )
+            if residual < tol:
+                break
+        return self.lo, self.hi, cx, cy, deg, residual
+
+    def _scale(self, xi, eta):
+        u = 2.00 * (xi - self.lo[0]) / (self.hi[0] - self.lo[0]) - 1.00
+        v = 2.00 * (eta - self.lo[1]) / (self.hi[1] - self.lo[1]) - 1.00
+        return u, v
+
+    @staticmethod
+    def _chebyshev(t, n):
+        terms = [jp.ones_like(t), t]
+        for _ in range(2, n):
+            terms.append(2.00 * t * terms[-1] - terms[-2])
+        return jp.stack(terms[:n])
+
+    def _series(self, c, u, v):
+        tu = self._chebyshev(u, c.shape[0])
+        tv = self._chebyshev(v, c.shape[1])
+        return jp.einsum("i...,ij,j...->...", tu, c, tv)
+
+    def __call__(self, ra, dec):
+        """
+        Pixel position ``(x, y)`` (0-based) of ``(ra, dec)`` in degrees.
+
+        Outside the fitted area the transform is continued linearly.
+        """
+        u, v = self._scale(*_tangent(ra, dec, self.ra0, self.dec0))
+        uc, vc = jp.clip(u, -1.00, 1.00), jp.clip(v, -1.00, 1.00)
+        pos = []
+        for c, cu, cv in self.coef:
+            p = self._series(c, uc, vc)
+            p = p + (u - uc) * self._series(cu, uc, vc)
+            p = p + (v - vc) * self._series(cv, uc, vc)
+            pos.append(p)
+        return pos[0], pos[1]
+
+
 # Coordinate grids
 # --------------------------------------------------------
 class WCSgrid:
@@ -170,6 +283,12 @@ class WCSgrid:
         multis = (subgrid * subgrid, *hdu.data.shape)
         multix, multiy = np.zeros(multis), np.zeros(multis)
         wcs_obj = WCS(hdu.header).celestial
+        self.ra0, self.dec0 = (
+            float(c)
+            for c in wcs_obj.all_pix2world(
+                0.50 * hdu.data.shape[1], 0.50 * hdu.data.shape[0], 0
+            )
+        )
         for isp in range(subgrid):
             for jsp in range(subgrid):
                 dx_sub = isp / subgrid - (subgrid - 1) / (2 * subgrid)
@@ -181,6 +300,28 @@ class WCSgrid:
                 )
         self.x = jp.array(multix)
         self.y = jp.array(multiy)
+
+        a0, d0 = np.deg2rad(self.ra0), np.deg2rad(self.dec0)
+        self.frame = (
+            np.array(
+                [np.cos(d0) * np.cos(a0), np.cos(d0) * np.sin(a0), np.sin(d0)]
+            ),
+            np.array([-np.sin(a0), np.cos(a0), 0.00]),
+            np.array(
+                [
+                    -np.sin(d0) * np.cos(a0),
+                    -np.sin(d0) * np.sin(a0),
+                    np.cos(d0),
+                ]
+            ),
+        )
+        self.tx, self.ty = _tangent(self.x, self.y, self.ra0, self.dec0)
+        self.wide = bool(np.max(np.hypot(self.tx, self.ty)) > 10.00)
+        if np.any(np.asarray(self.tx) >= 1.00e04):
+            warnings.warn(
+                "Pixels more than 90 degrees from the image centre are not "
+                "modelled."
+            )
 
     @staticmethod
     def getmesh(hdu=None, wcs=None, header=None, dx=0.0, dy=0.0):
@@ -236,11 +377,7 @@ class WCSgrid:
             np.arange(headerWCS["NAXIS2"]) + dy,
         )
         gridwx, gridwy = wcs.all_pix2world(gridmx, gridmy, 0)
-
-        s = np.sort(gridwx.ravel())
-        diffs = np.diff(s)
-        if diffs.max() > 180:
-            gridwx[gridwx > s[diffs.argmax()]] -= 360
+        gridwx = _wrap_ra(gridwx, wcs.wcs.crval[0])
 
         return gridwx, gridwy
 
@@ -262,30 +399,17 @@ class FFTspec:
         Shape of the original image ``(ny, nx)``.
     padded_shape : tuple of int
         Shape of the zero-padded array used for convolution.
-    header : dict
-        Dictionary containing relevant header keywords.
+    world2pix : SkyToPixel
+        World-to-pixel transform of the image WCS.
     freq : list of jax.numpy.ndarray
         Frequency grids in u and v directions, defined on the padded grid.
     pulse : jax.numpy.ndarray
-        FFT of a unit pulse at the reference pixel position.
+        FFT of a unit pulse at pixel ``(0, 0)``.
     """
 
     def __init__(self, hdu):
         self.image_shape = hdu.data.shape
-        self.header = {
-            key: hdu.header[key]
-            for idx in [1, 2]
-            for key in [
-                f"CRPIX{idx}",
-                f"CRVAL{idx}",
-                f"CDELT{idx}",
-                f"NAXIS{idx}",
-            ]
-        }
-
-        self.cd_inv = jp.array(
-            np.linalg.inv(WCS(hdu.header).celestial.pixel_scale_matrix)
-        )
+        self._header = hdu.header.copy()
 
         self.padded_shape = pad_size(self.image_shape)
 
@@ -304,10 +428,15 @@ class FFTspec:
             ),
         ]
 
-        dx = self.header["CRPIX1"] - 1.00
-        dy = self.header["CRPIX2"] - 1.00
+        self.pulse = _phase_ramp(self.padded_shape, 0.00, 0.00)
 
-        self.pulse = _phase_ramp(self.padded_shape, dy, dx)
+    @property
+    def world2pix(self):
+        """World-to-pixel transform of the image WCS, built on first use."""
+        if getattr(self, "_world2pix", None) is None:
+            with jax.ensure_compile_time_eval():
+                self._world2pix = SkyToPixel(self._header, self.image_shape)
+        return self._world2pix
 
     def shift(self, xc, yc):
         """
@@ -325,19 +454,8 @@ class FFTspec:
         jax.numpy.ndarray
             Complex spectrum of the point source on the padded grid.
         """
-        dw = jp.array(
-            [
-                (xc - self.header["CRVAL1"])
-                * jp.cos(jp.deg2rad(self.header["CRVAL2"])),
-                yc - self.header["CRVAL2"],
-            ]
-        )
-        dp = self.cd_inv @ dw
-        return _phase_ramp(
-            self.padded_shape,
-            self.header["CRPIX2"] - 1.00 + dp[1],
-            self.header["CRPIX1"] - 1.00 + dp[0],
-        )
+        px, py = self.world2pix(xc, yc)
+        return _phase_ramp(self.padded_shape, py, px)
 
     def fft(self, data):
         """Compute FFT of the input data with zero-padding."""
@@ -441,28 +559,10 @@ class Image:
         self.wcs = WCS(self.hdu.header)
 
         ctypes = [str(self.hdu.header.get(f"CTYPE{i}", "")) for i in [1, 2]]
-        if self.wcs.has_distortion or any("TPV" in c for c in ctypes):
+        if any("TPV" in c for c in ctypes):
             raise NotImplementedError(
-                "Non-linear WCS distortions (SIP, TPV) are not supported. "
-                "The pixel↔world transform uses the linear CD/PC matrix only."
+                "TPV distortions are not supported by astropy.wcs."
             )
-
-        if (
-            self.hdu.header["CRPIX1"]
-            != 1.00 + 0.50 * self.hdu.header["NAXIS1"]
-            or self.hdu.header["CRPIX2"]
-            != 1.00 + 0.50 * self.hdu.header["NAXIS2"]
-        ):
-            crpix1 = 1.00 + 0.50 * self.hdu.header["NAXIS1"]
-            crpix2 = 1.00 + 0.50 * self.hdu.header["NAXIS2"]
-            crval1, crval2 = self.wcs.all_pix2world(crpix1, crpix2, 1)
-
-            self.hdu.header["CRPIX1"] = crpix1
-            self.hdu.header["CRPIX2"] = crpix2
-            self.hdu.header["CRVAL1"] = float(crval1)
-            self.hdu.header["CRVAL2"] = float(crval2)
-
-            self.wcs = WCS(self.hdu.header)
 
         if "CDELT1" not in self.hdu.header or "CDELT2" not in self.hdu.header:
             self.hdu.header["CDELT1"] = -np.hypot(
@@ -573,7 +673,7 @@ class Image:
         -----
         - Updates all image attributes including WCS, grid, and FFT specifications
         - If a PSF is present, it is kept unchanged, with the same centre
-        - The image center (CRPIX/CRVAL) is updated to the cutout center
+        - The WCS projection is kept; only the reference pixel is moved
         """
         if self.noise.__class__.__name__ != "Normal":
             raise NotImplementedError(
@@ -634,17 +734,12 @@ class Image:
                 self.psf, self.data.shape, center=self.convolve.center
             )
 
-        cuthdu = fits.PrimaryHDU(
-            data=cutout_data.data, header=cutout_data.wcs.to_header()
+        header = self.hdu.header.copy()
+        header["NAXIS1"], header["NAXIS2"] = cutout_data.data.shape[::-1]
+        header["CRPIX1"], header["CRPIX2"] = (
+            float(c) for c in cutout_data.wcs.wcs.crpix
         )
-
-        crval = [center.ra.deg, center.dec.deg]
-        crpix = cutout_data.wcs.all_world2pix(*crval, 1)
-
-        cuthdu.header["CRPIX1"] = float(crpix[0])
-        cuthdu.header["CRPIX2"] = float(crpix[1])
-        cuthdu.header["CRVAL1"] = float(crval[0])
-        cuthdu.header["CRVAL2"] = float(crval[1])
+        cuthdu = fits.PrimaryHDU(data=cutout_data.data, header=header)
 
         self.hdu = cuthdu
         self.wcs = WCS(self.hdu.header)
@@ -687,7 +782,7 @@ class Image:
         if combine:
             mask = mask * self.mask.copy()
 
-        hdu = fits.PrimaryHDU(data=mask, header=self.wcs.to_header())
+        hdu = fits.PrimaryHDU(data=mask, header=self.hdu.header.copy())
 
         for ri, r in enumerate(regions):
             if isinstance(r, str):

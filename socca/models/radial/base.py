@@ -14,6 +14,7 @@ from .. import config
 from ..base import Component
 from ..base import _warn_span
 from ...priors import _BoundTo
+from ...utils import _local_frame
 from .truncation import Truncation, HyperTangent
 
 
@@ -393,7 +394,7 @@ class Profile(Component):
         -----
         The transformation accounts for:
 
-        - Spherical geometry (cos(dec) correction)
+        - Offsets on the plane tangent to the sky at (xc, yc)
         - Position angle rotation
         - Ellipticity via axis ratio correction
         - Generalized elliptical isophotes with boxiness
@@ -404,16 +405,14 @@ class Profile(Component):
 
         This function is JIT-compiled for performance during model evaluation.
         """
+        dx, dy, j = _local_frame(grid, xc, yc)
         sint = jp.sin(theta)
         cost = jp.cos(theta)
 
-        xgrid = (
-            -(grid.x - xc) * jp.cos(jp.deg2rad(yc)) * sint
-            - (grid.y - yc) * cost
-        )
-        ygrid = (grid.x - xc) * jp.cos(jp.deg2rad(yc)) * cost - (
-            grid.y - yc
-        ) * sint
+        rx = jp.array([-sint, -cost]) @ j
+        ry = jp.array([cost, -sint]) @ j
+        xgrid = rx[0] * dx + rx[1] * dy
+        ygrid = ry[0] * dx + ry[1] * dy
 
         xgrid = jp.abs(xgrid) ** (cbox + 2.00)
         ygrid = jp.abs(ygrid / (1.00 - e)) ** (cbox + 2.00)
