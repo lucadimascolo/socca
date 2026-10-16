@@ -629,6 +629,90 @@ class TestImageAddmask:
         assert img.mask[50, 5] == 0
 
 
+class TestImageCutoutSetup:
+    """Tests for cutouts set up through the constructor or a tuple."""
+
+    @staticmethod
+    def _hdu(shape):
+        header = fits.Header()
+        header["CRPIX1"], header["CRPIX2"] = (
+            shape[1] // 2 + 1,
+            shape[0] // 2 + 1,
+        )
+        header["CRVAL1"], header["CRVAL2"] = 150.0, 2.0
+        header["CDELT1"], header["CDELT2"] = -1.0 / 3600, 1.0 / 3600
+        header["CTYPE1"], header["CTYPE2"] = "RA---TAN", "DEC--TAN"
+        rng = np.random.default_rng(0)
+        return fits.PrimaryHDU(rng.normal(size=shape), header=header)
+
+    def test_shared_noise_is_not_modified(self):
+        """A noise model shared by several images is not cut in place."""
+        nmap = np.arange(64 * 64, dtype=float).reshape(64, 64) + 1.0
+        shared = noise.Normal(sigma=nmap)
+        a = data.Image(self._hdu((64, 64)), noise=shared)
+        b = data.Image(self._hdu((64, 64)), noise=shared)
+        a.cutout((150.0, 2.0), 21)
+        b.cutout((150.0, 2.0), 11)
+        np.testing.assert_array_equal(shared.kwargs["sigma"], nmap)
+        np.testing.assert_array_equal(
+            a.noise.kwargs["sigma"][5:16, 5:16], b.noise.kwargs["sigma"]
+        )
+
+    def test_noise_map_shape_mismatch(self):
+        """A noise map of another shape is rejected at cutout."""
+        img = data.Image(
+            self._hdu((64, 64)), noise=noise.Normal(sigma=np.ones((80, 80)))
+        )
+        with pytest.raises(ValueError, match="noise map"):
+            img.cutout((150.0, 2.0), 21)
+
+    def test_constructor_cutout(self):
+        """Image(..., center=, csize=) builds the cutout."""
+        from astropy.coordinates import SkyCoord
+
+        center = SkyCoord(150.0, 2.0, unit="deg")
+        img = data.Image(
+            self._hdu((64, 64)),
+            noise=noise.Normal(sigma=1.0),
+            center=center,
+            csize=21,
+        )
+        assert img.data.shape == (21, 21)
+        assert img.fft.image_shape == (21, 21)
+
+    def test_tuple_center(self):
+        """A (RA, Dec) tuple is accepted as the cutout centre."""
+        from astropy.coordinates import SkyCoord
+
+        a = data.Image(self._hdu((64, 64)), noise=noise.Normal(sigma=1.0))
+        b = data.Image(self._hdu((64, 64)), noise=noise.Normal(sigma=1.0))
+        a.cutout((150.0, 2.0), 21)
+        b.cutout(SkyCoord(150.0, 2.0, unit="deg"), 21)
+        np.testing.assert_array_equal(a.data, b.data)
+
+    @pytest.mark.parametrize("key", ["sigma", "wht"])
+    def test_noise_map_is_cut(self, key):
+        """Noise maps are cut along with the data."""
+        hdu = self._hdu((64, 64))
+        nmap = np.arange(64 * 64, dtype=float).reshape(64, 64) + 1.0
+        img = data.Image(hdu, noise=noise.Normal(**{key: nmap}))
+        cut = data.Image(self._hdu((64, 64)), noise=noise.Normal(sigma=1.0))
+        img.cutout((150.0, 2.0), 21)
+        cut.cutout((150.0, 2.0), 21)
+        np.testing.assert_array_equal(img.data, cut.data)
+        y0 = int(
+            np.argwhere(np.asarray(hdu.data) == float(img.data[0, 0]))[0][0]
+        )
+        x0 = int(
+            np.argwhere(np.asarray(hdu.data) == float(img.data[0, 0]))[0][1]
+        )
+        np.testing.assert_array_equal(
+            img.noise.kwargs[key], nmap[y0 : y0 + 21, x0 : x0 + 21]
+        )
+        img._init_noise()
+        assert np.all(np.isfinite(np.asarray(img.noise.sigma)))
+
+
 class TestHduMask:
     """Tests for _hdu_mask helper function."""
 

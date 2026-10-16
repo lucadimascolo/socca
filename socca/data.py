@@ -9,11 +9,14 @@ import jax.numpy as jp
 import numpy as np
 from scipy.fft import next_fast_len
 
+import copy
 import inspect
 import warnings
 
 from astropy.io import fits
 from astropy.wcs import WCS
+from astropy.wcs.utils import wcs_to_celestial_frame
+from astropy.coordinates import SkyCoord
 from astropy.nddata import Cutout2D
 
 import pyregion
@@ -494,6 +497,13 @@ class Image:
         else:
             self.response = jp.ones(self.data.shape, dtype=float)
 
+        if noise is None:
+            self.noise = noisepdf.Normal()
+        else:
+            self.noise = noise
+
+        self.psf = None
+
         if "center" in kwargs and "csize" in kwargs:
             self.cutout(center=kwargs["center"], csize=kwargs["csize"])
 
@@ -503,12 +513,6 @@ class Image:
                 combine=kwargs["addmask"].get("combine", True),
             )
 
-        if noise is None:
-            self.noise = noisepdf.Normal()
-        else:
-            self.noise = noise
-
-        self.psf = None
         if "addpsf" in kwargs:
             self.addpsf(
                 img=kwargs["addpsf"].get("img"),
@@ -571,10 +575,51 @@ class Image:
         - If a PSF is present, it is kept unchanged, with the same centre
         - The image center (CRPIX/CRVAL) is updated to the cutout center
         """
-        cutout_data = Cutout2D(self.data, center, csize, wcs=self.wcs)
-        cutout_mask = Cutout2D(self.mask, center, csize, wcs=self.wcs)
-        cutout_exp = Cutout2D(self.exposure, center, csize, wcs=self.wcs)
-        cutout_resp = Cutout2D(self.response, center, csize, wcs=self.wcs)
+        if self.noise.__class__.__name__ != "Normal":
+            raise NotImplementedError(
+                "Cutout is only implemented for images with "
+                "uncorrelated noise [Normal]."
+            )
+
+        if not isinstance(center, SkyCoord):
+            center = SkyCoord(
+                *center, unit="deg", frame=wcs_to_celestial_frame(self.wcs)
+            )
+
+        select = self.noise.select
+        if select is not None and not isinstance(
+            self.noise.kwargs[select], (float, int)
+        ):
+            nmap = self.noise.kwargs[select]
+            if not isinstance(nmap, (np.ndarray, jp.ndarray)):
+                nmap = _img_loader(nmap, self.noise.kwargs.get("idx", 0))
+                nmap = _reduce_axes(nmap).data
+            if np.shape(nmap) != self.data.shape:
+                raise ValueError(
+                    f"The noise map has shape {np.shape(nmap)}, "
+                    f"the image {self.data.shape}."
+                )
+            self.noise = copy.copy(self.noise)
+            self.noise.kwargs = dict(self.noise.kwargs)
+            self.noise.kwargs[select] = Cutout2D(
+                np.array(nmap, dtype=float),
+                center,
+                csize,
+                wcs=self.wcs.celestial,
+            ).data
+
+        cutout_data = Cutout2D(
+            self.data, center, csize, wcs=self.wcs.celestial
+        )
+        cutout_mask = Cutout2D(
+            self.mask, center, csize, wcs=self.wcs.celestial
+        )
+        cutout_exp = Cutout2D(
+            self.exposure, center, csize, wcs=self.wcs.celestial
+        )
+        cutout_resp = Cutout2D(
+            self.response, center, csize, wcs=self.wcs.celestial
+        )
 
         self.data = jp.array(np.array(cutout_data.data, dtype=float))
         self.mask = jp.array(np.array(cutout_mask.data, dtype=float))
@@ -606,14 +651,6 @@ class Image:
 
         self.grid = WCSgrid(self.hdu, subgrid=self.subgrid)
         self.fft = FFTspec(self.hdu)
-
-        if self.noise.__class__.__name__ == "Normal":
-            self.noise(self.data, self.mask)
-        else:
-            raise NotImplementedError(
-                "Cutout is only implemented for images with "
-                "uncorrelated noise [Normal]."
-            )
 
     #   Add mask
     #   --------------------------------------------------------
