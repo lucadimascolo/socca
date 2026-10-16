@@ -815,6 +815,24 @@ class TestConvolveEdgeCases:
         sky[shape[0] // 2, shape[1] // 2] = 1.0
         assert np.all(np.isfinite(img.convolve(sky)))
 
+    @pytest.mark.parametrize("normalize", [True, False])
+    def test_non_finite_psf(self, normalize):
+        """Non-finite PSF values are set to zero with a warning."""
+        img = self._image((16, 16))
+        psf = np.random.default_rng(3).random((7, 7)) + 0.1
+        psf[0, 0], psf[6, 6] = np.nan, np.inf
+        with pytest.warns(UserWarning, match="Non-finite"):
+            img.addpsf(psf, normalize=normalize)
+        sky = np.zeros((16, 16))
+        sky[8, 8] = 1.0
+        assert np.all(np.isfinite(img.convolve(sky)))
+
+    def test_psf_cube_rejected(self):
+        """A PSF that is not 2D is rejected with a clear error."""
+        img = self._image((16, 16))
+        with pytest.raises(ValueError, match="2D"):
+            img.addpsf(np.ones((2, 7, 7)))
+
     def test_single_pixel_psf_is_identity(self):
         """A 1x1 PSF leaves the image unchanged."""
         img = self._image((16, 17))

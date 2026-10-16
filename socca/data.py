@@ -107,7 +107,7 @@ def _sym_center(kernel):
     return center
 
 
-def _psf_center(kernel, size=128, niter=8, tol=1e-9):
+def _psf_center(kernel, size=128, niter=50, tol=1e-9):
     """
     Centre of point symmetry ``(y, x)`` of a PSF stamp, in sub-pixels.
 
@@ -118,7 +118,11 @@ def _psf_center(kernel, size=128, niter=8, tol=1e-9):
     if not np.any(kernel):
         raise ValueError("The PSF is empty.")
     nz = np.nonzero(np.abs(kernel) > 1e-12 * np.abs(kernel).max())
-    center = _sym_center(kernel)
+    peak = np.unravel_index(np.argmax(kernel), kernel.shape)
+    lo = [max(p - size, 0) for p in peak]
+    hi = [p + size + 1 for p in peak]
+    center = _sym_center(kernel[lo[0] : hi[0], lo[1] : hi[1]]) + np.array(lo)
+    step = np.inf
     for _ in range(niter):
         h = np.round(2.00 * center) / 2.00
         r = [
@@ -136,10 +140,14 @@ def _psf_center(kernel, size=128, niter=8, tol=1e-9):
             t = np.sin(np.pi * np.clip(t, 0.00, 0.50)) ** 2
             w = w * np.expand_dims(t, 1 - ax)
         new = _sym_center(sub * w) + np.array(lo)
-        done = np.max(np.abs(new - center)) < tol
+        step = np.max(np.abs(new - center))
         center = new
-        if done:
+        if step < tol:
             break
+    if np.isfinite(step) and step > 1e-03:
+        warnings.warn(
+            f"The PSF centre estimate did not converge (last step {step:.1e} px)."
+        )
     snap = np.abs(center - np.round(center)) < 1e-6
     center = np.where(snap, np.round(center), center)
     center = np.clip(center, 0.00, np.array(kernel.shape) - 1.00)
@@ -845,12 +853,26 @@ class Image:
             hdu = _reduce_axes(hdu)
             kernel = np.asarray(hdu.data.astype(float).copy())
 
+        if kernel.ndim != 2:
+            raise ValueError(
+                f"The PSF must be 2D, not of shape {kernel.shape}."
+            )
+
         if self.noise.__class__.__name__ == "NormalRI" and normalize:
             raise ValueError(
                 "PSF normalization is not supported for NormalRI noise."
             )
 
+        if not np.all(np.isfinite(kernel)):
+            warnings.warn("Non-finite PSF values are set to zero.")
+            kernel = np.nan_to_num(kernel, nan=0.00, posinf=0.00, neginf=0.00)
+
         if normalize:
+            if np.abs(np.sum(kernel)) < 1e-06 * np.sum(np.abs(kernel)):
+                warnings.warn(
+                    "The PSF sums to nearly zero; normalising it to unit sum "
+                    "amplifies it greatly."
+                )
             kernel = kernel / np.sum(kernel)
 
         self.psf = jp.asarray(kernel)
@@ -908,9 +930,19 @@ class Convolve:
         frac = [c - np.round(c) for c in self.center]
         center = [int(np.round(c)) for c in self.center]
 
+        margin = 64 if any(frac) else 0
+        lo = [max(c - s + 1 - margin, 0) for c, s in zip(center, image_shape)]
+        hi = [
+            min(c + s + margin, k)
+            for c, s, k in zip(center, image_shape, kshape)
+        ]
+        kernel = jp.asarray(kernel)[lo[0] : hi[0], lo[1] : hi[1]]
+        kshape = kernel.shape
+        center = [c - a for c, a in zip(center, lo)]
+
         grid = pad_size(kshape)
         if any(frac):
-            spec = jp.fft.rfft2(jp.asarray(kernel), grid)
+            spec = jp.fft.rfft2(kernel, grid)
             spec = spec * _phase_ramp(grid, -frac[0], -frac[1])
             full = jp.fft.irfft2(spec, grid)
         else:
