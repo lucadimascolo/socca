@@ -114,7 +114,7 @@ class Normal:
                 )
         elif isinstance(self.select, str):
             if isinstance(self.kwargs[self.select], (float, int)):
-                sigma = self.kwargs[self.select]
+                sigma = float(self.kwargs[self.select])
             elif isinstance(
                 self.kwargs[self.select],
                 (str, fits.ImageHDU, fits.PrimaryHDU, fits.HDUList),
@@ -122,11 +122,11 @@ class Normal:
                 sigma = _img_loader(
                     self.kwargs[self.select], self.kwargs.get("idx", 0)
                 )
-                sigma = sigma.data.copy()
+                sigma = np.array(sigma.data, dtype=float)
             elif isinstance(
                 self.kwargs[self.select], (np.ndarray, jp.ndarray)
             ):
-                sigma = np.array(self.kwargs[self.select])
+                sigma = np.array(self.kwargs[self.select], dtype=float)
             else:
                 raise ValueError(
                     f"Invalid type for noise parameter {self.select} [{self.kwargs[self.select]}]. "
@@ -136,10 +136,14 @@ class Normal:
             if self.select in self.options["var"]:
                 sigma = np.sqrt(sigma)
             elif self.select in self.options["wht"]:
-                self.mask = self.mask.at[sigma == 0.00].set(0)
-                if isinstance(sigma, (float, int)) and sigma != 0.00:
+                if isinstance(sigma, float):
+                    if sigma <= 0.00:
+                        raise ValueError(
+                            f"Scalar weight {self.select}={sigma} must be positive."
+                        )
                     sigma = 1.00 / np.sqrt(sigma)
                 else:
+                    self.mask = self.mask.at[sigma == 0.00].set(0)
                     sigma[sigma != 0.00] = 1.00 / np.sqrt(sigma[sigma != 0.00])
             elif self.select not in self.options["sig"]:
                 raise ValueError("Unrecognized noise identifier")

@@ -165,6 +165,32 @@ class TestNormal:
         n.mask = jp.array(uniform_mask)
         n.getsigma()
 
+    @pytest.mark.parametrize("kind", ["array", "hdu"])
+    def test_integer_weight_map(self, simple_hdu, uniform_mask, kind):
+        """Integer weight maps are not truncated."""
+        weight = np.full(simple_hdu.data.shape, 4, dtype=int)
+        weight[:5] = 1
+        if kind == "hdu":
+            weight = fits.PrimaryHDU(weight)
+        n = noise.Normal(wht=weight)
+        n.data = jp.array(simple_hdu.data)
+        n.mask = jp.array(uniform_mask)
+        sigma = n.getsigma()
+        np.testing.assert_allclose(sigma[:5], 1.0)
+        np.testing.assert_allclose(sigma[5:], 0.5)
+        assert np.all(np.asarray(n.mask) == 1)
+
+    @pytest.mark.parametrize("weight", [0, 0.0, -1.0])
+    def test_non_positive_scalar_weight(
+        self, simple_hdu, uniform_mask, weight
+    ):
+        """A non-positive scalar weight is rejected."""
+        n = noise.Normal(wht=weight)
+        n.data = jp.array(simple_hdu.data)
+        n.mask = jp.array(uniform_mask)
+        with pytest.raises(ValueError, match="must be positive"):
+            n.getsigma()
+
 
 class TestNormalCorrelated:
     """Tests for NormalCorrelated noise model."""
