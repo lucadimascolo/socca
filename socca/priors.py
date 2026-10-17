@@ -257,15 +257,117 @@ def splitnormal(loc, losig, hisig):
     )
 
 
-class LogPowerLaw(numpyro.distributions.Distribution):
+def _check_limits(low, high):
+    lo, hi = np.asarray(low, dtype=float), np.asarray(high, dtype=float)
+    if not np.all((0 < lo) & (lo < hi) & np.isfinite(hi)):
+        raise ValueError(
+            "The limits must satisfy 0 < low < high < inf."
+            f"\nInput values > low={low} high={high}"
+        )
+
+
+class _PowerLawBase(numpyro.distributions.Distribution):
+    """
+    Power law p(x) ∝ x^alpha between two bounds.
+
+    The normalisation, cdf and inverse cdf are computed in log space and
+    anchored at the bound that keeps them finite for any alpha.
+    """
+
+    reparametrized_params = ["alpha", "low", "high"]
+
+    def __init__(self, alpha, low, high, validate_args=None):
+        self.alpha, self.low, self.high = (
+            numpyro.distributions.util.promote_shapes(alpha, low, high)
+        )
+        batch_shape = jp.broadcast_shapes(
+            jp.shape(self.alpha),
+            jp.shape(self.low),
+            jp.shape(self.high),
+        )
+        super().__init__(
+            batch_shape=batch_shape,
+            event_shape=(),
+            validate_args=validate_args,
+        )
+
+    @numpyro.distributions.constraints.dependent_property(
+        is_discrete=False, event_dim=0
+    )
+    def support(self):  # noqa: D102
+        return numpyro.distributions.constraints.interval(self.low, self.high)
+
+    def _terms(self):
+        la, lb = self._log_bounds()
+        beta = jp.asarray(self.alpha + 1.0)
+        flat = beta == 0.0
+        beta = jp.where(flat, 1.0, beta)
+        c = jp.abs(beta) * (lb - la)
+        anchor = jp.where(beta > 0, lb, la)
+        return la, lb, flat, beta, c, -jp.expm1(-c), anchor
+
+    def _log_norm(self):
+        la, lb, flat, beta, c, q, _ = self._terms()
+        return jp.where(
+            flat,
+            jp.log(lb - la),
+            jp.maximum(beta * la, beta * lb)
+            + jp.log(q)
+            - jp.log(jp.abs(beta)),
+        )
+
+    def _cdf(self, lx):
+        la, lb, flat, beta, c, q, anchor = self._terms()
+        lx = jp.clip(lx, la, lb)
+        d = beta * (lx - anchor)
+        t = -jp.exp(d) * jp.expm1(-(c + d)) / q
+        return jp.where(
+            flat, (lx - la) / (lb - la), jp.where(beta > 0, t, 1.0 - t)
+        )
+
+    def _log_icdf(self, u):
+        la, lb, flat, beta, c, q, anchor = self._terms()
+        w = jp.where(beta > 0, u, 1.0 - u)
+        cs = jp.minimum(c, 1.0)
+        lw = jp.where(
+            c < 1.0,
+            jp.log1p(w * jp.expm1(cs)) - cs,
+            jp.log(jp.exp(-c) + w * q),
+        )
+        return jp.where(flat, la + u * (lb - la), anchor + lw / beta)
+
+    def sample(self, key, sample_shape=()):
+        """
+        Draw random samples from the distribution.
+
+        Parameters
+        ----------
+        key : jax.random.PRNGKey
+            JAX random key.
+        sample_shape : tuple, optional
+            Shape of the sample batch.
+
+        Returns
+        -------
+        array_like
+            Random samples.
+        """
+        u = jax.random.uniform(key, sample_shape + self.batch_shape)
+        return self.icdf(u)
+
+
+class LogPowerLaw(_PowerLawBase):
     """
     Power-law prior for a parameter sampled in log space.
 
-    If theta = log(R_e), this distribution has:
-        log_prob(theta) ∝ (alpha + 1) * theta
-
-    where the (alpha + 1) accounts for the Jacobian of the log transform,
-    such that the implied prior on R_e is p(R_e) ∝ R_e^alpha.
+    The sampled variable is theta = log(x), with density
+    p(theta) ∝ exp((alpha + 1) * theta) for theta in [low, high], where
+    (alpha + 1) accounts for the Jacobian of the log transform, so that
+    the implied prior on x is p(x) ∝ x^alpha. Samplers work in theta;
+    the model receives x = exp(theta) (see `to_model`), and fit results
+    are reported in x. Quantities defined on the sampled variable, such as
+    the prior-deboosted evidence from `getzprior` or the optimizer's MAP
+    estimate, refer to theta.
 
     Parameters
     ----------
@@ -285,38 +387,23 @@ class LogPowerLaw(numpyro.distributions.Distribution):
         "low": numpyro.distributions.constraints.real,
         "high": numpyro.distributions.constraints.real,
     }
-    support = numpyro.distributions.constraints.real
-    reparametrized_params = ["alpha", "low", "high"]
 
-    def __init__(self, alpha, low, high, validate_args=None):
-        self.alpha, self.low, self.high = (
-            numpyro.distributions.util.promote_shapes(alpha, low, high)
-        )
-        batch_shape = jp.broadcast_shapes(
-            jp.shape(self.alpha),
-            jp.shape(self.low),
-            jp.shape(self.high),
-        )
-        super().__init__(
-            batch_shape=batch_shape,
-            event_shape=(),
-            validate_args=validate_args,
-        )
+    def _log_bounds(self):
+        return self.low, self.high
 
-    def _beta(self):
-        return self.alpha + 1.0
+    @staticmethod
+    def to_model(theta):
+        """Map a sampled value theta = log(x) to the model value x."""
+        return jp.exp(theta)
 
-    def _log_norm(self):
-        beta = self._beta()
-        # For beta=0 (log-uniform), normalisation is just log(high - low)
-        return jp.where(
-            jp.abs(beta) < 1e-6,
-            jp.log(self.high - self.low),
-            jp.log(
-                jp.abs(jp.exp(beta * self.high) - jp.exp(beta * self.low))
-                / jp.abs(beta)
-            ),
-        )
+    @staticmethod
+    def from_model(x):
+        """Map a model value x to the sampled value theta = log(x)."""
+        return jp.log(x)
+
+    def model_bounds(self):
+        """Support bounds in model space, as given to `logpowerlaw`."""
+        return getattr(self, "_xbounds", (jp.exp(self.low), jp.exp(self.high)))
 
     def log_prob(self, theta):
         """
@@ -332,13 +419,27 @@ class LogPowerLaw(numpyro.distributions.Distribution):
         float or array_like
             Log probability density at theta.
         """
-        beta = self._beta()
-        in_support = (theta >= self.low) & (theta <= self.high)
         return jp.where(
-            in_support,
-            beta * theta - self._log_norm(),
+            (theta >= self.low) & (theta <= self.high),
+            (self.alpha + 1.0) * theta - self._log_norm(),
             -jp.inf,
         )
+
+    def cdf(self, theta):
+        """
+        Compute the cumulative distribution function in log space.
+
+        Parameters
+        ----------
+        theta : float or array_like
+            Value(s) in log space at which to evaluate the CDF.
+
+        Returns
+        -------
+        float or array_like
+            Probability that a draw is <= theta.
+        """
+        return self._cdf(theta)
 
     def icdf(self, u):
         """
@@ -352,36 +453,9 @@ class LogPowerLaw(numpyro.distributions.Distribution):
         Returns
         -------
         float or array_like
-            Corresponding sample(s) in linear space.
+            Corresponding sample(s) in log space.
         """
-        beta = self._beta()
-        lo = jp.exp(beta * self.low)
-        hi = jp.exp(beta * self.high)
-        _icdf = jp.where(
-            jp.abs(beta) < 1e-6,
-            self.low + u * (self.high - self.low),
-            jp.log(u * (hi - lo) + lo) / beta,
-        )
-        return jp.exp(_icdf)
-
-    def sample(self, key, sample_shape=()):
-        """
-        Draw random samples from the distribution.
-
-        Parameters
-        ----------
-        key : jax.random.PRNGKey
-            JAX random key.
-        sample_shape : tuple, optional
-            Shape of the sample batch.
-
-        Returns
-        -------
-        array_like
-            Random samples in linear space.
-        """
-        u = jax.random.uniform(key, sample_shape + self.batch_shape)
-        return self.icdf(u)
+        return jp.clip(self._log_icdf(u), self.low, self.high)
 
 
 def logpowerlaw(alpha, low, high):
@@ -400,12 +474,21 @@ def logpowerlaw(alpha, low, high):
     Returns
     -------
     LogPowerLaw
-        Power-law distribution in log space.
+        Power-law distribution sampled in log space; fit results are
+        reported in linear space.
+
+    Raises
+    ------
+    ValueError
+        If the limits do not satisfy 0 < low < high < inf.
     """
-    return LogPowerLaw(alpha, low=jp.log(low), high=jp.log(high))
+    _check_limits(low, high)
+    prior = LogPowerLaw(alpha, low=jp.log(low), high=jp.log(high))
+    prior._xbounds = (low, high)
+    return prior
 
 
-class PowerLaw(numpyro.distributions.Distribution):
+class PowerLaw(_PowerLawBase):
     """
     Power-law prior in linear space.
 
@@ -429,34 +512,9 @@ class PowerLaw(numpyro.distributions.Distribution):
         "low": numpyro.distributions.constraints.positive,
         "high": numpyro.distributions.constraints.positive,
     }
-    support = numpyro.distributions.constraints.positive
-    reparametrized_params = ["alpha", "low", "high"]
 
-    def __init__(self, alpha, low, high, validate_args=None):
-        self.alpha, self.low, self.high = (
-            numpyro.distributions.util.promote_shapes(alpha, low, high)
-        )
-        batch_shape = jp.broadcast_shapes(
-            jp.shape(self.alpha),
-            jp.shape(self.low),
-            jp.shape(self.high),
-        )
-        super().__init__(
-            batch_shape=batch_shape,
-            event_shape=(),
-            validate_args=validate_args,
-        )
-
-    def _beta(self):
-        return self.alpha + 1.0
-
-    def _log_norm(self):
-        beta = self._beta()
-        return jp.where(
-            jp.abs(beta) < 1e-6,
-            jp.log(self.high / self.low),
-            jp.log(jp.abs(self.high**beta - self.low**beta) / jp.abs(beta)),
-        )
+    def _log_bounds(self):
+        return jp.log(self.low), jp.log(self.high)
 
     def log_prob(self, x):
         """
@@ -472,12 +530,28 @@ class PowerLaw(numpyro.distributions.Distribution):
         float or array_like
             Log probability density at x.
         """
-        in_support = (x >= self.low) & (x <= self.high)
         return jp.where(
-            in_support,
+            (x >= self.low) & (x <= self.high),
             self.alpha * jp.log(x) - self._log_norm(),
             -jp.inf,
         )
+
+    def cdf(self, x):
+        """
+        Compute the cumulative distribution function.
+
+        Parameters
+        ----------
+        x : float or array_like
+            Value(s) at which to evaluate the CDF.
+
+        Returns
+        -------
+        float or array_like
+            Probability that a draw is <= x.
+        """
+        lx = jp.log(jp.where(x > 0, x, 1.0))
+        return self._cdf(jp.where(x > 0, lx, -jp.inf))
 
     def icdf(self, u):
         """
@@ -493,34 +567,7 @@ class PowerLaw(numpyro.distributions.Distribution):
         float or array_like
             Corresponding sample(s) in linear space.
         """
-        beta = self._beta()
-        lo = self.low**beta
-        hi = self.high**beta
-        # For beta=0 (log-uniform): x = low * (high/low)^u
-        return jp.where(
-            jp.abs(beta) < 1e-6,
-            self.low * (self.high / self.low) ** u,
-            (u * (hi - lo) + lo) ** (1.0 / beta),
-        )
-
-    def sample(self, key, sample_shape=()):
-        """
-        Draw random samples from the distribution.
-
-        Parameters
-        ----------
-        key : jax.random.PRNGKey
-            JAX random key.
-        sample_shape : tuple, optional
-            Shape of the sample batch.
-
-        Returns
-        -------
-        array_like
-            Random samples.
-        """
-        u = jax.random.uniform(key, sample_shape + self.batch_shape)
-        return self.icdf(u)
+        return jp.clip(jp.exp(self._log_icdf(u)), self.low, self.high)
 
 
 def powerlaw(alpha, low, high):
@@ -540,7 +587,13 @@ def powerlaw(alpha, low, high):
     -------
     PowerLaw
         Power-law distribution in linear space.
+
+    Raises
+    ------
+    ValueError
+        If the limits do not satisfy 0 < low < high < inf.
     """
+    _check_limits(low, high)
     return PowerLaw(alpha, low=low, high=high)
 
 

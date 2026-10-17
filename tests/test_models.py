@@ -929,6 +929,13 @@ class TestParameterSetters:
         with pytest.raises(ValueError, match="ellipticity prior support"):
             models.Sersic().e = priors.normal(0.3, 0.05)
 
+    def test_bounded_priors_in_range(self):
+        """Power-law priors are checked against their own bounds."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            models.Sersic().ns = priors.powerlaw(0.0, 0.5, 8.0)
+            models.Sersic().ns = priors.logpowerlaw(-1.0, 0.5, 8.0)
+
     def test_out_of_range_values(self):
         """Fixed values outside the valid range are still caught."""
         with pytest.raises(ValueError, match="ns parameter"):

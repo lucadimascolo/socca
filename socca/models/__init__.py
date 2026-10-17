@@ -579,10 +579,11 @@ class Model:
         ----------
         img : Image
             Image object containing data, grid, PSF, response map, and exposure map.
-        pp : array_like or dict
-            Parameter values. If array_like, contains values for parameters with
-            prior distributions, in the order they appear in paridx. If dict,
-            contains all parameter values with keys matching self.params.
+        pp : array_like
+            Values of the parameters with prior distributions, in the order
+            they appear in paridx, in the variable each prior samples: for
+            LogPowerLaw priors this is log(x). Fit outputs are in x; use
+            `fitter.getmodel` to evaluate them.
         doresp : bool, optional
             If True, multiply by the instrumental response map (img.response).
             Default is False.
@@ -640,6 +641,8 @@ class Model:
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 pars[key], pp = pp[0], pp[1:]
+                if hasattr(self.priors[key], "to_model"):
+                    pars[key] = self.priors[key].to_model(pars[key])
 
         for key, factor in self.conversions.items():
             if key in pars:

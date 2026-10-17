@@ -232,6 +232,24 @@ class fitter:
             prob += jp.where(jp.isfinite(prob_), prob_, -jp.inf)
         return prob
 
+    #   Map sampled values to model values and back
+    #   --------------------------------------------------------
+    def _to_model(self, pp, inverse=False):
+        """
+        Map free-parameter values between sampler and model space.
+
+        Priors sampled in another variable (e.g. LogPowerLaw, sampled in
+        log space) define `to_model` and `from_model`; other parameters are
+        returned unchanged. The last axis of `pp` runs over free parameters.
+        """
+        pp = np.array(pp, dtype=float)
+        for pi, idx in enumerate(self.mod.paridx):
+            prior = self.mod.priors[self.mod.params[idx]]
+            fn = getattr(prior, "from_model" if inverse else "to_model", None)
+            if fn is not None:
+                pp[..., pi] = np.asarray(fn(pp[..., pi]))
+        return pp
+
     #   Transform prior hypercube
     #   --------------------------------------------------------
     @partial(jax.jit, static_argnames=["self"])
@@ -369,7 +387,30 @@ class fitter:
             }
 
             if self.method == "optimizer":
-                local_vars.update({"pinits": kwargs.pop("pinits", "median")})
+                pinits = kwargs.pop("pinits", "median")
+                if isinstance(pinits, (list, tuple, np.ndarray, jp.ndarray)):
+                    if np.shape(pinits) != (len(self.mod.paridx),):
+                        raise ValueError(
+                            f"pinits must have one value per free parameter "
+                            f"({len(self.mod.paridx)}: {self.labels})."
+                        )
+                    values = list(np.ravel(pinits))
+                    pinits = self._to_model(pinits, inverse=True)
+                    outside = [
+                        f"{key}={value}"
+                        for key, value, v in zip(self.labels, values, pinits)
+                        if not (
+                            np.isfinite(v)
+                            and bool(self.mod.priors[key].support.check(v))
+                        )
+                    ]
+                    if outside:
+                        raise ValueError(
+                            "pinits must be finite and within the support "
+                            f"of each prior: {', '.join(outside)}. Values "
+                            f"follow the order of fit.labels ({self.labels})."
+                        )
+                local_vars.update({"pinits": pinits})
 
             sampler_params = list(
                 inspect.signature(
@@ -410,7 +451,15 @@ class fitter:
                 if auto_periodic:
                     kwargs["periodic"] = auto_periodic
 
+            self.__dict__.pop("samples", None)
             sampler_methods[self.method](**sampler_kwargs, **kwargs)
+
+            if self.method == "optimizer":
+                self.results.parameters = self._to_model(
+                    self.results.parameters
+                )
+            elif hasattr(self, "samples"):
+                self.samples = self._to_model(self.samples)
         else:
             raise ValueError(f"Unknown sampling method: {self.method}")
 
@@ -680,7 +729,11 @@ class fitter:
 
         def gm(pp):
             return self.mod.getmodel(
-                self.img if img is None else img, pp, doresp, doexp, component
+                self.img if img is None else img,
+                self._to_model(pp, inverse=True),
+                doresp,
+                doexp,
+                component,
             )
 
         if self.method == "optimizer":

@@ -171,6 +171,136 @@ class TestSplitNormalClass:
         assert log_prob == pytest.approx(expected)
 
 
+class TestPowerLaws:
+    """Tests for the PowerLaw and LogPowerLaw distributions."""
+
+    ALPHAS = [-1.0, 0.0, 1.5, -2.5]
+
+    @staticmethod
+    def _grid(dist, n):
+        lo, hi = (
+            float(b)
+            for b in (dist.support.lower_bound, dist.support.upper_bound)
+        )
+        if isinstance(dist, priors.PowerLaw):
+            return np.geomspace(lo, hi, n)
+        return np.linspace(lo, hi, n)
+
+    @pytest.mark.parametrize("factory", [priors.powerlaw, priors.logpowerlaw])
+    @pytest.mark.parametrize("alpha", ALPHAS)
+    def test_density_is_normalised(self, factory, alpha):
+        """The density integrates to 1 over its own variable."""
+        dist = factory(alpha, 0.1, 10.0)
+        x = self._grid(dist, 200001)
+        pdf = np.exp(np.asarray(dist.log_prob(jp.asarray(x))))
+        assert np.trapezoid(pdf, x) == pytest.approx(1.0, rel=1e-6)
+
+    @pytest.mark.parametrize("factory", [priors.powerlaw, priors.logpowerlaw])
+    @pytest.mark.parametrize("alpha", ALPHAS)
+    def test_cdf_and_icdf(self, factory, alpha):
+        """The cdf integrates log_prob, and icdf inverts the cdf."""
+        dist = factory(alpha, 0.1, 10.0)
+        x = self._grid(dist, 200001)
+        pdf = np.exp(np.asarray(dist.log_prob(jp.asarray(x))))
+        cdf = np.concatenate(
+            [[0.0], np.cumsum(0.5 * (pdf[1:] + pdf[:-1]) * np.diff(x))]
+        )
+        np.testing.assert_allclose(dist.cdf(jp.asarray(x)), cdf, atol=1e-8)
+        u = jp.asarray([0.0, 0.05, 0.3, 0.5, 0.8, 0.99, 1.0])
+        np.testing.assert_allclose(dist.cdf(dist.icdf(u)), u, atol=1e-12)
+
+    @pytest.mark.parametrize("alpha", ALPHAS)
+    def test_same_implied_prior(self, alpha):
+        """LogPowerLaw samples log(x), with the PowerLaw prior on x."""
+        lin = priors.powerlaw(alpha, 0.1, 10.0)
+        log = priors.logpowerlaw(alpha, 0.1, 10.0)
+        u = jp.asarray([0.0, 0.2, 0.7, 1.0])
+        np.testing.assert_allclose(
+            log.to_model(log.icdf(u)), lin.icdf(u), rtol=1e-12
+        )
+        x = jp.asarray([0.2, 0.5, 3.0, 9.0])
+        np.testing.assert_allclose(
+            log.log_prob(log.from_model(x)) - jp.log(x),
+            lin.log_prob(x),
+            rtol=1e-12,
+        )
+
+    def test_support(self):
+        """Supports are the bounds in each distribution's own variable."""
+        lin = priors.powerlaw(1.0, 0.1, 10.0)
+        log = priors.logpowerlaw(1.0, 0.1, 10.0)
+        assert float(lin.support.lower_bound) == 0.1
+        assert float(lin.support.upper_bound) == 10.0
+        assert float(log.support.lower_bound) == pytest.approx(np.log(0.1))
+        assert float(log.support.upper_bound) == pytest.approx(np.log(10.0))
+        assert bool(lin.support.check(0.1)) and bool(lin.support.check(10.0))
+        assert bool(log.support.check(log.from_model(0.1)))
+
+    @pytest.mark.parametrize("factory", [priors.powerlaw, priors.logpowerlaw])
+    @pytest.mark.parametrize("alpha", [-1.0, 1.5])
+    def test_icdf_gradient_is_finite(self, factory, alpha):
+        """The icdf has finite gradients, including the log-uniform case."""
+        import jax
+
+        dist = factory(alpha, 0.1, 10.0)
+        grad = jax.vmap(jax.grad(dist.icdf))(jp.asarray([0.1, 0.5, 0.9]))
+        assert np.all(np.isfinite(grad)) and np.all(np.asarray(grad) > 0)
+
+    @pytest.mark.parametrize("factory", [priors.powerlaw, priors.logpowerlaw])
+    @pytest.mark.parametrize(
+        "low, high", [(10.0, 1.0), (1.0, 1.0), (0.0, 1.0)]
+    )
+    def test_invalid_limits(self, factory, low, high):
+        """Limits must satisfy 0 < low < high."""
+        with pytest.raises(ValueError, match="0 < low < high"):
+            factory(1.0, low, high)
+
+    @pytest.mark.parametrize("alpha", [-6.0, -3.0, 5.0])
+    def test_steep_power_laws_reach_their_bounds(self, alpha):
+        """icdf(0) and icdf(1) are the bounds even for steep power laws."""
+        dist = priors.powerlaw(alpha, 1e-3, 1e3)
+        np.testing.assert_allclose(
+            dist.icdf(jp.asarray([0.0, 1.0])), [1e-3, 1e3], rtol=1e-12
+        )
+
+    def test_logpowerlaw_model_bounds_exact(self):
+        """The model-space bounds are the limits given to logpowerlaw."""
+        from socca.models.base import _support_bounds
+
+        assert _support_bounds(priors.logpowerlaw(-1.0, 0.25, 10.0)) == (
+            0.25,
+            10.0,
+        )
+        models.Sersic(ns=priors.logpowerlaw(-1.0, 0.25, 10.0))
+
+    def test_infinite_limit_raises(self):
+        """An infinite upper limit is rejected."""
+        with pytest.raises(ValueError, match="0 < low < high < inf"):
+            priors.powerlaw(-1.0, 1.0, np.inf)
+
+    def test_array_limits(self):
+        """Batched limits are validated element-wise."""
+        dist = priors.powerlaw(0.0, np.array([1.0, 2.0]), np.array([2.0, 3.0]))
+        np.testing.assert_allclose(dist.icdf(0.5), [1.5, 2.5])
+        with pytest.raises(ValueError):
+            priors.powerlaw(0.0, np.array([1.0, 2.0]), np.array([2.0, 1.0]))
+
+    def test_cdf_narrow_range(self):
+        """The cdf inverts the icdf on very narrow ranges near alpha = -1."""
+        dist = priors.powerlaw(-0.999998, 1.0, 1.0 + 1e-8)
+        u = jp.linspace(0.0, 1.0, 11)
+        np.testing.assert_allclose(dist.cdf(dist.icdf(u)), u, atol=1e-6)
+
+    @pytest.mark.parametrize("beta", [1e-7, -1e-7, 1e-12])
+    def test_near_log_uniform(self, beta):
+        """Indices just off alpha = -1 use the exact power law."""
+        la, lb = np.log(1e-10), np.log(1e10)
+        dist = priors.logpowerlaw(beta - 1.0, 1e-10, 1e10)
+        c = beta * (lb - la)
+        expected = la + np.log1p(0.5 * np.expm1(c)) / beta
+        assert float(dist.icdf(0.5)) == pytest.approx(expected, abs=1e-12)
+
+
 class TestSplitNormalSampling:
     """Tests for the SplitNormal cdf, icdf and sampling."""
 

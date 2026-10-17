@@ -521,6 +521,105 @@ class TestPeriodicAutoDetection:
         assert "periodic" not in inst.run.call_args.kwargs
 
 
+class TestLogSampledPriors:
+    """Tests for priors sampled in another variable (LogPowerLaw)."""
+
+    @pytest.fixture
+    def setup(self, simple_hdu):
+        """Build a Gaussian fit whose scale radius is sampled in log space."""
+        models.Component.idcls = 0
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        truth = models.Model(
+            models.Gaussian(xc=180.0, yc=45.0, rs=0.005, Is=10.0)
+        )
+        img.data = truth.getmap(img)
+        models.Component.idcls = 0
+        gaussian = models.Gaussian(
+            xc=180.0,
+            yc=45.0,
+            rs=priors.logpowerlaw(-1.0, 1e-4, 1e-1),
+            Is=priors.uniform(5.0, 15.0),
+        )
+        return img, fitting.fitter(img=img, mod=models.Model(gaussian))
+
+    def test_model_receives_linear_value(self, setup):
+        """The likelihood evaluates the model at exp(theta)."""
+        img, fit = setup
+        best = fit._log_likelihood(jp.array([np.log(0.005), 10.0]))
+        off = fit._log_likelihood(jp.array([0.005, 10.0]))
+        assert float(best) > float(off)
+        assert float(fit._log_prior(jp.array([np.log(0.005), 10.0]))) > -np.inf
+
+    def test_optimizer_reports_linear_values(self, setup):
+        """Optimizer results and pinits are in linear space."""
+        img, fit = setup
+        fit.run(method="optimizer", pinits=[0.004, 9.0])
+        np.testing.assert_allclose(
+            fit.results.parameters, [0.005, 10.0], rtol=1e-4
+        )
+        _, msmo, _ = fit.getmodel()
+        np.testing.assert_allclose(msmo, img.data, atol=1e-6)
+
+    def test_invalid_pinits(self, setup):
+        """Invalid initial values raise a clear error."""
+        img, fit = setup
+        with pytest.raises(ValueError, match="Unknown pinits"):
+            fit.run(method="optimizer", pinits=None)
+        with pytest.raises(ValueError, match="one value per free parameter"):
+            fit.run(method="optimizer", pinits=[0.004, 9.0, 1.0])
+
+    def test_pinits_outside_log_support(self, setup):
+        """A non-positive start for a log-sampled parameter raises."""
+        img, fit = setup
+        with pytest.raises(ValueError, match="pinits must be finite"):
+            fit.run(method="optimizer", pinits=[-0.001, 9.0])
+
+    def test_pinits_outside_support(self, setup):
+        """A start outside a prior's support raises."""
+        img, fit = setup
+        with pytest.raises(ValueError, match="comp_00_Is=20.0"):
+            fit.run(method="optimizer", pinits=[0.004, 20.0])
+
+    def test_optimizer_leaves_no_samples(self, setup):
+        """After an optimizer run there are no posterior samples."""
+        img, fit = setup
+        fit.run(method="optimizer")
+        assert not hasattr(fit, "samples")
+
+    def test_optimizer_starts_from_linear_pinits(self, setup):
+        """Initial values are given in linear space."""
+        import socca.fitting.methods.optimizer as optimizer_mod
+
+        img, fit = setup
+        minimize = optimizer_mod.scipy.optimize.minimize
+        with patch.object(
+            optimizer_mod.scipy.optimize, "minimize", wraps=minimize
+        ) as spy:
+            fit.run(method="optimizer", pinits=[0.004, 9.0])
+        start = fit._prior_transform(jp.asarray(spy.call_args.kwargs["x0"]))
+        np.testing.assert_allclose(
+            fit._to_model(start), [0.004, 9.0], rtol=1e-10
+        )
+
+    def test_samples_are_reported_in_linear_space(self, setup):
+        """Sampler output in theta is converted to x once."""
+        import socca.fitting.methods.nautilus as nautilus_mod
+
+        img, fit = setup
+        theta = np.array([[np.log(0.005), 10.0]] * 5)
+        with patch.object(
+            nautilus_mod.nautilus, "Sampler", autospec=True
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.posterior.return_value = (theta, np.zeros(5), None)
+            inst.log_z = -1.0
+            fit.run(method="nautilus", n_live=10)
+        np.testing.assert_allclose(fit.samples[:, 0], 0.005)
+        np.testing.assert_allclose(fit.samples[:, 1], 10.0)
+        _, msmo, _ = fit.getmodel()
+        np.testing.assert_allclose(msmo, img.data, atol=1e-6)
+
+
 class TestFitterIntegration:
     """Integration tests for the full fitting workflow (light tests)."""
 
