@@ -1,5 +1,7 @@
 """Tests for socca.models module."""
 
+import warnings
+
 import jax.numpy as jp
 import numpy as np
 import pytest
@@ -887,6 +889,54 @@ class TestDisk:
         assert d1.vertical is not d2.vertical
         d1.radial.re = 0.005
         assert d2.radial.re is None
+
+
+class TestParameterSetters:
+    """Tests for range checks on tied values and unbounded priors."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    @pytest.mark.parametrize(
+        "make, name",
+        [
+            (models.Sersic, "ns"),
+            (models.gNFW, "alpha"),
+            (models.gNFW, "beta"),
+            (models.gNFW, "gamma"),
+        ],
+    )
+    def test_tied_values_accepted(self, make, name):
+        """Lambdas and boundto are stored without range checks."""
+        comp = make()
+        tied = lambda comp_01_rc: 1.0  # noqa: E731
+        setattr(comp, name, tied)
+        assert getattr(comp, name) is tied
+        other = make()
+        setattr(comp, name, priors.boundto(other, name))
+        assert isinstance(getattr(comp, name), priors._BoundTo)
+
+    def test_unbounded_priors(self):
+        """Priors with real support are range-checked as unbounded."""
+        with pytest.warns(UserWarning, match="re prior support"):
+            models.Sersic().re = priors.normal(1e-3, 1e-4)
+        with pytest.warns(UserWarning, match="alpha prior support"):
+            models.gNFW().alpha = priors.normal(1.0, 0.1)
+        with pytest.raises(ValueError, match="ns prior support"):
+            models.Sersic().ns = priors.normal(2.0, 0.3)
+        with pytest.raises(ValueError, match="ellipticity prior support"):
+            models.Sersic().e = priors.normal(0.3, 0.05)
+
+    def test_out_of_range_values(self):
+        """Fixed values outside the valid range are still caught."""
+        with pytest.raises(ValueError, match="ns parameter"):
+            models.Sersic().ns = 12.0
+        with pytest.warns(UserWarning, match="beta parameter is less than 3"):
+            models.gNFW().beta = 2.0
+        with pytest.warns(UserWarning, match="gamma parameter is greater"):
+            models.gNFW().gamma = 1.0
 
 
 class TestEllipsoid:

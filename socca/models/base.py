@@ -11,6 +11,21 @@ from ..priors import _BoundTo
 from socca.units import _NON_CONVERTIBLE, conversion_factor as _cfactor
 
 
+def _support_bounds(prior):
+    """
+    Return a prior's support bounds in model space.
+
+    Bounds are infinite where the support is unbounded.
+    """
+    lo = getattr(prior.support, "lower_bound", -float("inf"))
+    hi = getattr(prior.support, "upper_bound", float("inf"))
+    if hasattr(prior, "model_bounds"):
+        lo, hi = (float(b) for b in prior.model_bounds())
+    elif hasattr(prior, "to_model"):
+        lo, hi = (float(prior.to_model(b)) for b in (lo, hi))
+    return lo, hi
+
+
 def _warn_range(
     value,
     name,
@@ -38,7 +53,7 @@ def _warn_range(
         return
     if isinstance(value, numpyro.distributions.Distribution):
         kind = f"The {name} prior support includes values"
-        vlo, vhi = value.support.lower_bound, value.support.upper_bound
+        vlo, vhi = _support_bounds(value)
     else:
         kind = f"The {name} parameter is"
         vlo = vhi = value

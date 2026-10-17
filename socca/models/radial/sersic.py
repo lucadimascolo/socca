@@ -1,5 +1,6 @@
 """Sersic profile for modeling elliptical galaxies and bulges."""
 
+import types
 import warnings
 
 import jax
@@ -10,7 +11,8 @@ import numpy as np
 from scipy.special import gammaincinv
 
 from .. import config
-from ..base import _warn_range
+from ..base import _support_bounds, _warn_range
+from ...priors import _BoundTo
 from .base import Profile
 
 
@@ -73,12 +75,15 @@ class Sersic(Profile):
 
     @ns.setter
     def ns(self, value):  # noqa: D102
+        if value is None or isinstance(
+            value, (types.LambdaType, types.FunctionType, _BoundTo)
+        ):
+            self._ns = value
+            return
         wstring = None
         if isinstance(value, numpyro.distributions.Distribution):
-            if (
-                value.support.upper_bound > 10.00
-                or value.support.lower_bound < 0.25
-            ):
+            lo, hi = _support_bounds(value)
+            if hi > 10.00 or lo < 0.25:
                 wstring = "The ns prior support includes values"
         elif value < 0.25 or value > 10.00:
             wstring = "The ns parameter falls"

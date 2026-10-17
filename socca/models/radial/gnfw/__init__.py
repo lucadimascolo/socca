@@ -219,17 +219,13 @@ class gNFW(Profile):
 
     @alpha.setter
     def alpha(self, value):  # noqa: D102
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.lower_bound <= 0:
-                wstring = "The alpha prior support includes values"
-        elif value <= 0:
-            wstring = "The alpha parameter is"
-        if wstring is not None:
-            warnings.warn(
-                f"{wstring} less than or equal to 0. "
-                "This might lead to unphysical models."
-            )
+        _warn_range(
+            value,
+            "alpha",
+            lower=0,
+            lower_strict=True,
+            note="This might lead to unphysical models.",
+        )
         self._alpha = value
 
     @property
@@ -238,17 +234,12 @@ class gNFW(Profile):
 
     @beta.setter
     def beta(self, value):  # noqa: D102
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.lower_bound < 3:
-                wstring = "The beta prior support includes values"
-        elif value < 3:
-            wstring = "The beta parameter is"
-        if wstring is not None:
-            warnings.warn(
-                f"{wstring} less than or equal to 3. "
-                "This might lead to unphysical models."
-            )
+        _warn_range(
+            value,
+            "beta",
+            lower=3,
+            note="This might lead to unphysical models.",
+        )
         self._beta = value
 
     @property
@@ -257,17 +248,13 @@ class gNFW(Profile):
 
     @gamma.setter
     def gamma(self, value):  # noqa: D102
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.upper_bound >= 1:
-                wstring = "The gamma prior support includes values"
-        elif value >= 1:
-            wstring = "The gamma parameter is"
-        if wstring is not None:
-            warnings.warn(
-                f"{wstring} greater than or equal to 1. "
-                "This might lead to unphysical models."
-            )
+        _warn_range(
+            value,
+            "gamma",
+            upper=1,
+            upper_strict=True,
+            note="This might lead to unphysical models.",
+        )
         self._gamma = value
 
     @staticmethod

@@ -12,7 +12,7 @@ import numpyro.distributions
 
 from .. import config
 from ..base import Component
-from ..base import _warn_span
+from ..base import _support_bounds, _warn_span
 from ...priors import _BoundTo
 from ...utils import _local_frame
 from .truncation import Truncation, HyperTangent
@@ -161,7 +161,7 @@ class Profile(Component):
         wsuffix = "Ellipticity must be in the range [0, 1)."
         wstring = None
         if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.upper_bound > 1:
+            if _support_bounds(value)[1] > 1:
                 wstring = "The ellipticity prior support includes values"
         elif value >= 1:
             wstring = "The ellipticity parameter is"
@@ -169,7 +169,7 @@ class Profile(Component):
             raise ValueError(f"{wstring} greater than 1. {wsuffix}")
 
         if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.lower_bound < 0:
+            if _support_bounds(value)[0] < 0:
                 wstring = "The ellipticity prior support includes values"
         elif value < 0:
             wstring = "The ellipticity parameter is"
