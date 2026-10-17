@@ -143,7 +143,7 @@ The key argument for this method is `pinits`, which controls the starting point 
 
 As for the other sampling methods, additional keyword arguments accepted by `scipy.optimize.minimize` (such as `tol`, `options`, etc.) can be passed directly to the `run()` method and will be forwarded to the optimizer.
 
-The optimization results are stored in `fit.results`, which is a `scipy.optimize.OptimizeResult` object providing access to the optimal parameters (`fit.results.x`), the final log-likelihood value (`-fit.results.fun`), and convergence information (`fit.results.success`, `fit.results.message`).
+The optimization results are stored in `fit.results`, which is a `scipy.optimize.OptimizeResult` object providing access to the optimal parameters (`fit.results.parameters`; `fit.results.x` holds them in the unit hypercube the optimizer works in), the final log-likelihood value (`-fit.results.fun`), and convergence information (`fit.results.success`, `fit.results.message`).
 
 ## Accessing and saving the best-fit model
 
@@ -200,7 +200,7 @@ The `component` argument allows generating the model from specific model compone
 
 When `usebest=True` (default), the model is computed using the weighted median of the posterior samples for each parameter. When `usebest=False`, the method instead computes the model for each posterior sample individually and returns the median of the resulting model realizations. The latter approach can be useful for capturing non-linear effects in the model, but is significantly slower.
 
-For the optimizer method, `getmodel()` uses the optimal parameters found during optimization (`fit.results.x`), regardless of the `usebest` setting.
+For the optimizer method, `getmodel()` uses the optimal parameters found during optimization (`fit.results.parameters`), regardless of the `usebest` setting.
 
 You can also save the best-fit model directly to a FITS file with preserved WCS information. For instance, to save the raw model:
 

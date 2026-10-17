@@ -8,7 +8,9 @@ Before running the model inference, it is necessary to assign prior probabilitie
 - `uniform(low, high)`: uniform probability distribution over the range `[low, high]`
 - `loguniform(low, high)`: log-uniform probability distribution over the range `[low, high]`
 - `normal(loc, scale)`: normal probability distribution with mean `loc` and standard deviation `scale`
-- `splitnormal(loc, losig, hisig)`: split-normal probability distribution with mean `loc` and lower and upper standard deviations `losig` and `hisig`, respectively  
+- `splitnormal(loc, losig, hisig)`: split-normal probability distribution with mode `loc` and lower and upper standard deviations `losig` and `hisig`, respectively
+- `powerlaw(alpha, low, high)`: power-law probability distribution, $p(x) \propto x^\alpha$, over the range `[low, high]`
+- `logpowerlaw(alpha, low, high)`: the same power law in $x$, but sampled in $\log x$; fit results are still reported in $x$  
 
 For instance, we can set a uniform prior over the range `[low, high]` as:
 
@@ -18,7 +20,7 @@ For instance, we can set a uniform prior over the range `[low, high]` as:
 >>> comp.p = uniform(low=low, high=high)
 ```
 
-All the probability functions listed above are simple wrappers around `numpyro` distributions, and it is therefore possible to use them directly when defining model priors. The example above would translate to:
+Except for `powerlaw` and `logpowerlaw`, which are implemented in **``socca``**, all the probability functions listed above are simple wrappers around `numpyro` distributions, and it is therefore possible to use them directly when defining model priors. The example above would translate to:
 
 ```python
 >>> import numpyro.distributions as dist
@@ -68,7 +70,7 @@ As an example, consider two {ref}`Sérsic components <sersic>`, with the effecti
 >>> # ... define priors for comp1 parameters ...
 >>> comp1.addparameter('re_scale')
 >>> comp1.re_scale = uniform(low=0.00, high=1.00)
->>> comp1.re = lambda comp_01_re_scale, comp_02_re: comp_01_re_scale * comp_02_re
+>>> comp1.re = lambda comp_00_re_scale, comp_01_re: comp_00_re_scale * comp_01_re
 >>>
 >>> # ... define priors for comp2 parameters ...
 >>> comp2.re = loguniform(low=1.00E-08, high=1.00E-02)
@@ -80,10 +82,10 @@ Next, we define how `comp1.re` and `comp2.re` are related via a `lambda` functio
 
 ```python
 >>> print(comp1.id, comp2.id)
-comp_01, comp_02
+comp_00 comp_01
 ```
 
-The second part of each argument corresponds to the specific parameter used in the expression. Component IDs are assigned automatically by **``socca``** upon component creation, following an incremental numbering scheme.
+The second part of each argument corresponds to the specific parameter used in the expression. Component IDs are assigned automatically by **``socca``** upon component creation, following an incremental numbering scheme (here, starting from a fresh session). They do not depend on the order in which components are added to a model, and can differ from the `comp_XX` prefixes of the model parameter names, for instance when other components were created earlier in the session.
 
 ## Positive constraints
 In some cases, it may be useful to enforce positivity constraints on the surface brightness of a given model component throughout the image domain. This is particularly relevant in cases like the {ref}`PolyExponential <polyexponential>` or {ref}`PolyExpoRefact <polyexporefact>` models, where the polynomial terms can lead to negative surface brightness values. Such constraints can be implemented by setting the `positive` attribute of the model component to `True`, e.g.,:
