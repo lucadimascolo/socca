@@ -161,7 +161,6 @@ class Ellipsoid(Component):
                 self.hyper.append(param)
 
         if self.radial.id != self.id:
-            type(self).idcls -= 1
             idmin = np.minimum(
                 int(self.radial.id.replace("comp_", "")),
                 int(self.id.replace("comp_", "")),
@@ -330,19 +329,7 @@ class Ellipsoid(Component):
         for key in inspect.signature(self.radial.profile).parameters.keys():
             if key == "r":
                 continue  # skip r
-            val = getattr(self.radial, key)
-            if isinstance(val, _BoundTo):
-                val = val.resolve()
-            elif callable(val):
-                sig = inspect.signature(val)
-                params = list(sig.parameters.keys())
-                if params:
-                    args = [
-                        getattr(self, p.replace(f"{self.id}_", ""))
-                        for p in params
-                    ]
-                    val = val(*args)
-            kwarg[key] = val
+            kwarg[key] = self._resolve(getattr(self.radial, key))
 
         # Ellipsoid's own position, orientation, and 3D geometry
         for key in [
@@ -356,19 +343,7 @@ class Ellipsoid(Component):
             "losdepth",
             "losbins",
         ]:
-            val = getattr(self, key)
-            if isinstance(val, _BoundTo):
-                val = val.resolve()
-            elif callable(val):
-                sig = inspect.signature(val)
-                params = list(sig.parameters.keys())
-                if params:
-                    args = [
-                        getattr(self, p.replace(f"{self.id}_", ""))
-                        for p in params
-                    ]
-                    val = val(*args)
-            kwarg[key] = val
+            kwarg[key] = self._resolve(getattr(self, key))
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):

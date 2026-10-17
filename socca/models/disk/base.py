@@ -112,7 +112,6 @@ class Disk(Component):
         self._namespaces = {"radial": self.radial, "vertical": self.vertical}
 
         if self.radial.id != self.id:
-            type(self).idcls -= 1
             idmin = np.minimum(
                 int(self.radial.id.replace("comp_", "")),
                 int(self.id.replace("comp_", "")),
@@ -251,20 +250,7 @@ class Disk(Component):
                 else:
                     continue
 
-                # Evaluate tied parameters
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [
-                            getattr(self, p.replace(f"{self.id}_", ""))
-                            for p in params
-                        ]
-                        val = val(*args)
-
-                kwarg[key] = val
+                kwarg[key] = self._resolve(val)
 
         # Add geometric parameters
         kwarg["xc"] = self.radial.xc
@@ -275,8 +261,7 @@ class Disk(Component):
         kwarg["losbins"] = self.vertical.losbins
 
         for key in ["xc", "yc", "theta", "inc", "losdepth", "losbins"]:
-            if isinstance(kwarg[key], _BoundTo):
-                kwarg[key] = kwarg[key].resolve()
+            kwarg[key] = self._resolve(kwarg[key])
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):

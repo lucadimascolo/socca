@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import inspect
+import re
 import types
 import warnings
 
@@ -18,6 +19,7 @@ from .misc import Point, Background
 from .disk import Disk
 from .ellipsoid import Ellipsoid
 from .bridge import SimpleBridge, MesaBridge
+from .bridge.base import Bridge
 from .radial import (
     Profile,
     CustomProfile,
@@ -280,6 +282,14 @@ class Model:
         >>> print(model.ncomp)
         2
         """
+        if prof.id in self._index:
+            warnings.warn(
+                f"Component id {prof.id} is already in the model; tie "
+                f"arguments naming {prof.id} from other components refer "
+                "to the first one.",
+                stacklevel=2,
+            )
+
         self.type.append(prof.__class__.__name__)
         self.positive.append(prof.positive if positive is None else positive)
         for p in prof.parlist():
@@ -466,33 +476,16 @@ class Model:
         >>> # Get PSF-convolved model
         >>> convolved_map = model.getmap(img, convolve=True)
         """
-        pars = {}
-        for ki, key in enumerate(self.params):
-            if isinstance(self.priors[key], (float, int)):
-                pars[key] = self.priors[key]
-            elif isinstance(
+        for key in self.params:
+            if isinstance(
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 raise ValueError(
                     f"Parameter {key} is a distribution. "
-                    f"Use getmap() with sampled values instead."
+                    f"Use getmodel() with sampled values instead."
                 )
 
-        for ki, key in enumerate(self.params):
-            if self.tied[ki]:
-                if isinstance(self.priors[key], _BoundTo):
-                    pars[key] = pars[self.priors[key].key]
-                else:
-                    kwarg = list(
-                        inspect.signature(self.priors[key]).parameters.keys()
-                    )
-                    kwarg = {k: pars[k] for k in kwarg}
-                    pars[key] = self.priors[key](**kwarg)
-                    del kwarg
-
-        mraw, msmo, mbkg, _ = self.getmodel(
-            img, pars, doresp=False, doexp=False
-        )
+        mraw, msmo, mbkg, _ = self.getmodel(img, [], doresp=False, doexp=False)
 
         if not addbackground:
             msmo = msmo - mbkg
@@ -549,6 +542,8 @@ class Model:
         elif isinstance(component, str):
             component = component.replace("comp", "").replace("_", "")
             component = [int(component)]
+        elif hasattr(component, "id"):
+            component = [self._comp_index(component)]
         elif isinstance(component, (list, tuple)):
             component_ = []
             for c in component:
@@ -558,12 +553,132 @@ class Model:
                     c_ = c.replace("comp", "").replace("_", "")
                     component_.append(int(c_))
                 elif hasattr(c, "id"):
-                    c_ = c.id.replace("comp", "").replace("_", "")
-                    component_.append(int(c_))
-                    del c_
+                    component_.append(self._comp_index(c))
             component = component_
             del component_
         return component
+
+    @property
+    def _index(self):
+        """Model index of each component id (the first one, if repeated)."""
+        index = {}
+        for nc, comp in enumerate(self.components):
+            index.setdefault(comp.id, nc)
+        return index
+
+    def _comp_index(self, comp):
+        """Model index of a component object."""
+        for nc, c in enumerate(self.components):
+            if c is comp:
+                return nc
+        if comp.id in self._index:
+            return self._index[comp.id]
+        raise ValueError(f"Component {comp.id} is not in the model.")
+
+    def _tiewarn(self, message):
+        """Warn once per model, however often ties are resolved."""
+        warned = self.__dict__.setdefault("_tiewarned", set())
+        if message not in warned:
+            warned.add(message)
+            warnings.warn(message)
+
+    def _tiekey(self, name, owner=None):
+        """
+        Model key for a parameter name used in a tie.
+
+        Ties name parameters by component id (``Component.id``), which can
+        differ from the model index used in the model keys, e.g. when
+        components are added in a different order than they were created.
+        The id of `owner`, the model index of the component holding the
+        tie, always refers to that component.
+        """
+        match = re.match(r"(comp_\d+)_(.+)$", name)
+        if match is None:
+            return name
+        index = self._index
+        if owner is not None and match.group(1) == self.components[owner].id:
+            index = {**index, match.group(1): owner}
+        modelkeys = {p.replace(".", "_") for p in self.params}
+        cid = match.group(1)
+        if cid not in index:
+            if name in modelkeys:
+                self._tiewarn(
+                    f"Tie arguments naming {cid} name no component id in "
+                    f"the model, so they are read as model keys ({cid}_*). "
+                    "Ties name components by id (see Component.id)."
+                )
+            return name
+        comp = f"comp_{index[match.group(1)]:02d}"
+        key = f"{comp}_{match.group(2)}"
+        if key != name and name in modelkeys:
+            self._tiewarn(
+                f"Tie arguments naming {cid} refer to the component with id "
+                f"{cid}, which is {comp} in the model, not to the model "
+                f"keys {cid}_*. Ties name components by id (see "
+                "Component.id)."
+            )
+        return key
+
+    def _boundkey(self, prior, key=None):
+        """Model key of the parameter a boundto value refers to."""
+        key = prior.key if key is None else key
+        cid = prior._comp.id
+        for nc, comp in enumerate(self.components):
+            if comp is prior._comp:
+                return f"comp_{nc:02d}_{prior._attr}"
+        if cid not in self._index:
+            raise ValueError(
+                f"{key} is bound to {prior.key}, but component "
+                f"{cid} is not in the model."
+            )
+        self._tiewarn(
+            f"{key} is bound to a component that is not in the model; "
+            f"using comp_{self._index[cid]:02d}, which has the same id {cid}."
+        )
+        return f"comp_{self._index[cid]:02d}_{prior._attr}"
+
+    def _tieargs(self, key):
+        """Argument names of a tie and the model keys they refer to."""
+        prior = self.priors[key]
+        if isinstance(prior, _BoundTo):
+            return {None: self._boundkey(prior, key)}
+        owner = int(re.match(r"comp_(\d+)_", key).group(1))
+        alias = {p.replace(".", "_"): p for p in self.params}
+        args = {}
+        for name in inspect.signature(prior).parameters:
+            arg = self._tiekey(name, owner)
+            if arg not in self.priors and arg not in alias:
+                raise KeyError(
+                    f"Tie argument {name} of {key} matches no parameter "
+                    "of the model. Ties name components by id (see "
+                    "Component.id)."
+                )
+            args[name] = arg if arg in self.priors else alias[arg]
+        return args
+
+    def _resolve_ties(self, pars):
+        """Evaluate tied parameters in `pars`, after the ones they use."""
+        pending = {
+            key: self._tieargs(key)
+            for ki, key in enumerate(self.params)
+            if self.tied[ki]
+        }
+        while pending:
+            ready = [
+                key
+                for key, args in pending.items()
+                if not any(arg in pending for arg in args.values())
+            ]
+            if not ready:
+                raise ValueError(f"Circular ties among {', '.join(pending)}.")
+            for key in ready:
+                args = pending.pop(key)
+                if None in args:
+                    pars[key] = self.priors[key](pars[args[None]])
+                else:
+                    pars[key] = self.priors[key](
+                        **{name: pars[arg] for name, arg in args.items()}
+                    )
 
     # Get the model map
     # --------------------------------------------------------
@@ -648,17 +763,7 @@ class Model:
             if key in pars:
                 pars[key] = pars[key] * factor
 
-        for ki, key in enumerate(self.params):
-            if self.tied[ki]:
-                if isinstance(self.priors[key], _BoundTo):
-                    pars[key] = pars[self.priors[key].key]
-                else:
-                    kwarg = list(
-                        inspect.signature(self.priors[key]).parameters.keys()
-                    )
-                    kwarg = {k: pars[k] for k in kwarg}
-                    pars[key] = self.priors[key](**kwarg)
-                    del kwarg
+        self._resolve_ties(pars)
 
         mbkg = jp.zeros(img.data.shape)
         mraw = jp.zeros(img.data.shape)
@@ -669,8 +774,14 @@ class Model:
         comp_ = self._comp_filter(component)
 
         for nc in comp_:
-            kwarg = self.components[nc]._build_kwargs(pars, f"comp_{nc:02d}")
-            mone = self.components[nc]._evaluate(img, **kwarg)
+            comp = self.components[nc]
+            if isinstance(comp, Bridge):
+                kwarg = comp._build_kwargs(
+                    pars, f"comp_{nc:02d}", self._tiekey, self._boundkey
+                )
+            else:
+                kwarg = comp._build_kwargs(pars, f"comp_{nc:02d}")
+            mone = comp._evaluate(img, **kwarg)
 
             if self.positive[nc] and self.type[nc] != "Point":
                 mneg = jp.where(mone < 0.00, 1.00, mneg)

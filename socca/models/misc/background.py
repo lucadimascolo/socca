@@ -312,7 +312,7 @@ class Background(Component):
             )
 
         klist = list(self.units.keys())
-        kwarg = {key: getattr(self, key) for key in klist}
+        kwarg = {key: self._resolve(getattr(self, key)) for key in klist}
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):

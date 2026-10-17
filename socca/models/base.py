@@ -1,5 +1,7 @@
 """Base component class for model profiles."""
 
+import inspect
+import threading
 import types
 import warnings
 
@@ -9,6 +11,9 @@ import numpyro.distributions
 from . import config
 from ..priors import _BoundTo
 from socca.units import _NON_CONVERTIBLE, conversion_factor as _cfactor
+
+
+_RESOLVING = threading.local()
 
 
 def _support_bounds(prior):
@@ -276,6 +281,45 @@ class Component:
 
         else:
             print("No parameters defined.")
+
+    def _getpar(self, name):
+        """
+        Return a parameter by tied-lambda argument name.
+
+        The component prefix is stripped, names such as ``radial_rs``
+        resolve to the namespaced parameter ``radial.rs``, and tied values
+        are evaluated.
+        """
+        name = name.removeprefix(f"{self.id}_")
+        for ns in ("radial", "vertical", "parallel"):
+            sub = getattr(self, ns, None)
+            if isinstance(sub, Component) and name.startswith(f"{ns}_"):
+                value = getattr(sub, name[len(ns) + 1 :])
+                break
+        else:
+            value = getattr(self, name)
+        if isinstance(value, numpyro.distributions.Distribution):
+            raise ValueError("Priors must be fixed values, not distributions.")
+        resolving = _RESOLVING.__dict__.setdefault("keys", set())
+        key = (id(self), name)
+        if key in resolving:
+            raise ValueError(
+                f"Circular ties among the parameters of {self.id}."
+            )
+        resolving.add(key)
+        try:
+            return self._resolve(value)
+        finally:
+            resolving.discard(key)
+
+    def _resolve(self, value):
+        """Evaluate a tied value outside a Model, from this component."""
+        if isinstance(value, _BoundTo):
+            return value.resolve()
+        if isinstance(value, (types.LambdaType, types.FunctionType)):
+            names = inspect.signature(value).parameters
+            return value(**{p: self._getpar(p) for p in names})
+        return value
 
     def parlist(self):
         """

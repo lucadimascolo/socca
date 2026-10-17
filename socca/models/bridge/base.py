@@ -165,7 +165,6 @@ class Bridge(Component):
             self.parallel.units.pop(pname, None)
 
         if self.radial.id != self.id:
-            type(self).idcls -= 1
             idmin = np.minimum(
                 int(self.radial.id.replace("comp_", "")),
                 int(self.id.replace("comp_", "")),
@@ -330,19 +329,7 @@ class Bridge(Component):
                 else:
                     continue
 
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [
-                            getattr(self, p.replace(f"{self.id}_", ""))
-                            for p in params
-                        ]
-                        val = val(*args)
-
-                kwarg[key] = val
+                kwarg[key] = self._resolve(val)
 
         kwarg["xc"] = self.xc
         kwarg["yc"] = self.yc
@@ -350,8 +337,7 @@ class Bridge(Component):
         kwarg["theta"] = self.theta
 
         for key in ["xc", "yc", "Is", "theta"]:
-            if isinstance(kwarg[key], _BoundTo):
-                kwarg[key] = kwarg[key].resolve()
+            kwarg[key] = self._resolve(kwarg[key])
 
         for key in kwarg.keys():
             if isinstance(kwarg[key], numpyro.distributions.Distribution):
@@ -415,7 +401,7 @@ class Bridge(Component):
 
         return rgrid, zgrid
 
-    def _build_kwargs(self, pars, comp_prefix):
+    def _build_kwargs(self, pars, comp_prefix, tiekey=None, boundkey=None):
         """
         Build keyword arguments for _evaluate from the full parameters dict.
 
@@ -425,6 +411,13 @@ class Bridge(Component):
             Full parameters dictionary with prefixed keys.
         comp_prefix : str
             Component prefix (e.g., 'comp_00').
+        tiekey : callable, optional
+            Maps a tied-lambda argument name of another component to its
+            key in `pars`. Names with this component's id always map to
+            `comp_prefix`.
+        boundkey : callable, optional
+            Maps a boundto value to the key of the bound parameter in
+            `pars`. Without it, the bound component is read directly.
 
         Returns
         -------
@@ -432,6 +425,15 @@ class Bridge(Component):
             Keyword arguments for _evaluate including geometric and profile
             parameters with r_ and z_ prefixes.
         """
+        alias = {k.replace(".", "_"): k for k in pars}
+
+        def parkey(name):
+            if name.startswith(f"{self.id}_"):
+                name = f"{comp_prefix}_{name[len(self.id) + 1 :]}"
+            elif tiekey is not None:
+                name = tiekey(name)
+            return name if name in pars else alias.get(name, name)
+
         kwarg = {}
         for key in self._rkw:
             attr_name = key.replace("r_", "")
@@ -441,13 +443,17 @@ class Bridge(Component):
             else:
                 val = getattr(self.radial, attr_name)
                 if isinstance(val, _BoundTo):
-                    val = val.resolve()
+                    val = (
+                        pars[boundkey(val, pars_key)]
+                        if boundkey is not None
+                        and boundkey(val, pars_key) in pars
+                        else val.resolve()
+                    )
                 elif callable(val):
                     sig = inspect.signature(val)
                     params = list(sig.parameters.keys())
                     if params:
-                        args = [pars[p] for p in params]
-                        val = val(*args)
+                        val = val(**{p: pars[parkey(p)] for p in params})
                 kwarg[key] = val
 
         for key in self._zkw:
@@ -458,13 +464,17 @@ class Bridge(Component):
             else:
                 val = getattr(self.parallel, attr_name)
                 if isinstance(val, _BoundTo):
-                    val = val.resolve()
+                    val = (
+                        pars[boundkey(val, pars_key)]
+                        if boundkey is not None
+                        and boundkey(val, pars_key) in pars
+                        else val.resolve()
+                    )
                 elif callable(val):
                     sig = inspect.signature(val)
                     params = list(sig.parameters.keys())
                     if params:
-                        args = [pars[p] for p in params]
-                        val = val(*args)
+                        val = val(**{p: pars[parkey(p)] for p in params})
                 kwarg[key] = val
 
         kwarg["xc"] = pars[f"{comp_prefix}_xc"]
