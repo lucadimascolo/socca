@@ -946,6 +946,89 @@ class TestParameterSetters:
             models.gNFW().gamma = 1.0
 
 
+class TestRefactor:
+    """Tests for Profile.refactor."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    def test_base_refactor_keeps_parameters(self, simple_hdu):
+        """The base refactor returns an identical copy."""
+        img = data.Image(simple_hdu)
+        prof = models.Beta(
+            xc=180.0, yc=45.0, theta=0.3, e=0.4, rc=0.01, Ic=2.0, beta=0.8
+        )
+        prof.truncation = True
+        prof.rt = 0.02
+        with pytest.warns(UserWarning, match="Nothing to refactor"):
+            new = prof.refactor()
+        assert new.id == prof.id and new is not prof
+        np.testing.assert_array_equal(new.getmap(img), prof.getmap(img))
+        new.rc = 0.02
+        assert prof.rc == 0.01
+
+    def test_base_refactor_keeps_bound_parameters(self, simple_hdu):
+        """A refactored copy stays bound to the original host."""
+        img = data.Image(simple_hdu)
+        host = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.8)
+        prof = models.Beta(rc=0.01, Ic=1.0, beta=0.8)
+        prof.xc = priors.boundto(host, "xc")
+        prof.yc = priors.boundto(host, "yc")
+        with pytest.warns(UserWarning, match="Nothing to refactor"):
+            new = prof.refactor()
+        prof.cbox = priors.boundto(prof, "e")
+        with pytest.warns(UserWarning, match="Nothing to refactor"):
+            self_bound = prof.refactor()
+        assert self_bound is not prof and self_bound.cbox._comp is self_bound
+        host.xc = 180.01
+        assert new.xc._comp is host
+        np.testing.assert_array_equal(new.getmap(img), prof.getmap(img))
+
+    def test_polyexporefact_keeps_units_and_positivity(self, simple_hdu):
+        """Input units and the positivity flag are carried over."""
+        img = data.Image(simple_hdu)
+        kw = dict(Is=2.0, rs=36.0, rc=36.0, I1=0.5, I2=0.1, I3=0.0, I4=0.0)
+        prof = models.PolyExpoRefact(xc=180.0, yc=45.0, positive=True, **kw)
+        prof.set_units(rs="arcsec", rc="arcsec")
+        new = prof.refactor()
+        assert new.positive
+        np.testing.assert_allclose(
+            models.Model(new).getmap(img),
+            models.Model(prof).getmap(img),
+            rtol=1e-12,
+            atol=1e-14,
+        )
+
+    def test_polyexporefact_keeps_cbox_and_truncation(self, simple_hdu):
+        """PolyExpoRefact.refactor carries over cbox and the truncation."""
+        img = data.Image(simple_hdu)
+        prof = models.PolyExpoRefact(
+            xc=180.0,
+            yc=45.0,
+            theta=0.3,
+            e=0.4,
+            cbox=0.3,
+            Is=2.0,
+            rs=0.01,
+            rc=0.01,
+            I1=0.5,
+            I2=0.1,
+            I3=0.0,
+            I4=0.0,
+            truncation=True,
+        )
+        prof.rt, prof.wt = 0.02, 0.002
+        new = prof.refactor()
+        assert isinstance(new, models.PolyExponential)
+        assert new.id == prof.id
+        assert models.Sersic().id == "comp_01"
+        np.testing.assert_allclose(
+            new.getmap(img), prof.getmap(img), rtol=1e-12, atol=1e-14
+        )
+
+
 class TestEllipsoid:
     """Tests for Ellipsoid model."""
 

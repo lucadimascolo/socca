@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jp
 
 from .. import config
-from ..base import _warn_range
+from ..base import Component, _warn_range
 from .base import Profile
 
 
@@ -334,7 +334,8 @@ class PolyExpoRefact(Exponential):
         Returns
         -------
         PolyExponential
-            Equivalent profile with dimensionless coefficients ci = Ii / Is.
+            Equivalent profile with dimensionless coefficients ci = Ii / Is,
+            with the same component ID.
 
         Notes
         -----
@@ -350,12 +351,22 @@ class PolyExpoRefact(Exponential):
         """
         kwargs = {
             key: getattr(self, key)
-            for key in ["xc", "yc", "theta", "e", "Is", "rs", "rc"]
+            for key in ["xc", "yc", "theta", "e", "cbox", "Is", "rs", "rc"]
         }
         for ci in range(1, 5):
             kwargs.update({f"c{ci}": getattr(self, f"I{ci}") / kwargs["Is"]})
 
-        return PolyExponential(**kwargs)
+        prof = PolyExponential(
+            truncation=self.truncation, positive=self.positive, **kwargs
+        )
+        Component.idcls -= 1
+        prof.id = self.id
+        if self.truncation is not None:
+            prof.rt, prof.wt = self.rt, self.wt
+        prof._input_units = {
+            k: v for k, v in self._input_units.items() if k in prof.units
+        }
+        return prof
 
 
 # Modified Exponential

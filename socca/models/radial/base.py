@@ -1,6 +1,7 @@
 """Base class for 2D radial surface brightness profiles."""
 
 from abc import abstractmethod
+import copy
 from functools import partial
 import inspect
 import types
@@ -443,7 +444,12 @@ class Profile(Component):
         >>> beta_refactored = beta.refactor()
         """
         warnings.warn("Nothing to refactor here.")
-        return self.__class__(**self.__dict__)
+        memo = {
+            id(v._comp): v._comp
+            for v in vars(self).values()
+            if isinstance(v, _BoundTo) and v._comp is not self
+        }
+        return copy.deepcopy(self, memo)
 
 
 class CustomProfile(Profile):
