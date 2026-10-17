@@ -419,7 +419,7 @@ class TestPeriodicAutoDetection:
         np.testing.assert_allclose(qvals[other_idx], expected_other)
 
     def test_nautilus_auto_injects_periodic(self, periodic_fitter):
-        """A full-period theta prior gets forwarded as periodic=[...] to nautilus.Sampler, without warning again at run() time (the warning already fired when theta's prior was set)."""
+        """A full-period theta prior gets forwarded as periodic=[...] to nautilus.Sampler, without warning again at run() time (the warning already fired when the component was added to the model)."""
         import socca.fitting.methods.nautilus as nautilus_mod
 
         theta_idx = periodic_fitter.labels.index("comp_00_theta")
@@ -442,6 +442,28 @@ class TestPeriodicAutoDetection:
 
         assert not any("periodic" in m.lower() for m in msgs)
         assert mock_cls.call_args.kwargs["periodic"] == [theta_idx]
+
+    def test_unbounded_prior_not_periodic(self, simple_hdu):
+        """A theta prior with unbounded support is not made periodic."""
+        import socca.fitting.methods.nautilus as nautilus_mod
+
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        gaussian = models.Gaussian(
+            xc=simple_hdu.header["CRVAL1"],
+            yc=simple_hdu.header["CRVAL2"],
+            rs=0.005,
+            Is=priors.uniform(5.0, 15.0),
+            theta=priors.normal(0.5, 0.1),
+        )
+        fit = fitting.fitter(img=img, mod=models.Model(gaussian))
+        with patch.object(
+            nautilus_mod.nautilus, "Sampler", autospec=True
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.posterior.return_value = (np.zeros((5, 2)), np.zeros(5), None)
+            inst.log_z = -1.0
+            fit.run(method="nautilus", n_live=10)
+        assert "periodic" not in mock_cls.call_args.kwargs
 
     def test_explicit_periodic_overrides_auto_detection(self, periodic_fitter):
         """Passing periodic= explicitly suppresses auto-detection and is forwarded as-is."""
@@ -559,6 +581,12 @@ class TestLogSampledPriors:
         )
         _, msmo, _ = fit.getmodel()
         np.testing.assert_allclose(msmo, img.data, atol=1e-6)
+
+    def test_periodic_rejected(self, setup):
+        """A log-sampled parameter cannot be passed as periodic."""
+        img, fit = setup
+        with pytest.raises(ValueError, match="cannot be periodic"):
+            fit.run(method="nautilus", periodic=["comp_00_rs"])
 
     def test_invalid_pinits(self, setup):
         """Invalid initial values raise a clear error."""

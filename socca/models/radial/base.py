@@ -13,7 +13,7 @@ import numpyro.distributions
 
 from .. import config
 from ..base import Component
-from ..base import _support_bounds, _warn_span
+from ..base import _support_bounds
 from ...priors import _BoundTo
 from ...utils import _local_frame
 from .truncation import Truncation, HyperTangent
@@ -137,14 +137,6 @@ class Profile(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Profiles with e > 0 are symmetric under theta -> theta + pi, "
-            "so a wider prior range can make the posterior multimodal and "
-            "harder to sample.",
-        )
         self._theta = value
 
     @property

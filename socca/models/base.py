@@ -31,6 +31,13 @@ def _support_bounds(prior):
     return lo, hi
 
 
+def _spans(extent, period, strict=False):
+    """Whether `extent` reaches (or, if strict, exceeds) `period`."""
+    if strict:
+        return extent > period * (1.0 + 1e-9)
+    return extent >= period * (1.0 - 1e-9)
+
+
 def _warn_range(
     value,
     name,
@@ -82,7 +89,7 @@ def _warn_range(
             )
 
 
-def _warn_span(value, name, span, note=""):
+def _warn_span(value, name, span, unit="rad", note=""):
     """
     Warn about a prior distribution whose support is span or wider.
 
@@ -94,28 +101,34 @@ def _warn_span(value, name, span, note=""):
     the normal way to mark a periodic parameter's full range -- also
     triggers a second, separate warning explaining that it will
     automatically be sampled as periodic (see `Component.periodic`
-    and `fitter.run`'s `periodic` argument).
+    and `fitter.run`'s `periodic` argument). Priors with unbounded
+    support are not checked. `span` is in `unit`, the unit of the prior.
     """
+    if unit == "rad":
+        period = f"{np.degrees(span):.0f} deg"
+    else:
+        period = f"{span:.6g} {unit}"
     if isinstance(value, numpyro.distributions.Distribution):
-        extent = value.support.upper_bound - value.support.lower_bound
-        if extent > span:
+        lo, hi = _support_bounds(value)
+        extent = hi - lo
+        if not np.isfinite(extent):
+            return
+        if _spans(extent, span, strict=True):
             warnings.warn(
-                f"The {name} prior support spans more than "
-                f"{np.degrees(span):.0f} deg. {note}",
+                f"The {name} prior support spans more than {period}. {note}",
                 UserWarning,
-                stacklevel=3,
+                stacklevel=4,
             )
-        if extent >= span:
+        if _spans(extent, span):
             warnings.warn(
-                f"The {name} prior spans a full "
-                f"{np.degrees(span):.0f}-degree period, so it will "
+                f"The {name} prior spans a full period ({period}), so it will "
                 "automatically be treated as periodic if sampled with "
                 "the nautilus, dynesty, or pocomc backends. Pass "
                 "periodic=[...] to run() with this parameter's name to "
                 "choose a different set, or periodic=[] to disable "
                 "this entirely.",
                 UserWarning,
-                stacklevel=3,
+                stacklevel=4,
             )
 
 
@@ -142,9 +155,10 @@ class Component:
     description : dict
         Mapping from parameter names to their descriptions.
     periodic : dict
-        Mapping from parameter names to their period, for parameters that
-        are periodic (e.g. an elliptical profile's ``theta``, symmetric
-        under ``theta -> theta + pi``). Absent keys are not periodic.
+        Mapping from parameter names to their period in internal units,
+        for parameters that are periodic (e.g. an elliptical profile's
+        ``theta``, symmetric under ``theta -> theta + pi``). Absent keys
+        are not periodic.
     """
 
     idcls = 0
@@ -311,6 +325,21 @@ class Component:
             return self._resolve(value)
         finally:
             resolving.discard(key)
+
+    def _input_unit(self, name):
+        """
+        Input unit declared for a parameter, or None.
+
+        For a namespaced parameter (e.g. ``radial.re``), a unit declared on
+        this component takes precedence over one set on the sub-component.
+        """
+        if name in self._input_units:
+            return self._input_units[name]
+        ns, _, sub = name.partition(".")
+        comp = getattr(self, ns, None) if sub else None
+        if isinstance(comp, Component):
+            return comp._input_units.get(sub)
+        return None
 
     def _resolve(self, value):
         """Evaluate a tied value outside a Model, from this component."""

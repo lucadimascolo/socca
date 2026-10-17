@@ -14,7 +14,7 @@ from socca.units import conversion_factor as _cfactor
 
 from ..priors import _BoundTo
 from . import config
-from .base import Component
+from .base import Component, _warn_span
 from .misc import Point, Background
 from .disk import Disk
 from .ellipsoid import Ellipsoid
@@ -210,7 +210,8 @@ class Model:
         units : dict
             Dictionary mapping parameter names to their physical units.
         periodic : dict
-            Dictionary mapping parameter names to their period, for
+            Dictionary mapping parameter names to their period, in the
+            parameter's input units (see `Component.set_units`), for
             parameters that are periodic (e.g. an elliptical profile's
             ``theta``). Keys absent from this dict are not periodic.
 
@@ -236,7 +237,7 @@ class Model:
         self.conversions = {}
 
         if prof is not None:
-            self.addcomponent(prof, positive)
+            self._addcomponent(prof, positive)
 
     # Add a new component to the model
     # --------------------------------------------------------
@@ -282,25 +283,34 @@ class Model:
         >>> print(model.ncomp)
         2
         """
-        if prof.id in self._index:
-            warnings.warn(
-                f"Component id {prof.id} is already in the model; tie "
-                f"arguments naming {prof.id} from other components refer "
-                "to the first one.",
-                stacklevel=2,
-            )
+        self._addcomponent(prof, positive)
 
-        self.type.append(prof.__class__.__name__)
-        self.positive.append(prof.positive if positive is None else positive)
-        for p in prof.parlist():
-            par = eval(f"prof.{p}")
-
+    def _addcomponent(self, prof, positive):
+        values = {p: eval(f"prof.{p}") for p in prof.parlist()}
+        for p, par in values.items():
             if par is None:
                 raise ValueError(
                     f"Parameter {p} in component {self.ncomp:02d} is set "
                     f"to None. Please provide a valid value or prior."
                 )
+            if hasattr(par, "to_model") and self._period(prof, p) is not None:
+                raise ValueError(
+                    f"comp_{self.ncomp:02d}_{p} is periodic and cannot use a "
+                    "prior sampled in another variable "
+                    f"({type(par).__name__})."
+                )
 
+        if prof.id in self._index:
+            warnings.warn(
+                f"Component id {prof.id} is already in the model; tie "
+                f"arguments naming {prof.id} from other components refer "
+                "to the first one.",
+                stacklevel=3,
+            )
+
+        self.type.append(prof.__class__.__name__)
+        self.positive.append(prof.positive if positive is None else positive)
+        for p, par in values.items():
             if isinstance(par, (types.LambdaType, types.FunctionType)):
                 _glb = {
                     name: par.__globals__[name]
@@ -331,12 +341,23 @@ class Model:
 
             key = f"comp_{self.ncomp:02d}_{p}"
             native_unit = prof.units[p]
-            input_unit = prof._input_units.get(p, native_unit)
+            input_unit = prof._input_unit(p) or native_unit
             if input_unit != native_unit:
                 self.conversions[key] = _cfactor(input_unit, native_unit)
             self.units[key] = input_unit
-            if p in prof.periodic:
-                self.periodic[key] = prof.periodic[p]
+            period = self._period(prof, p)
+            if period is not None:
+                period = period / self.conversions.get(key, 1.00)
+                self.periodic[key] = period
+                _warn_span(
+                    par,
+                    key,
+                    period,
+                    input_unit,
+                    f"The component is symmetric under a shift of {p} by "
+                    "this period, so a wider prior range can make the "
+                    "posterior multimodal and harder to sample.",
+                )
 
         self.components.append(prof)
         self.ncomp += 1
@@ -557,6 +578,17 @@ class Model:
             component = component_
             del component_
         return component
+
+    @staticmethod
+    def _period(prof, name):
+        """Native period of a parameter, also for sub-component parameters."""
+        if name in prof.periodic:
+            return prof.periodic[name]
+        ns, _, sub = name.partition(".")
+        comp = getattr(prof, ns, None) if sub else None
+        if isinstance(comp, Component):
+            return comp.periodic.get(sub)
+        return None
 
     @property
     def _index(self):

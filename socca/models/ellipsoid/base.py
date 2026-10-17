@@ -13,7 +13,7 @@ import numpyro.distributions
 import numpy as np
 
 from .. import config
-from ..base import Component, _warn_range, _warn_span
+from ..base import Component, _warn_range
 from ..radial import Sersic
 from ...priors import _BoundTo
 from ...utils import _offsets
@@ -118,6 +118,7 @@ class Ellipsoid(Component):
         # didn't also pass it to Ellipsoid, inherit radial's value; if
         # both were set, Ellipsoid's value wins and radial's is ignored
         # (with a warning).
+        inherited = []
         for key in ["xc", "yc", "theta", "e"]:
             radial_val = getattr(self.radial, key)
             radial_isset = radial_val != getattr(config.Profile, key)
@@ -134,6 +135,7 @@ class Ellipsoid(Component):
                 setattr(self, key, kwargs[key])
             elif radial_isset:
                 setattr(self, key, radial_val)
+                inherited.append(key)
             else:
                 setattr(self, key, getattr(config.Ellipsoid, key))
 
@@ -189,6 +191,9 @@ class Ellipsoid(Component):
                 losbins="",
             )
         )
+        for key in inherited:
+            if key in self.radial._input_units:
+                self._input_units[key] = self.radial._input_units[key]
         self.periodic.update(dict(theta=jp.pi, rot=jp.pi))
 
         self.description.update(
@@ -250,14 +255,6 @@ class Ellipsoid(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Ellipsoids with e > 0 are symmetric under theta -> theta + "
-            "pi, so a wider prior range can make the posterior "
-            "multimodal and harder to sample.",
-        )
         self._theta = value
 
     @property
@@ -266,14 +263,6 @@ class Ellipsoid(Component):
 
     @rot.setter
     def rot(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "rot",
-            jp.pi,
-            "Ellipsoids with e > 0 are symmetric under rot -> rot + pi, "
-            "so a wider prior range can make the posterior multimodal "
-            "and harder to sample.",
-        )
         self._rot = value
 
     def getmap(self, img, convolve=False):

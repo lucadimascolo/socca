@@ -83,25 +83,26 @@ The `fit.sampler` attribute provides direct access to the underlying sampler obj
 (periodic-parameters)=
 ### Periodic parameters
 
-Some parameters are inherently periodic. A position angle `theta`, for instance, only determines an elliptical or bar-like profile up to a rotation by $\pi$ (`theta` and `theta + \pi` describe the same shape), so a prior spanning the full period leaves "low" and "high" ill-defined right at the wrap boundary. **``socca``** tracks which parameters are periodic, and their period, on each component (e.g. `theta` on [radial profiles](./tutorial_components.md) and `Bridge`, and both `theta` and `rot` on [`Ellipsoid`](./tutorial_components.md), all have a period of $\pi$).
+Some parameters are inherently periodic. A position angle `theta`, for instance, only determines an elliptical or bar-like profile up to a rotation by $\pi$ (`theta` and `theta + \pi` describe the same shape), so a prior spanning the full period leaves "low" and "high" ill-defined right at the wrap boundary. **``socca``** tracks which parameters are periodic, and their period, on each component (e.g. `theta` on [radial profiles](./tutorial_components.md), on the radial profile of a `Disk`, and on `Bridge`, and both `theta` and `rot` on [`Ellipsoid`](./tutorial_components.md), all have a period of $\pi$). The period follows the units declared with `set_units`, so a `theta` given in degrees has a period of 180.
 
-Assigning such a parameter a prior that spans its full period warns immediately, right when the prior is set -- not later when `run()` is called:
+A prior that spans the full period triggers a warning when the component is added to a model, once its units are known -- not later when `run()` is called:
 
 ```python
->>> from socca.models import Beta
+>>> from socca.models import Beta, Model
 >>> from socca.priors import uniform
 >>> import jax.numpy as jp
 >>>
->>> comp = Beta()
+>>> comp = Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5)
 >>> comp.theta = uniform(0.00, jp.pi)
-UserWarning: The theta prior spans a full 180-degree period, so it will
-automatically be treated as periodic if sampled with the nautilus,
+>>> mod = Model(comp)
+UserWarning: The comp_00_theta prior spans a full period (180 deg), so it
+will automatically be treated as periodic if sampled with the nautilus,
 dynesty, or pocomc backends. Pass periodic=[...] to run() with this
 parameter's name to choose a different set, or periodic=[] to disable
 this entirely.
 ```
 
-This means that once this component is added to a model and fitted with the `nautilus`, `dynesty`, or `pocomc` backends, the parameter is automatically detected and passed to the sampler as periodic -- telling the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. This detection happens silently at `run()` time; the warning above, at prior-assignment time, is the only heads-up you get about it.
+This means that once this component is added to a model and fitted with the `nautilus`, `dynesty`, or `pocomc` backends, the parameter is automatically detected and passed to the sampler as periodic -- telling the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. This detection happens silently at `run()` time; the warning above, when the component is added to the model, is the only heads-up you get about it.
 
 To override the auto-detected set, pass `periodic=[...]` explicitly to `run()` with the parameter names, exactly as they appear in `fit.labels`:
 

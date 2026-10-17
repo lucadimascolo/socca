@@ -8,6 +8,7 @@ import numpy as np
 import numpyro.distributions
 
 from ..plotting import Plotter
+from ..models.base import _spans, _support_bounds
 
 import inspect
 import dill
@@ -427,6 +428,14 @@ class fitter:
                 kwargs["periodic"] = [
                     self._periodic_index(p) for p in kwargs["periodic"]
                 ]
+                for pi in kwargs["periodic"]:
+                    key = self.mod.params[self.mod.paridx[pi]]
+                    if hasattr(self.mod.priors[key], "to_model"):
+                        raise ValueError(
+                            f"{key} cannot be periodic, as its prior "
+                            f"({type(self.mod.priors[key]).__name__}) is "
+                            "sampled in another variable."
+                        )
 
             if "periodic" not in kwargs and self.method in (
                 "nautilus",
@@ -443,10 +452,9 @@ class fitter:
                         prior, numpyro.distributions.Distribution
                     ):
                         continue
-                    extent = (
-                        prior.support.upper_bound - prior.support.lower_bound
-                    )
-                    if extent >= period:
+                    lo, hi = _support_bounds(prior)
+                    extent = hi - lo
+                    if np.isfinite(extent) and _spans(extent, period):
                         auto_periodic.append(pi)
                 if auto_periodic:
                     kwargs["periodic"] = auto_periodic

@@ -16,7 +16,7 @@ import numpyro.distributions
 
 import numpy as np
 
-from ..base import Component, _warn_range, _warn_span
+from ..base import Component, _warn_range
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
@@ -266,14 +266,6 @@ class Bridge(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Bridge profiles with e > 0 are symmetric under "
-            "theta -> theta + pi, so a wider prior range can make the "
-            "posterior multimodal and harder to sample.",
-        )
         self._theta = value
 
     @property

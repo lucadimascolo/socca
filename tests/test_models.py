@@ -237,23 +237,28 @@ class TestProfile:
         with pytest.raises(ValueError, match="greater than 1"):
             beta.e = priors.uniform(0.0, 1.5)
 
+    @staticmethod
+    def _beta(theta):
+        return models.Beta(
+            xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5, theta=theta
+        )
+
     def test_theta_narrow_prior_no_warning(self, recwarn):
         """Test that a theta prior narrower than its period does not warn."""
-        beta = models.Beta()
-        beta.theta = priors.uniform(-np.pi / 4, np.pi / 4)
+        models.Model(self._beta(priors.uniform(-np.pi / 4, np.pi / 4)))
         assert len(recwarn) == 0
 
     def test_theta_exact_period_warns_periodic(self, recwarn):
-        """A theta prior exactly spanning its period warns that it will be sampled as periodic, at set time (not just at fit.run())."""
-        beta = models.Beta()
-        beta.theta = priors.uniform(0.00, np.pi)
+        """A theta prior exactly spanning its period warns that it will be sampled as periodic, when the component is added to a model (not just at fit.run())."""
+        beta = self._beta(priors.uniform(0.00, np.pi))
+        assert len(recwarn) == 0
+        models.Model(beta)
         assert len(recwarn) == 1
         assert "periodic" in str(recwarn[0].message)
 
     def test_theta_wider_than_period_warns_twice(self, recwarn):
         """A theta prior wider than its period warns about both avoidable multimodality and periodic sampling."""
-        beta = models.Beta()
-        beta.theta = priors.uniform(-np.pi, np.pi)
+        models.Model(self._beta(priors.uniform(-np.pi, np.pi)))
         messages = [str(w.message) for w in recwarn]
         assert any("multimodal" in m for m in messages)
         assert any("periodic" in m for m in messages)
@@ -936,6 +941,20 @@ class TestParameterSetters:
             models.Sersic().ns = priors.powerlaw(0.0, 0.5, 8.0)
             models.Sersic().ns = priors.logpowerlaw(-1.0, 0.5, 8.0)
 
+    def test_unbounded_theta_prior_is_not_periodic(self):
+        """An unbounded position-angle prior raises no span warning."""
+        comp = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=0.01,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.normal(0.0, 0.1),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            models.Model(comp)
+
     def test_out_of_range_values(self):
         """Fixed values outside the valid range are still caught."""
         with pytest.raises(ValueError, match="ns parameter"):
@@ -1571,6 +1590,160 @@ class TestTiesByComponentId:
         assert mod._comp_filter([first, second]) == [0, 1]
 
 
+class TestPeriodUnits:
+    """Periods follow the input units of the parameter."""
+
+    @pytest.fixture(autouse=True)
+    def reset_idcls(self):
+        """Reset Component.idcls before each test."""
+        models.Component.idcls = 0
+
+    def test_period_in_degrees(self):
+        """A theta given in degrees has a 180-degree period."""
+        comp = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=0.01,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.uniform(30.0, 60.0),
+        )
+        comp.set_units(theta="deg")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            mod = models.Model(comp)
+        assert mod.periodic["comp_00_theta"] == pytest.approx(180.0)
+
+    def test_log_sampled_periodic_raises(self):
+        """A periodic parameter cannot use a log-sampled prior."""
+        comp = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=0.01,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.logpowerlaw(-1.0, 0.1, 1.0),
+        )
+        with pytest.raises(ValueError, match="comp_00_theta is periodic"):
+            models.Model(comp)
+
+    def test_full_period_in_degrees_warns(self):
+        """A 0-180 degree prior is recognised as a full period."""
+        comp = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=0.01,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.uniform(0.0, 180.0),
+        )
+        comp.set_units(theta="deg")
+        with pytest.warns(UserWarning, match=r"full period \(180 deg\)"):
+            models.Model(comp)
+
+    def test_disk_theta_is_periodic(self):
+        """The position angle of a Disk's radial profile is periodic."""
+        disk = TestTiedNamespaced._disk()
+        mod = models.Model(disk)
+        assert mod.periodic["comp_00_radial.theta"] == pytest.approx(np.pi)
+
+    def test_failed_add_leaves_model_unchanged(self):
+        """A component rejected by addcomponent leaves no trace."""
+        kw = dict(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5)
+        mod = models.Model(models.Beta(**kw))
+        before = {
+            k: list(v) for k, v in vars(mod).items() if isinstance(v, list)
+        }
+        comp = models.Beta(theta=priors.logpowerlaw(-1.0, 0.1, 1.0), **kw)
+        with pytest.raises(ValueError, match="is periodic"):
+            mod.addcomponent(comp)
+        after = {
+            k: list(v) for k, v in vars(mod).items() if isinstance(v, list)
+        }
+        assert after == before
+        assert mod.ncomp == 1
+
+    def test_span_warning_points_at_caller(self):
+        """Span warnings are attributed to the line building the model."""
+        comp = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=0.01,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.uniform(0.0, 4.0),
+        )
+        for build in (models.Model, lambda c: models.Model().addcomponent(c)):
+            with warnings.catch_warnings(record=True) as record:
+                warnings.simplefilter("always")
+                build(comp)
+            assert record
+            assert all(w.filename == __file__ for w in record)
+
+    def test_period_rounding(self):
+        """A full period in mas is not reported as wider than a period."""
+        comp = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=0.01,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.uniform(0.0, 648e6),
+        )
+        comp.set_units(theta="mas")
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            models.Model(comp)
+        messages = [str(w.message) for w in record]
+        assert any("full period" in m for m in messages)
+        assert not any("more than" in m for m in messages)
+
+    def test_disk_inherits_radial_units(self):
+        """Units set on a Disk's radial profile carry over to the Disk."""
+        radial = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=36.0,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.uniform(0.0, 90.0),
+        )
+        radial.set_units(theta="deg", re="arcsec")
+        disk = models.Disk(radial=radial)
+        disk.vertical.zs, disk.vertical.inc = 0.001, 0.5
+        mod = models.Model(disk)
+        assert mod.units["comp_00_radial.theta"] == "deg"
+        assert mod.periodic["comp_00_radial.theta"] == pytest.approx(180.0)
+        assert mod.conversions["comp_00_radial.re"] == pytest.approx(1 / 3600)
+
+    def test_disk_radial_units_set_after_wrapping(self):
+        """Units set on a Disk's radial profile after wrapping are used."""
+        disk = models.Disk()
+        disk.radial.xc, disk.radial.yc = 180.0, 45.0
+        disk.radial.re, disk.radial.Ie, disk.radial.ns = 36.0, 1.0, 1.0
+        disk.radial.theta = priors.uniform(0.0, 90.0)
+        disk.vertical.zs, disk.vertical.inc = 0.001, 0.5
+        disk.radial.set_units(theta="deg", re="arcsec")
+        mod = models.Model(disk)
+        assert mod.periodic["comp_00_radial.theta"] == pytest.approx(180.0)
+        assert mod.conversions["comp_00_radial.re"] == pytest.approx(1 / 3600)
+
+    def test_ellipsoid_inherits_radial_units(self):
+        """A theta taken from an Ellipsoid's radial keeps its unit."""
+        radial = models.Sersic(
+            xc=180.0,
+            yc=45.0,
+            re=0.01,
+            Ie=1.0,
+            ns=1.0,
+            theta=priors.uniform(0.0, 180.0),
+        )
+        radial.set_units(theta="deg")
+        mod = models.Model(models.Ellipsoid(radial=radial))
+        assert mod.units["comp_00_theta"] == "deg"
+        assert mod.periodic["comp_00_theta"] == pytest.approx(180.0)
+
+
 class TestEllipsoid:
     """Tests for Ellipsoid model."""
 
@@ -1698,30 +1871,38 @@ class TestEllipsoid:
         ell.eratio = 0.4
         assert len(recwarn) == 0
 
+    @staticmethod
+    def _ellipsoid(**kw):
+        ell = models.Ellipsoid(radial=models.Sersic(re=0.01, Ie=1.0, ns=1.0))
+        ell.xc, ell.yc, ell.e, ell.losdepth = 180.0, 45.0, 0.3, 0.05
+        for key, value in kw.items():
+            setattr(ell, key, value)
+        return ell
+
     def test_theta_wide_prior_warns(self):
         """Test that a theta prior spanning more than 180deg warns."""
-        ell = models.Ellipsoid()
+        ell = self._ellipsoid(theta=priors.uniform(-np.pi, np.pi))
         with pytest.warns(UserWarning, match="180"):
-            ell.theta = priors.uniform(-np.pi, np.pi)
+            models.Model(ell)
 
     def test_theta_narrow_prior_no_warning(self, recwarn):
         """Test that a theta prior spanning less than 180deg does not warn."""
-        ell = models.Ellipsoid()
-        ell.theta = priors.uniform(-np.pi / 4, np.pi / 4)
+        models.Model(
+            self._ellipsoid(theta=priors.uniform(-np.pi / 4, np.pi / 4))
+        )
         assert len(recwarn) == 0
 
     def test_theta_exact_period_warns_periodic(self, recwarn):
         """A theta prior exactly spanning 180deg (the normal way to mark it periodic) warns about automatic periodic sampling."""
-        ell = models.Ellipsoid()
-        ell.theta = priors.uniform(0.00, np.pi)
+        models.Model(self._ellipsoid(theta=priors.uniform(0.00, np.pi)))
         assert len(recwarn) == 1
         assert "periodic" in str(recwarn[0].message)
 
     def test_rot_wide_prior_warns(self):
         """Test that a rot prior spanning more than 180deg warns."""
-        ell = models.Ellipsoid()
+        ell = self._ellipsoid(rot=priors.uniform(-np.pi, np.pi))
         with pytest.warns(UserWarning, match="180"):
-            ell.rot = priors.uniform(-np.pi, np.pi)
+            models.Model(ell)
 
     def test_tied_e_does_not_warn_or_crash(self):
         """Test that tying e via boundto() doesn't trigger range validation."""
