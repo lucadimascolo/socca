@@ -157,6 +157,70 @@ class SplitNormal(numpyro.distributions.Distribution):
         log_norm = jp.log(jp.sqrt(2.0 / jp.pi)) - jp.log(losig + hisig)
         return log_norm - 0.5 * (x / sig_prob) ** 2
 
+    def cdf(self, x):
+        """
+        Compute the cumulative distribution function.
+
+        Parameters
+        ----------
+        x : float or array_like
+            Value(s) at which to evaluate the CDF.
+
+        Returns
+        -------
+        float or array_like
+            Probability that a draw is <= x.
+        """
+        norm = self.losig + self.hisig
+        lo = 2.0 * self.losig / norm * jax.scipy.special.ndtr(x / self.losig)
+        hi = self.losig / norm + 2.0 * self.hisig / norm * (
+            jax.scipy.special.ndtr(x / self.hisig) - 0.5
+        )
+        return jp.where(x < 0.0, lo, hi)
+
+    def icdf(self, u):
+        """
+        Compute the inverse CDF (quantile function).
+
+        Parameters
+        ----------
+        u : float or array_like
+            Uniform random variable(s) in [0, 1].
+
+        Returns
+        -------
+        float or array_like
+            Corresponding sample(s).
+        """
+        norm = self.losig + self.hisig
+        low = u < self.losig / norm
+        qlo = jp.where(low, 0.5 * u * norm / self.losig, 0.25)
+        qhi = jp.where(low, 0.75, 1.0 - 0.5 * (1.0 - u) * norm / self.hisig)
+        return jp.where(
+            low,
+            self.losig * jax.scipy.special.ndtri(qlo),
+            self.hisig * jax.scipy.special.ndtri(qhi),
+        )
+
+    def sample(self, key, sample_shape=()):
+        """
+        Draw random samples from the distribution.
+
+        Parameters
+        ----------
+        key : jax.random.PRNGKey
+            JAX random key.
+        sample_shape : tuple, optional
+            Shape of the sample batch.
+
+        Returns
+        -------
+        array_like
+            Random samples.
+        """
+        u = jax.random.uniform(key, sample_shape + self.batch_shape)
+        return self.icdf(u)
+
 
 def splitnormal(loc, losig, hisig):
     """

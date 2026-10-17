@@ -171,6 +171,51 @@ class TestSplitNormalClass:
         assert log_prob == pytest.approx(expected)
 
 
+class TestSplitNormalSampling:
+    """Tests for the SplitNormal cdf, icdf and sampling."""
+
+    def test_cdf_matches_density(self):
+        """The cdf is the integral of the density."""
+        dist = priors.splitnormal(1.0, 0.5, 2.0)
+        x = np.linspace(-6.0, 20.0, 400001)
+        pdf = np.exp(np.asarray(dist.log_prob(jp.asarray(x))))
+        cdf = np.concatenate(
+            [[0.0], np.cumsum(0.5 * (pdf[1:] + pdf[:-1]) * np.diff(x))]
+        )
+        np.testing.assert_allclose(dist.cdf(jp.asarray(x)), cdf, atol=1e-7)
+
+    def test_icdf_inverts_cdf(self):
+        """icdf(cdf(x)) returns x on both sides of the mode."""
+        dist = priors.splitnormal(1.0, 0.5, 2.0)
+        x = jp.asarray([-1.0, 0.0, 0.9, 1.0, 1.1, 3.0, 8.0])
+        np.testing.assert_allclose(dist.icdf(dist.cdf(x)), x, atol=1e-12)
+        assert float(dist.icdf(0.2)) == pytest.approx(1.0)
+
+    def test_samples_follow_cdf(self):
+        """Samples reproduce the quantiles."""
+        import jax
+
+        dist = priors.splitnormal(1.0, 0.5, 2.0)
+        s = np.asarray(dist.sample(jax.random.PRNGKey(0), (200000,)))
+        q = np.array([0.05, 0.2, 0.5, 0.9])
+        np.testing.assert_allclose(
+            np.quantile(s, q), dist.icdf(jp.asarray(q)), atol=0.02
+        )
+
+    @pytest.mark.parametrize(
+        "losig, hisig", [(0.004, 0.002), (0.002, 0.005), (0.5, 2.0)]
+    )
+    def test_icdf_gradient_at_mode(self, losig, hisig):
+        """The icdf slope at the mode is 1 / pdf(mode), on both sides."""
+        import jax
+
+        dist = priors.splitnormal(0.0, losig, hisig)
+        umode = dist.cdf(0.0)
+        expected = (losig + hisig) / np.sqrt(2.0 / np.pi)
+        for u in (umode, jp.nextafter(umode, 0.0), jp.nextafter(umode, 1.0)):
+            assert float(jax.grad(dist.icdf)(u)) == pytest.approx(expected)
+
+
 class TestBoundto:
     """Tests for boundto function."""
 
