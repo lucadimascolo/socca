@@ -5,6 +5,14 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 
+import socca.models
+
+
+@pytest.fixture(autouse=True)
+def reset_component_ids():
+    """Start every test with automatic component ids from comp_00."""
+    socca.models.Component.reset()
+
 
 @pytest.fixture
 def simple_wcs_header():

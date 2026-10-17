@@ -386,7 +386,7 @@ class TestBoundto:
 
     def test_resolve_namespaced_attribute(self):
         """Test that resolve() works for namespaced sub-component parameters."""
-        models.Component.idcls = 0
+        models.Component.reset()
         disk = models.Disk()
         disk.vertical.inc = 0.9
         bound = priors.boundto(disk, "inc")
@@ -395,7 +395,7 @@ class TestBoundto:
 
     def test_resolve_chained_tie(self):
         """Test that resolve() follows a chain of ties recursively."""
-        models.Component.idcls = 0
+        models.Component.reset()
         disk = models.Disk()
         disk.radial.theta = 0.7
         ellipsoid = models.Ellipsoid()

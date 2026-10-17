@@ -220,7 +220,7 @@ class TestSkyToPixel:
         expected = np.zeros((256, 256))
         for y, x in [(12, 200), (230, 31), (128, 128)]:
             ra, dec = img.wcs.all_pix2world(x, y, 0)
-            models.Component.idcls = 0
+            models.Component.reset()
             point = models.Point(xc=float(ra), yc=float(dec), Ic=1.0)
             mraw = np.asarray(models.Model(point).getmodel(img, [])[0])
             expected[:] = 0.0
@@ -274,14 +274,14 @@ class TestSkyToPixel:
         header = _wcs_header((90, 180), 7200.0, 180.0, 0.0, ctype="CAR")
         img = data.Image(fits.PrimaryHDU(np.zeros((90, 180)), header=header))
         assert img.grid.wide
-        models.Component.idcls = 0
+        models.Component.reset()
         ra, dec = img.wcs.all_pix2world(160.0, 45.0, 0)
         gauss = models.Gaussian(xc=float(ra), yc=float(dec), rs=2.0, Is=1.0)
         smo = np.asarray(models.Model(gauss).getmodel(img, [])[1])
         assert np.all(np.isfinite(smo))
         assert smo[45, 160] > 0.5
         assert np.max(smo[:, :60]) < 1e-6
-        models.Component.idcls = 0
+        models.Component.reset()
         point = models.Point(xc=float(ra), yc=float(dec), Ic=1.0)
         with pytest.raises(ValueError, match="too wide"):
             models.Model(point).getmodel(img, [])
@@ -328,7 +328,7 @@ class TestSkyToPixel:
             noise=noise.Normal(sigma=1.0),
         )
         ra, dec = img.wcs.all_pix2world(200.0, 40.0, 0)
-        models.Component.idcls = 0
+        models.Component.reset()
         point = models.Point(xc=float(ra), yc=float(dec), Ic=1.0)
         fit = socca.fitter(img, models.Model(point))
         fit.method = "optimizer"

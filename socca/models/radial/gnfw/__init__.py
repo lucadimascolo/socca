@@ -191,7 +191,7 @@ class gNFW(Profile):
 
     def __setstate__(self, state):
         """Restore state and rebuild profile from current source."""
-        self.__dict__.update(state)
+        super().__setstate__(state)
         self.rz = np.asarray(self.rz, dtype=np.float64)
         self._emulator_model = None
         if self.emulator is not None:

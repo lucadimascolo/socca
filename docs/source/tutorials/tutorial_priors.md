@@ -85,7 +85,17 @@ Next, we define how `comp1.re` and `comp2.re` are related via a `lambda` functio
 comp_00 comp_01
 ```
 
-The second part of each argument corresponds to the specific parameter used in the expression. Component IDs are assigned automatically by **``socca``** upon component creation, following an incremental numbering scheme (here, starting from a fresh session). They do not depend on the order in which components are added to a model, and can differ from the `comp_XX` prefixes of the model parameter names, for instance when other components were created earlier in the session.
+The second part of each argument corresponds to the specific parameter used in the expression. The same `comp_XX` identifiers prefix the parameter names of a model (e.g. `comp_01_re` in `mod.parameters()` or `fit.labels`), whatever the order in which components are added to it.
+
+Component IDs are assigned automatically by **``socca``** upon component creation, following an incremental numbering scheme (here, starting from a fresh session). Since the numbering continues through a session, re-running a notebook cell gives its components new IDs. To keep the names fixed, set the ID explicitly when creating a component:
+
+```python
+>>> comp1 = Sersic(id=1)
+>>> comp1.id
+'comp_01'
+```
+
+Automatic IDs skip the numbers chosen explicitly, and each component in a model must have a different ID.
 
 ## Positive constraints
 In some cases, it may be useful to enforce positivity constraints on the surface brightness of a given model component throughout the image domain. This is particularly relevant in cases like the {ref}`PolyExponential <polyexponential>` or {ref}`PolyExpoRefact <polyexporefact>` models, where the polynomial terms can lead to negative surface brightness values. Such constraints can be implemented by setting the `positive` attribute of the model component to `True`, e.g.,:

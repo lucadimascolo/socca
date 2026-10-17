@@ -233,7 +233,7 @@ Additionally, it is possible to generate a corner plot of the posterior distribu
 :class: only-dark
 ```
 
-This is mostly a simple wrapper around [corner.py](https://github.com/dfm/corner.py) that automatically configures the labels and ranges based on the model parameters and prior distributions. It is also possible to use it for visualising only a subset of the model components by passing a list of component names to the `component` argument as a list of strings (e.g. `component=['comp_00']` to show only the first component added to the model), integer indices (e.g. `component=[0]`), or directly referring to the individual components (e.g. `component=[point]`).
+This is mostly a simple wrapper around [corner.py](https://github.com/dfm/corner.py) that automatically configures the labels and ranges based on the model parameters and prior distributions. It is also possible to use it for visualising only a subset of the model components by passing a list of component names to the `component` argument as a list of strings (e.g. `component=['comp_00']`, the component with that `id`, as in the parameter names), integer positions in the model (e.g. `component=[0]` for the first component added), or directly referring to the individual components (e.g. `component=[point]`).
 
 By default, both the `comparison` and `corner` plots are displayed on screen. Passing the argument `name="your/file/name/prefix"` however allows for saving the figures to disk.
 

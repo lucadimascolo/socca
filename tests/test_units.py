@@ -13,7 +13,7 @@ from socca.units import conversion_factor
 @pytest.fixture(autouse=True)
 def reset_idcls():
     """Reset Component ID counter before each test."""
-    models.Component.idcls = 0
+    models.Component.reset()
 
 
 class TestConversionFactor:

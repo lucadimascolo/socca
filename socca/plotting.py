@@ -189,7 +189,7 @@ class Plotter:
             )
 
         component = self.fit.mod._comp_filter(component)
-        component = [f"comp_{ci:02d}" for ci in component]
+        component = [self.fit.mod._prefixes[ci] for ci in component]
 
         # Periodic parameters (e.g. a position angle symmetric under
         # theta -> theta + pi) are recentered on their circular mean here,
@@ -239,15 +239,14 @@ class Plotter:
             [
                 i
                 for i, lbl in enumerate(labels)
-                if any(lbl.startswith(c) for c in component)
+                if any(lbl.startswith(f"{c}_") for c in component)
             ],
             dtype=int,
         )
 
         if len(indices) == 0:
             raise ValueError(
-                f"No parameters found for component(s) {component}. "
-                f"Check that the component index exists."
+                f"No free parameters found for component(s) {component}."
             )
 
         truths = kwargs.pop("truths", None)

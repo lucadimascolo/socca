@@ -250,6 +250,28 @@ class TestFitter:
         log_prob = simple_fitter._log_prior(theta)
         assert jp.isfinite(log_prob)
 
+    def test_corner_selects_component_by_id(self, simple_hdu):
+        """corner(component=...) plots the parameters of that component."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        models.Sersic()
+        models.Sersic()
+        first = models.Gaussian(
+            xc=priors.uniform(179.99, 180.01), yc=45.0, rs=0.005, Is=1.0
+        )
+        second = models.Gaussian(
+            xc=180.0, yc=priors.uniform(44.99, 45.01), rs=0.005, Is=1.0
+        )
+        mod = models.Model(second)
+        mod.addcomponent(first)
+        fit = fitting.fitter(img, mod)
+        fit.samples = np.column_stack([np.full(50, 45.0), np.full(50, 180.0)])
+        fit.weights = np.ones(50) / 50
+        fit.method = "nautilus"
+        with patch("socca.plotting.corner.corner") as plot:
+            for component in (first, first.id, 1):
+                fit.plot.corner(component=component)
+                assert np.all(plot.call_args.kwargs["data"] == 180.0)
+
 
 class TestFitterWithMultipleParameters:
     """Tests for fitter with multiple free parameters."""
@@ -549,13 +571,13 @@ class TestLogSampledPriors:
     @pytest.fixture
     def setup(self, simple_hdu):
         """Build a Gaussian fit whose scale radius is sampled in log space."""
-        models.Component.idcls = 0
+        models.Component.reset()
         img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
         truth = models.Model(
             models.Gaussian(xc=180.0, yc=45.0, rs=0.005, Is=10.0)
         )
         img.data = truth.getmap(img)
-        models.Component.idcls = 0
+        models.Component.reset()
         gaussian = models.Gaussian(
             xc=180.0,
             yc=45.0,
@@ -1180,7 +1202,7 @@ class TestLikelihoodWithPSF:
 
     @staticmethod
     def _model(img, point):
-        models.Component.idcls = 0
+        models.Component.reset()
         ra, dec = img.wcs.all_pix2world(img.data.shape[1] // 2 + 1.3, 9.8, 0)
         mod = models.Model(
             models.Sersic(
@@ -1274,7 +1296,7 @@ class TestLikelihoodWithPSF:
         k = np.arange(-5.0, 6.0)
         img.addpsf(np.exp(-0.5 * (k[:, None] ** 2 / 3.0 + k**2 / 2.0)))
         ra, dec = img.wcs.all_pix2world(17.3, 14.6, 0)
-        models.Component.idcls = 0
+        models.Component.reset()
         point = models.Point(
             xc=priors.uniform(ra - 1e-3, ra + 1e-3),
             yc=priors.uniform(dec - 1e-3, dec + 1e-3),
@@ -1315,7 +1337,7 @@ class TestLoadWithPSF:
         img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
         k = np.arange(-6.0, 7.0)
         img.addpsf(np.exp(-0.5 * ((k[:, None] - 0.4) ** 2 + k**2) / 2.0))
-        models.Component.idcls = 0
+        models.Component.reset()
         point = models.Point(
             xc=simple_hdu.header["CRVAL1"] + 0.003,
             yc=simple_hdu.header["CRVAL2"] - 0.002,

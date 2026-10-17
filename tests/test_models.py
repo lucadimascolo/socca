@@ -376,7 +376,7 @@ class TestPointPlacement:
     @pytest.fixture(autouse=True)
     def reset_component_counter(self):
         """Reset component ID counter before each test."""
-        models.Component.idcls = 0
+        models.Component.reset()
 
     @staticmethod
     def _image(shape):
@@ -456,7 +456,7 @@ class TestPointPlacement:
         """Swapping the sub-pixel offsets of a source transposes its map."""
         maps = []
         for y, x in [(2.3, -3.45), (-3.45, 2.3)]:
-            models.Component.idcls = 0
+            models.Component.reset()
             img = self._square_image(n)
             if sigma:
                 k = np.arange(25) - 12.0
@@ -520,7 +520,7 @@ class TestRAWrap:
     @pytest.fixture(autouse=True)
     def reset_component_counter(self):
         """Reset component ID counter before each test."""
-        models.Component.idcls = 0
+        models.Component.reset()
 
     @staticmethod
     def _image(crval):
@@ -560,7 +560,7 @@ class TestRAWrap:
         return ell
 
     def _scene(self, kind, crval, dx):
-        models.Component.idcls = 0
+        models.Component.reset()
         img = self._image(crval)
         ra = (crval + dx / np.cos(np.deg2rad(2.0)) / 3600.0) % 360.0
         mod = models.Model(self._component(kind, ra, 2.0 + 1.0 / 3600))
@@ -747,8 +747,8 @@ class TestSimpleBridge:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     def test_initialization(self):
         """Test SimpleBridge default initialization."""
@@ -813,8 +813,8 @@ class TestMesaBridge:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     def test_initialization(self):
         """Test MesaBridge default initialization."""
@@ -853,8 +853,8 @@ class TestDisk:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     def test_default_initialization(self):
         """Test Disk default initialization."""
@@ -901,8 +901,8 @@ class TestParameterSetters:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     @pytest.mark.parametrize(
         "make, name",
@@ -970,8 +970,8 @@ class TestRefactor:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     def test_base_refactor_keeps_parameters(self, simple_hdu):
         """The base refactor returns an identical copy."""
@@ -1061,7 +1061,7 @@ class TestTiedNamespaced:
         return disk
 
     def _model(self, tied):
-        models.Component.idcls = 0
+        models.Component.reset()
         disk = self._disk()
         sersic = models.Sersic(xc=180.0, yc=45.0, Ie=1.0, ns=1.0)
         sersic.re = (
@@ -1083,9 +1083,9 @@ class TestTiedNamespaced:
     def test_component_resolves_namespaced_argument(self, simple_hdu):
         """A component's own getmap resolves radial_<par> arguments."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         fixed = self._disk()
-        models.Component.idcls = 0
+        models.Component.reset()
         tied = self._disk()
         tied.vertical.zs = lambda comp_00_radial_re: 0.1 * comp_00_radial_re
         np.testing.assert_array_equal(tied.getmap(img), fixed.getmap(img))
@@ -1103,7 +1103,7 @@ class TestTiedNamespaced:
         img = data.Image(simple_hdu)
         maps = []
         for inc in (lambda comp_00_radial_re: 50 * comp_00_radial_re, 0.5):
-            models.Component.idcls = 0
+            models.Component.reset()
             ell = self._ellipsoid(inc)
             maps.append(
                 models.Model(ell).getmap(img) if in_model else ell.getmap(img)
@@ -1116,7 +1116,7 @@ class TestTiedNamespaced:
         img = data.Image(simple_hdu)
         maps = []
         for tied in (True, False):
-            models.Component.idcls = 0
+            models.Component.reset()
             bridge = models.SimpleBridge(
                 xc=180.0, yc=45.0, rs=0.01, Is=1.0, theta=0.3, e=0.3
             )
@@ -1135,14 +1135,14 @@ class TestTiedNamespaced:
 
 
 class TestTiesByComponentId:
-    """Ties name components by id, which may differ from the model index."""
+    """Model keys and ties use component ids, whatever the order of addition."""
 
     @staticmethod
     def _sersic(**kw):
         return models.Sersic(xc=180.0, yc=45.0, Ie=1.0, ns=1.0, **kw)
 
     def _reference(self, img):
-        models.Component.idcls = 0
+        models.Component.reset()
         mod = models.Model(self._sersic(re=0.01))
         mod.addcomponent(self._sersic(re=0.005))
         return mod.getmap(img)
@@ -1150,7 +1150,7 @@ class TestTiesByComponentId:
     def test_tutorial_example(self, simple_hdu):
         """The lambda of the priors tutorial resolves by component id."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         models.Sersic()
         comp1, comp2 = self._sersic(), self._sersic(re=0.01)
         assert (comp1.id, comp2.id) == ("comp_01", "comp_02")
@@ -1163,29 +1163,28 @@ class TestTiesByComponentId:
         mod.addcomponent(comp1)
         np.testing.assert_array_equal(mod.getmap(img), self._reference(img))
 
-    def test_warns_when_id_shadows_model_key(self, simple_hdu):
-        """A tie name that is also another component's model key warns."""
+    def test_model_keys_are_ids(self, simple_hdu):
+        """Model parameters are prefixed by component id, not model order."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
         models.Sersic()
         comp1, comp2 = self._sersic(re=0.01), self._sersic()
         comp2.re = lambda comp_01_re: comp_01_re / 2
-        mod = models.Model(comp1)
-        mod.addcomponent(comp2)
-        with pytest.warns(UserWarning, match="refer to the component with id"):
-            out = mod.getmap(img)
-        np.testing.assert_array_equal(out, self._reference(img))
+        mod = models.Model(comp2)
+        mod.addcomponent(comp1)
+        assert mod.params[0].startswith("comp_02_")
+        assert "comp_01_re" in mod.params
+        np.testing.assert_array_equal(mod.getmap(img), self._reference(img))
 
     def test_boundto_after_other_components(self, simple_hdu):
         """A boundto tie resolves when ids are offset from model indices."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         models.Disk()
         host, comp = self._sersic(re=0.01), self._sersic()
         comp.re = priors.boundto(host, "re")
         mod = models.Model(host)
         mod.addcomponent(comp)
-        models.Component.idcls = 0
+        models.Component.reset()
         ref = models.Model(self._sersic(re=0.01))
         ref.addcomponent(self._sersic(re=0.01))
         np.testing.assert_array_equal(mod.getmap(img), ref.getmap(img))
@@ -1194,13 +1193,13 @@ class TestTiesByComponentId:
         """A Bridge's internal ties use its own model index."""
         img = data.Image(simple_hdu)
         kw = dict(xc=180.0, yc=45.0, rs=0.01, Is=1.0, theta=0.3, e=0.3)
-        models.Component.idcls = 0
+        models.Component.reset()
         models.Disk()
         exp = models.Exponential(xc=180.0, yc=45.0, rs=0.03, Is=1.0)
         bridge = models.SimpleBridge(**kw)
         mod = models.Model(bridge)
         mod.addcomponent(exp)
-        models.Component.idcls = 0
+        models.Component.reset()
         ref = models.Model(models.SimpleBridge(**kw))
         np.testing.assert_array_equal(
             mod.getmodel(img, [], component=bridge)[0],
@@ -1215,7 +1214,7 @@ class TestTiesByComponentId:
         """A Bridge sub-profile tie to another component resolves by id."""
         img = data.Image(simple_hdu)
         kw = dict(xc=180.0, yc=45.0, rs=0.01, Is=1.0, theta=0.3, e=0.3)
-        models.Component.idcls = 0
+        models.Component.reset()
         if stray:
             models.Disk()
         exp = models.Exponential(xc=180.0, yc=45.0, rs=0.02, Is=1.0)
@@ -1226,7 +1225,7 @@ class TestTiesByComponentId:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "Tie arguments")
             out = mod.getmodel(img, [], component=bridge)[0]
-        models.Component.idcls = 0
+        models.Component.reset()
         ref = models.SimpleBridge(**kw)
         ref.parallel.rc = 0.02
         np.testing.assert_array_equal(
@@ -1237,7 +1236,7 @@ class TestTiesByComponentId:
         """Keyword-only and namespaced ties on Bridge scales work in a Model."""
         img = data.Image(simple_hdu)
         kw = dict(xc=180.0, yc=45.0, rs=0.01, Is=1.0, theta=0.3, e=0.3)
-        models.Component.idcls = 0
+        models.Component.reset()
         bridge = models.SimpleBridge(**kw)
         bid = bridge.id
         bridge.parallel.rc = eval(
@@ -1246,7 +1245,7 @@ class TestTiesByComponentId:
         )
         out = models.Model(bridge).getmodel(img, [], component=0)[0]
         np.testing.assert_allclose(out, bridge.getmap(img))
-        models.Component.idcls = 0
+        models.Component.reset()
         ref = models.SimpleBridge(**kw)
         ref.parallel.rc = 0.02
         np.testing.assert_allclose(
@@ -1257,7 +1256,7 @@ class TestTiesByComponentId:
         """A boundto on a Bridge scale reads the fitted, converted value."""
         img = data.Image(simple_hdu)
         kw = dict(xc=180.0, yc=45.0, rs=0.01, Is=1.0, theta=0.3, e=0.3)
-        models.Component.idcls = 0
+        models.Component.reset()
         bridge = models.SimpleBridge(**kw)
         ref = models.Exponential(
             xc=180.0, yc=45.0, rs=priors.uniform(36.0, 72.0), Is=1.0
@@ -1267,7 +1266,7 @@ class TestTiesByComponentId:
         mod = models.Model(bridge)
         mod.addcomponent(ref)
         out = mod.getmodel(img, jp.array([54.0]), component=0)[0]
-        models.Component.idcls = 0
+        models.Component.reset()
         fixed = models.SimpleBridge(**kw)
         fixed.parallel.rc = 0.015
         np.testing.assert_allclose(
@@ -1277,7 +1276,7 @@ class TestTiesByComponentId:
     def test_bridge_internal_ties_do_not_warn(self, simple_hdu):
         """A Bridge's own scale ties never trigger the id warning."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         exp = models.Exponential(xc=180.0, yc=45.0, rs=0.02, Is=1.0)
         bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
         mod = models.Model(bridge)
@@ -1289,7 +1288,7 @@ class TestTiesByComponentId:
     def test_chained_boundto_any_order(self, simple_hdu):
         """A tie to a tied parameter resolves whatever the add order."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         a = self._sersic(re=0.01)
         b, c = self._sersic(), self._sersic()
         b.re = priors.boundto(a, "re")
@@ -1297,7 +1296,7 @@ class TestTiesByComponentId:
         mod = models.Model(c)
         mod.addcomponent(b)
         mod.addcomponent(a)
-        models.Component.idcls = 0
+        models.Component.reset()
         ref = models.Model(self._sersic(re=0.01))
         for _ in range(2):
             ref.addcomponent(self._sersic(re=0.01))
@@ -1309,7 +1308,7 @@ class TestTiesByComponentId:
     def test_circular_ties_raise(self, simple_hdu):
         """Ties that depend on each other raise."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         a, b = self._sersic(), self._sersic()
         a.re = priors.boundto(b, "re")
         b.re = priors.boundto(a, "re")
@@ -1321,7 +1320,7 @@ class TestTiesByComponentId:
     def test_boundto_component_not_in_model_raises(self, simple_hdu):
         """A boundto target missing from the model raises."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         a, b = self._sersic(re=0.01), self._sersic()
         b.re = priors.boundto(a, "re")
         mod = models.Model(self._sersic(re=0.02))
@@ -1329,41 +1328,33 @@ class TestTiesByComponentId:
         with pytest.raises(ValueError, match="not in the model"):
             mod.getmap(img)
 
-    def test_model_key_without_id_warns(self, simple_hdu):
-        """A tie name with no matching id is read as a model key, warning."""
+    def test_tie_to_missing_id_raises(self, simple_hdu):
+        """A tie naming an id that is not in the model raises."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
-        models.Sersic()
         models.Sersic()
         comp1, comp2 = self._sersic(re=0.01), self._sersic()
         comp2.re = lambda comp_00_re: comp_00_re / 2
         mod = models.Model(comp1)
         mod.addcomponent(comp2)
-        with pytest.warns(UserWarning, match="name no component id"):
-            out = mod.getmap(img)
-        np.testing.assert_array_equal(out, self._reference(img))
+        with pytest.raises(KeyError, match="comp_00_re"):
+            mod.getmap(img)
 
-    def test_component_filter_duplicate_ids(self, simple_hdu):
-        """component=obj selects that object even if its id is repeated."""
+    def test_duplicate_ids_raise(self):
+        """Two components with the same id cannot be in one model."""
         import copy
 
-        img = data.Image(simple_hdu)
-        models.Component.idcls = 0
         p = self._sersic(re=0.01)
-        q = copy.deepcopy(p)
-        q.Ie = 5.0
         mod = models.Model(p)
-        with pytest.warns(UserWarning, match="already in the model"):
-            mod.addcomponent(q)
-        assert mod._comp_filter(q) == [1]
-        assert mod._comp_filter(p) == [0]
+        with pytest.raises(ValueError, match="already in the model"):
+            mod.addcomponent(copy.deepcopy(p))
+        assert mod.ncomp == 1
         with pytest.raises(ValueError, match="not in the model"):
             mod._comp_filter(self._sersic())
 
     def test_standalone_lambda_reads_bound_parameter(self, simple_hdu):
         """A lambda reading its own bound parameter works outside a Model."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         disk = models.Disk()
         disk.radial.xc, disk.radial.yc = 180.0, 45.0
         disk.radial.re, disk.radial.Ie, disk.radial.ns = 0.003, 1.0, 1.0
@@ -1388,70 +1379,19 @@ class TestTiesByComponentId:
     def test_keyword_only_lambda(self, simple_hdu):
         """Tie lambdas with keyword-only arguments are supported."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         comp1, comp2 = self._sersic(re=0.01), self._sersic()
         comp2.re = lambda *, comp_00_re: comp_00_re / 2
         mod = models.Model(comp1)
         mod.addcomponent(comp2)
         np.testing.assert_array_equal(mod.getmap(img), self._reference(img))
 
-    def test_tie_warning_once_per_model(self, simple_hdu):
-        """A tie warning is emitted once per id, however often it is used."""
-        img = data.Image(simple_hdu)
-        models.Component.idcls = 0
-        models.Sersic()
-        comp1, comp2 = self._sersic(re=0.01), self._sersic()
-        comp2.re = lambda comp_01_re, comp_01_ns: comp_01_re / 2 / comp_01_ns
-        mod = models.Model(comp1)
-        mod.addcomponent(comp2)
-        with warnings.catch_warnings(record=True) as record:
-            warnings.simplefilter("always")
-            for _ in range(3):
-                mod.getmap(img)
-        assert sum("Tie arguments" in str(w.message) for w in record) == 1
-
-    def test_self_tie_on_copied_component(self, simple_hdu):
-        """A tie to the own id reads the component itself, also on copies."""
-        import copy
-
-        img = data.Image(simple_hdu)
-        models.Component.idcls = 0
-        s1 = self._sersic(re=0.01)
-        s1.Ie = lambda comp_00_re: 100.0 * comp_00_re
-        s2 = copy.deepcopy(s1)
-        s2.re = 0.005
-        mod = models.Model(s1)
-        with pytest.warns(UserWarning, match="already in the model"):
-            mod.addcomponent(s2)
-        with pytest.warns(UserWarning, match="refer to the component with id"):
-            out = mod.getmodel(img, [], component=s2)[0]
-        np.testing.assert_allclose(out, s2.getmap(img))
-
-    def test_boundto_copied_target(self, simple_hdu):
-        """A boundto tie follows the bound object, not its id."""
-        import copy
-
-        img = data.Image(simple_hdu)
-        models.Component.idcls = 0
-        a = self._sersic(re=0.01)
-        a2 = copy.deepcopy(a)
-        a2.re = 0.005
-        b = self._sersic()
-        b.re = priors.boundto(a2, "re")
-        mod = models.Model(a)
-        with pytest.warns(UserWarning, match="already in the model"):
-            mod.addcomponent(a2)
-        mod.addcomponent(b)
-        np.testing.assert_allclose(
-            mod.getmodel(img, [], component=b)[0], b.getmap(img)
-        )
-
     def test_boundto_target_replaced_by_copy_warns(self, simple_hdu):
         """A boundto target outside the model falls back to its id, warning."""
         import copy
 
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         a = self._sersic(re=0.01)
         b = self._sersic()
         b.re = priors.boundto(a, "re")
@@ -1463,17 +1403,17 @@ class TestTiesByComponentId:
     def test_standalone_keyword_only_lambda(self, simple_hdu):
         """Keyword-only tie lambdas also work in a component's own getmap."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         comp = self._sersic(re=0.01)
         comp.Ie = eval(f"lambda *, {comp.id}_re: 100.0 * {comp.id}_re")
-        models.Component.idcls = 0
+        models.Component.reset()
         ref = models.Sersic(xc=180.0, yc=45.0, Ie=1.0, ns=1.0, re=0.01)
         np.testing.assert_allclose(comp.getmap(img), ref.getmap(img))
 
     def test_standalone_ties_point_background_disk(self, simple_hdu):
         """Standalone maps resolve ties on Point, Background and Disk."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         host = self._sersic(re=0.01)
         point = models.Point(xc=priors.boundto(host, "xc"), yc=45.0)
         point.Ic = eval(f"lambda {point.id}_yc: {point.id}_yc / 45.0")
@@ -1510,7 +1450,7 @@ class TestTiesByComponentId:
         """Bridge internal ties see tied or prior inputs in a standalone map."""
         img = data.Image(simple_hdu)
         kw = dict(xc=180.0, yc=45.0, rs=0.01, Is=1.0, theta=0.3)
-        models.Component.idcls = 0
+        models.Component.reset()
         tied = models.SimpleBridge(**kw)
         tied.e = eval(f"lambda {tied.id}_theta: {tied.id}_theta")
         ref = models.SimpleBridge(e=0.3, **kw)
@@ -1524,7 +1464,7 @@ class TestTiesByComponentId:
     def test_bridge_scale_boundto_absent_names_parameter(self, simple_hdu):
         """The error for a Bridge scale bound outside the model names it."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
         other = self._sersic(re=0.01)
         bridge.parallel.rc = priors.boundto(other, "re")
@@ -1535,7 +1475,7 @@ class TestTiesByComponentId:
     def test_standalone_circular_ties_raise(self, simple_hdu):
         """Circular ties raise in a standalone map, as in a Model."""
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         comp = models.Sersic(xc=180.0, yc=45.0, ns=1.0)
         comp.re = lambda comp_00_Ie: comp_00_Ie
         comp.Ie = lambda comp_00_re: comp_00_re
@@ -1548,7 +1488,7 @@ class TestTiesByComponentId:
         import time
 
         img = data.Image(simple_hdu)
-        models.Component.idcls = 0
+        models.Component.reset()
         comp = self._sersic(re=0.01, theta=0.0)
 
         def slow(comp_00_theta):
@@ -1580,14 +1520,393 @@ class TestTiesByComponentId:
             comp.getmap(img)
 
     def test_component_filter_with_objects(self):
-        """Component objects are mapped to their model index."""
-        models.Component.idcls = 0
+        """Components are selected by object, id or model position."""
         models.Sersic()
         first, second = self._sersic(re=0.01), self._sersic(re=0.005)
-        mod = models.Model(first)
-        mod.addcomponent(second)
-        assert mod._comp_filter(second) == [1]
-        assert mod._comp_filter([first, second]) == [0, 1]
+        mod = models.Model(second)
+        mod.addcomponent(first)
+        assert mod._comp_filter(first) == [1]
+        assert mod._comp_filter([first, second]) == [1, 0]
+        assert mod._comp_filter("comp_01") == [1]
+        assert mod._comp_filter(["comp_02", 1]) == [0, 1]
+        with pytest.raises(ValueError, match="No component comp_00"):
+            mod._comp_filter("comp_00")
+        with pytest.raises(IndexError):
+            mod._comp_filter(2)
+        assert mod._comp_filter(np.array([1, 0])) == [1, 0]
+        assert mod._comp_filter(range(2)) == [0, 1]
+        assert mod._comp_filter(np.int64(1)) == [1]
+        assert mod._comp_filter(["comp_1", "comp_002"]) == [1, 0]
+        with pytest.raises(ValueError, match="is not in the model"):
+            mod._comp_filter(1.5)
+
+    def test_tie_warning_once_per_model(self, simple_hdu):
+        """The boundto fallback warning is emitted once per model."""
+        import copy
+
+        img = data.Image(simple_hdu)
+        a = self._sersic(re=0.01)
+        b = self._sersic()
+        b.re = priors.boundto(a, "re")
+        mod = models.Model(copy.deepcopy(a))
+        mod.addcomponent(b)
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            for _ in range(3):
+                mod.getmap(img)
+        assert sum("not in the model" in str(w.message) for w in record) == 1
+
+
+class TestExplicitIds:
+    """Components can be given an explicit id."""
+
+    @staticmethod
+    def _sersic(**kw):
+        return models.Sersic(xc=180.0, yc=45.0, Ie=1.0, ns=1.0, re=0.01, **kw)
+
+    def test_explicit_and_automatic_ids(self):
+        """Automatic ids continue in order and skip explicit numbers."""
+        ids = [self._sersic().id, self._sersic(id=1).id, self._sersic().id]
+        assert ids == ["comp_00", "comp_01", "comp_02"]
+        assert self._sersic(id="comp_07").id == "comp_07"
+        assert [self._sersic().id, self._sersic().id] == ["comp_03", "comp_04"]
+        models.Component.reset()
+        assert [self._sersic().id, self._sersic().id] == ["comp_00", "comp_01"]
+
+    def test_idcls_is_read_only(self):
+        """The counter can be read, and only reset through reset()."""
+        self._sersic()
+        assert models.Component.idcls == models.Sersic.idcls == 1
+        assert self._sersic().idcls == 2
+        with pytest.raises(AttributeError, match="reset"):
+            models.Component.idcls = 0
+        with pytest.raises(AttributeError, match="reset"):
+            models.Sersic.idcls = 0
+        models.Sersic.reset()
+        assert models.Component.idcls == 0
+        assert not hasattr(self._sersic(), "reset")
+
+    def test_explicit_id_reused_on_rerun(self):
+        """Re-creating components with explicit ids gives the same keys."""
+        keys = []
+        for _ in range(2):
+            mod = models.Model(self._sersic(id=3))
+            mod.addcomponent(self._sersic())
+            keys.append(mod.params)
+        assert keys[0][0] == "comp_03_xc"
+        assert keys[1][: len(keys[0]) // 2] == keys[0][: len(keys[0]) // 2]
+
+    @pytest.mark.parametrize(
+        "value", [-1, 1.5, "five", True, "comp_x", "comp_", "\u00b2", "\u0663"]
+    )
+    def test_invalid_id_raises(self, value):
+        """Ids must be non-negative integers or 'comp_NN'."""
+        with pytest.raises(ValueError, match="non-negative integer"):
+            self._sersic(id=value)
+
+    def test_wrappers_share_explicit_id(self):
+        """Disk, Ellipsoid and Bridge pass their id to sub-components."""
+        disk = models.Disk(id=4)
+        assert disk.id == disk.radial.id == disk.vertical.id == "comp_04"
+        disk = models.Disk(radial=models.Sersic(id=9))
+        assert disk.id == disk.radial.id == disk.vertical.id == "comp_09"
+        ell = models.Ellipsoid(id=12)
+        assert ell.id == ell.radial.id == "comp_12"
+        bridge = models.SimpleBridge(id=15)
+        assert bridge.id == bridge.radial.id == bridge.parallel.id == "comp_15"
+
+    def test_wrappers_give_back_unused_ids(self):
+        """Sub-components of a wrapper do not use up automatic ids."""
+        disk = models.Disk(models.Sersic())
+        assert disk.id == "comp_00"
+        assert models.Ellipsoid().id == "comp_01"
+        assert models.SimpleBridge().id == "comp_02"
+        assert models.Disk(id=7).id == "comp_07"
+        assert models.Background().id == "comp_03"
+        radial = models.Sersic()
+        point = models.Point()
+        assert models.Disk(radial).id == "comp_04"
+        assert point.id == "comp_05"
+        assert models.Background().id == "comp_06"
+        assert models.Background().id == "comp_08"
+
+    @pytest.mark.parametrize("dup", ["deepcopy", "pickle"])
+    def test_copied_ids_are_not_given_back(self, dup):
+        """An id held by a copy is neither issued again nor adopted."""
+        import copy
+        import pickle
+
+        from socca.models.disk.vertical import HyperSecantHeight
+
+        def clone(comp):
+            if dup == "deepcopy":
+                return copy.deepcopy(comp)
+            return pickle.loads(pickle.dumps(comp))
+
+        radial = models.Sersic()
+        other = clone(radial)
+        assert models.Disk(radial).id == "comp_01"
+        assert other.id == "comp_00"
+        assert models.Sersic().id == "comp_02"
+        radial = models.Sersic()
+        vertical = HyperSecantHeight()
+        held = clone(vertical)
+        disk = models.Disk(radial, vertical)
+        assert held.id == "comp_04"
+        assert disk.id == "comp_03"
+        assert models.Sersic().id == "comp_05"
+
+    def test_old_copies_do_not_change_rerun_ids(self):
+        """Copies made before a counter reset do not block the next run."""
+        import copy
+
+        def cell():
+            models.Component.reset()
+            return models.Disk().id, models.Sersic().id
+
+        first = cell()
+        kept = copy.deepcopy(models.Sersic())
+        assert kept.id == "comp_02"
+        assert cell() == first == ("comp_00", "comp_01")
+
+    def test_reset_forgets_explicit_ids(self):
+        """Explicit ids chosen elsewhere do not shift a re-run cell."""
+
+        def cell():
+            models.Component.reset()
+            return [models.Sersic().id for _ in range(3)]
+
+        first = cell()
+        models.Background(id=1)
+        assert cell() == first == ["comp_00", "comp_01", "comp_02"]
+
+    def test_explicit_id_given_automatically_warns(self):
+        """An explicit id already issued automatically warns."""
+        models.Sersic()
+        with pytest.warns(UserWarning, match="already given automatically"):
+            assert models.Sersic(id=0).id == "comp_00"
+
+    def test_wrapped_subprofiles_cannot_be_reused(self):
+        """A sub-profile belongs to one wrapper; copies are new profiles."""
+        import copy
+
+        from socca.models.disk.vertical import ExponentialHeight
+
+        radial = models.Exponential()
+        thin = models.Disk(radial=radial)
+        with pytest.raises(ValueError, match="already part of comp_00"):
+            models.Disk(radial=radial)
+        vertical = ExponentialHeight()
+        models.Disk(vertical=vertical)
+        with pytest.raises(ValueError, match="already part of"):
+            models.Disk(vertical=vertical)
+        thick = models.Disk(radial=copy.deepcopy(thin.radial))
+        assert thick.id != thin.id
+        with pytest.raises(ValueError, match="already part of"):
+            models.Disk(radial=copy.deepcopy(thin).radial)
+
+    def test_wrapping_again_after_reset(self):
+        """Re-running a wrapper cell after a reset reuses its sub-profiles."""
+        from socca.models.disk.vertical import ExponentialHeight
+
+        radial, vertical = models.Exponential(), ExponentialHeight()
+        for _ in range(2):
+            models.Component.reset()
+            assert (
+                models.Disk(radial=radial, vertical=vertical).id == "comp_00"
+            )
+
+    def test_stripped_subprofiles_cannot_be_reused(self):
+        """Ellipsoid and Bridge strip their sub-profiles, even after a reset."""
+        import copy
+
+        bar = models.Ellipsoid(radial=models.Sersic())
+        models.Component.reset()
+        for radial in (bar.radial, copy.deepcopy(bar.radial)):
+            with pytest.raises(ValueError, match="Ellipsoid or Bridge"):
+                models.Disk(radial=radial)
+
+    def test_renaming_an_id_in_use_raises(self):
+        """Wrapping does not rename an id named in a tie or a model."""
+        import copy
+
+        host = self._sersic()
+        radial = self._sersic()
+        host.re = lambda comp_01_re: 0.5 * comp_01_re
+        copy.deepcopy(radial)
+        with pytest.raises(ValueError, match="comp_01 is already used"):
+            models.Disk(radial=radial)
+        radial = self._sersic()
+        models.Model(radial)
+        with pytest.raises(ValueError, match="already used"):
+            models.Ellipsoid(radial=radial, id=9)
+
+    def test_ties_to_future_ids_do_not_block_wrapping(self):
+        """A tie naming an id not issued yet does not block wrappers."""
+        point = models.Point()
+        point.xc = lambda comp_02_xc: comp_02_xc
+        assert (models.Disk().id, models.Sersic().id) == ("comp_01", "comp_02")
+
+    def test_explicit_subprofile_ids_are_not_replaced(self):
+        """An explicit sub-profile id that the wrapper would drop raises."""
+        from socca.models.disk.vertical import ExponentialHeight
+
+        with pytest.raises(ValueError, match="Set the id on the Disk"):
+            models.Disk(models.Sersic(id=3), ExponentialHeight(id=4))
+        with pytest.raises(ValueError, match="Set the id on the Ellipsoid"):
+            models.Ellipsoid(radial=models.Sersic(id=3), id=5)
+        assert models.Disk(radial=models.Sersic(id=6)).id == "comp_06"
+        assert models.Disk(vertical=ExponentialHeight(id=7)).id == "comp_07"
+
+    def test_wrapper_takes_lowest_subprofile_id(self):
+        """The wrapper takes its sub-profiles' lowest id, leaving no gaps."""
+        from socca.models.disk.vertical import ExponentialHeight
+
+        vertical = ExponentialHeight()
+        assert models.Disk(vertical=vertical).id == "comp_00"
+        assert models.Sersic().id == "comp_01"
+        models.Component.reset()
+        radial, vertical = models.Sersic(), ExponentialHeight()
+        assert models.Disk(radial, vertical).id == "comp_00"
+        vertical, radial = ExponentialHeight(), models.Sersic()
+        assert models.Disk(radial, vertical).id == "comp_01"
+        assert models.Sersic().id == "comp_02"
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda r, p: models.Ellipsoid(radial=r, id="bad"),
+            lambda r, p: models.Ellipsoid(radial=r, id=5),
+            lambda r, p: models.SimpleBridge(radial=r, parallel=p),
+            lambda r, p: models.MesaBridge(radial=r, parallel=p),
+            lambda r, p: models.MesaBridge(radial=r, id=5),
+            lambda r, p: models.Disk(radial=r, id=5),
+        ],
+    )
+    def test_failed_wrapper_leaves_subprofile_intact(self, make):
+        """A wrapper that raises changes neither its sub-profile nor ids."""
+        radial, point = models.Sersic(id=3), models.Point()
+        with pytest.raises((ValueError, TypeError)):
+            make(radial, point)
+        assert "xc" in radial.units and radial._wrapped is None
+        assert models.Ellipsoid(radial=radial).id == "comp_03"
+        assert models.Sersic().id == "comp_01"
+
+    def test_failed_rename_skips_no_number(self):
+        """A wrapper refusing to rename an id in use takes no number."""
+        import copy
+
+        radial = copy.deepcopy(models.Sersic())
+        point = models.Point()
+        point.xc = lambda comp_00_xc: comp_00_xc
+        for wrapper in (
+            models.Disk,
+            models.Ellipsoid,
+            models.SimpleBridge,
+            models.MesaBridge,
+        ):
+            with pytest.raises(ValueError, match="already used"):
+                wrapper(radial=radial)
+        assert "xc" in radial.units
+        assert models.Sersic().id == "comp_02"
+
+    def test_subprofile_copied_with_its_wrapper_is_not_free(self):
+        """A sub-profile copied along with its wrapper cannot be wrapped."""
+        import copy
+
+        disk = models.Disk()
+        disk.radial.Ie = priors.boundto(disk, "radial.re")
+        radial = copy.deepcopy(disk.radial)
+        assert radial.Ie._comp.radial is radial
+        with pytest.raises(ValueError, match="already part of"):
+            models.Disk(radial=radial)
+        assert models.Disk(radial=copy.deepcopy(models.Disk().radial))
+
+    def test_loaded_subprofiles_keep_live_ids(self):
+        """Wrapping a loaded sub-profile neither skips nor reuses live ids."""
+        import pickle
+
+        from socca.models.disk.vertical import HyperSecantHeight
+
+        saved = pickle.dumps([models.Sersic(), HyperSecantHeight()])
+        models.Component.reset()
+        radial = models.Sersic()
+        vertical = HyperSecantHeight()
+        pickle.loads(saved)
+        models.Disk(radial, vertical)
+        assert models.Background().id == "comp_01"
+        models.Component.reset()
+        radial = models.Sersic()
+        live = models.Sersic()
+        _, loaded = pickle.loads(saved)
+        models.Disk(radial, loaded)
+        assert models.Background().id not in {radial.id, live.id}
+
+    def test_old_loaded_subprofiles_keep_live_ids(self):
+        """A sub-profile loaded before a reset does not free a live id."""
+        import pickle
+
+        from socca.models.disk.vertical import HyperSecantHeight
+
+        models.Sersic()
+        old = pickle.loads(pickle.dumps(HyperSecantHeight()))
+        models.Component.reset()
+        radial, live = models.Sersic(), models.Sersic()
+        models.Disk(radial, old)
+        assert models.Background().id not in {radial.id, live.id}
+
+    def test_adopted_explicit_ids_stay_reserved(self):
+        """An explicit id adopted from an older copy is not issued again."""
+        import copy
+        import warnings
+
+        kept = copy.deepcopy(models.Sersic(id=1))
+        models.Component.reset()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            disk = models.Disk(radial=kept)
+        assert disk.id == "comp_01"
+        assert [models.Sersic().id, models.Sersic().id] == [
+            "comp_00",
+            "comp_02",
+        ]
+
+    def test_refactor_ids(self):
+        """A refactored profile keeps its id, which is never given back."""
+        prof = models.PolyExpoRefact(Is=1.0)
+        disk = models.Disk(radial=prof.refactor())
+        assert (prof.id, disk.id) == ("comp_00", "comp_01")
+        assert models.Sersic().id == "comp_02"
+        refactored = models.PolyExpoRefact(Is=1.0)
+        same = refactored.refactor()
+        models.Disk(radial=refactored, id=9)
+        assert models.Sersic().id != same.id
+
+    def test_refactor_rebinds_self_boundto(self):
+        """A boundto on the profile itself follows the refactored profile."""
+        prof = models.PolyExpoRefact(Is=1.0, e=0.3)
+        prof.cbox = priors.boundto(prof, "e")
+        new = prof.refactor()
+        assert new.cbox._comp is new
+
+    def test_duplicate_selection_raises(self):
+        """A selection naming one component twice raises."""
+        mod = models.Model(self._sersic())
+        mod.addcomponent(self._sersic())
+        with pytest.raises(ValueError, match="more than once"):
+            mod._comp_filter([0, "comp_00"])
+        assert mod._comp_filter([1, "comp_00"]) == [1, 0]
+
+    def test_models_without_stored_prefixes(self, simple_hdu):
+        """Models pickled before ids were model keys use model positions."""
+        img = data.Image(simple_hdu)
+        mod = models.Model(self._sersic())
+        mod.addcomponent(models.Point(xc=180.0, yc=45.0, Ic=1.0))
+        ref = mod.getmap(img)
+        del mod.__dict__["_prefix"]
+        assert mod._prefixes == ["comp_00", "comp_01"]
+        np.testing.assert_array_equal(mod.getmap(img), ref)
+        assert mod._comp_filter("comp_01") == [1]
 
 
 class TestPeriodUnits:
@@ -1595,8 +1914,8 @@ class TestPeriodUnits:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     def test_period_in_degrees(self):
         """A theta given in degrees has a 180-degree period."""
@@ -1749,8 +2068,8 @@ class TestEllipsoid:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     def test_default_initialization(self):
         """Test Ellipsoid default initialization."""
@@ -1949,8 +2268,8 @@ class TestBuildKwargsEvaluate:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     @pytest.fixture
     def simple_img(self, simple_hdu, gaussian_psf):
@@ -2180,8 +2499,8 @@ class TestGetmodelWithBridge:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     @pytest.fixture
     def bridge_model_and_image(self, simple_hdu, gaussian_psf):
@@ -2225,8 +2544,8 @@ class TestGetmodelWithEllipsoid:
 
     @pytest.fixture(autouse=True)
     def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
+        """Reset the component ids before each test."""
+        models.Component.reset()
 
     @pytest.fixture
     def ellipsoid_model_and_image(self, simple_hdu, gaussian_psf):

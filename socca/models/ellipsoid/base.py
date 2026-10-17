@@ -104,6 +104,7 @@ class Ellipsoid(Component):
     """
 
     def __init__(self, radial=None, **kwargs):
+        self._check_free(radial, cid=kwargs.get("id"))
         super().__init__(**kwargs)
 
         # radial defaults to a fresh Sersic() per call, not a shared
@@ -139,17 +140,6 @@ class Ellipsoid(Component):
             else:
                 setattr(self, key, getattr(config.Ellipsoid, key))
 
-        # cbox isn't used by Ellipsoid's profile at all; xc/yc/theta/e are
-        # gone too now that Ellipsoid owns them -- strip all five off the
-        # sub-component so it doesn't carry unused, confusing duplicates.
-        # Mirrors Bridge.__init__ for its own radial/parallel components.
-        for key in ["xc", "yc", "theta", "e", "cbox"]:
-            bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
-            if bkey in self.radial.__dict__:
-                delattr(self.radial, bkey)
-            self.radial.units.pop(key, None)
-            self.radial.description.pop(key, None)
-
         self._namespaces = {"radial": self.radial}
 
         self.eratio = kwargs.get("eratio", config.Ellipsoid.eratio)
@@ -162,13 +152,18 @@ class Ellipsoid(Component):
             if param not in self.hyper:
                 self.hyper.append(param)
 
-        if self.radial.id != self.id:
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
+        self._share_id(self.radial)
+
+        # cbox isn't used by Ellipsoid's profile at all; xc/yc/theta/e are
+        # gone too now that Ellipsoid owns them -- strip all five off the
+        # sub-component so it doesn't carry unused, confusing duplicates.
+        # Mirrors Bridge.__init__ for its own radial/parallel components.
+        for key in ["xc", "yc", "theta", "e", "cbox"]:
+            bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
+            if bkey in self.radial.__dict__:
+                delattr(self.radial, bkey)
+            self.radial.units.pop(key, None)
+            self.radial.description.pop(key, None)
 
         self.profile = jax.jit(Ellipsoid._ellipsoid_profile)
 

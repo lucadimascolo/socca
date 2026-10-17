@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import inspect
-import re
 import types
 import warnings
 
@@ -266,7 +265,8 @@ class Model:
 
         Notes
         -----
-        - Parameters are stored with names like 'comp_00_xc', 'comp_01_rc', etc.
+        - Parameters are stored with names like 'comp_00_xc', 'comp_01_rc',
+          etc., prefixed by the component id (``Component.id``).
         - Parameters can be fixed values, prior distributions, or tied (functions).
         - Only parameters with prior distributions are considered free parameters
           during fitting.
@@ -290,22 +290,20 @@ class Model:
         for p, par in values.items():
             if par is None:
                 raise ValueError(
-                    f"Parameter {p} in component {self.ncomp:02d} is set "
+                    f"Parameter {p} in component {prof.id} is set "
                     f"to None. Please provide a valid value or prior."
                 )
             if hasattr(par, "to_model") and self._period(prof, p) is not None:
                 raise ValueError(
-                    f"comp_{self.ncomp:02d}_{p} is periodic and cannot use a "
-                    "prior sampled in another variable "
-                    f"({type(par).__name__})."
+                    f"{prof.id}_{p} is periodic and cannot use a prior "
+                    f"sampled in another variable ({type(par).__name__})."
                 )
 
         if prof.id in self._index:
-            warnings.warn(
-                f"Component id {prof.id} is already in the model; tie "
-                f"arguments naming {prof.id} from other components refer "
-                "to the first one.",
-                stacklevel=3,
+            raise ValueError(
+                f"A component with id {prof.id} is already in the model. "
+                "Components in a model need different ids: create this one "
+                f"with another id, e.g. {type(prof).__name__}(..., id=N)."
             )
 
         self.type.append(prof.__class__.__name__)
@@ -327,8 +325,8 @@ class Model:
                     par.__closure__,
                 )
 
-            self.params.append(f"comp_{self.ncomp:02d}_{p}")
-            self.priors.update({f"comp_{self.ncomp:02d}_{p}": par})
+            self.params.append(f"{prof.id}_{p}")
+            self.priors.update({f"{prof.id}_{p}": par})
             if isinstance(par, numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params) - 1)
 
@@ -339,7 +337,7 @@ class Model:
             else:
                 self.tied.append(False)
 
-            key = f"comp_{self.ncomp:02d}_{p}"
+            key = f"{prof.id}_{p}"
             native_unit = prof.units[p]
             input_unit = prof._input_unit(p) or native_unit
             if input_unit != native_unit:
@@ -360,6 +358,8 @@ class Model:
                 )
 
         self.components.append(prof)
+        self._prefix = self._prefixes + [prof.id]
+        Component._name(prof.id, prof._issue)
         self.ncomp += 1
 
     def parameters(self, freeonly=False):
@@ -535,10 +535,10 @@ class Model:
             Component identifier(s) to parse. Can be:
 
             - None: returns all component indices [0, 1, 2, ...]
-            - str: parsed to integer (e.g., 'comp_00' -> [0])
-            - int: returned as single-element list (e.g., 0 -> [0])
+            - str: component id (e.g., 'comp_03'), as in the parameter names
+            - int: position in the model (e.g., 0 -> [0])
             - list: each element converted individually (can mix types)
-            - Profile object with `id` attribute: converted using the id
+            - component object: that component
 
         Returns
         -------
@@ -553,31 +553,22 @@ class Model:
         [0]
         >>> model._comp_filter([0, 2])  # Multiple indices
         [0, 2]
-        >>> model._comp_filter('comp_01')  # String format
+        >>> model._comp_filter('comp_01')  # Component id
         [1]
         """
         if component is None:
-            component = [int(ci) for ci in range(self.ncomp)]
-        elif isinstance(component, int):
+            return list(range(self.ncomp))
+        if isinstance(component, (str, Component)) or not np.iterable(
+            component
+        ):
             component = [component]
-        elif isinstance(component, str):
-            component = component.replace("comp", "").replace("_", "")
-            component = [int(component)]
-        elif hasattr(component, "id"):
-            component = [self._comp_index(component)]
-        elif isinstance(component, (list, tuple)):
-            component_ = []
-            for c in component:
-                if isinstance(c, int):
-                    component_.append(c)
-                elif isinstance(c, str):
-                    c_ = c.replace("comp", "").replace("_", "")
-                    component_.append(int(c_))
-                elif hasattr(c, "id"):
-                    component_.append(self._comp_index(c))
-            component = component_
-            del component_
-        return component
+        index = [self._comp_index(c) for c in component]
+        if len(set(index)) < len(index):
+            raise ValueError(
+                f"The selection {component!r} names the same component more "
+                "than once (integers are model positions, strings are ids)."
+            )
+        return index
 
     @staticmethod
     def _period(prof, name):
@@ -591,21 +582,46 @@ class Model:
         return None
 
     @property
+    def _prefixes(self):
+        """Parameter-name prefix of each component, in model order."""
+        prefix = self.__dict__.get("_prefix")
+        if prefix is None:
+            prefix = [f"comp_{nc:02d}" for nc in range(self.ncomp)]
+        return list(prefix)
+
+    @property
     def _index(self):
-        """Model index of each component id (the first one, if repeated)."""
-        index = {}
-        for nc, comp in enumerate(self.components):
-            index.setdefault(comp.id, nc)
-        return index
+        """Model position of each component prefix."""
+        return {prefix: nc for nc, prefix in enumerate(self._prefixes)}
 
     def _comp_index(self, comp):
-        """Model index of a component object."""
+        """Model position of a component given as position, id or object."""
+        if isinstance(comp, (int, np.integer)) and not isinstance(comp, bool):
+            if not 0 <= comp < self.ncomp:
+                raise IndexError(
+                    f"Component position {comp} is out of range for a model "
+                    f"with {self.ncomp} components."
+                )
+            return int(comp)
+        if isinstance(comp, str):
+            try:
+                name = f"comp_{Component._number(comp):02d}"
+            except ValueError:
+                name = comp
+            if name not in self._index:
+                raise ValueError(
+                    f"No component {comp} in the model. Components: "
+                    f"{', '.join(self._prefixes)}."
+                )
+            return self._index[name]
         for nc, c in enumerate(self.components):
             if c is comp:
                 return nc
-        if comp.id in self._index:
+        if getattr(comp, "id", None) in self._index:
             return self._index[comp.id]
-        raise ValueError(f"Component {comp.id} is not in the model.")
+        raise ValueError(
+            f"Component {getattr(comp, 'id', repr(comp))} is not in the model."
+        )
 
     def _tiewarn(self, message):
         """Warn once per model, however often ties are resolved."""
@@ -614,50 +630,13 @@ class Model:
             warned.add(message)
             warnings.warn(message)
 
-    def _tiekey(self, name, owner=None):
-        """
-        Model key for a parameter name used in a tie.
-
-        Ties name parameters by component id (``Component.id``), which can
-        differ from the model index used in the model keys, e.g. when
-        components are added in a different order than they were created.
-        The id of `owner`, the model index of the component holding the
-        tie, always refers to that component.
-        """
-        match = re.match(r"(comp_\d+)_(.+)$", name)
-        if match is None:
-            return name
-        index = self._index
-        if owner is not None and match.group(1) == self.components[owner].id:
-            index = {**index, match.group(1): owner}
-        modelkeys = {p.replace(".", "_") for p in self.params}
-        cid = match.group(1)
-        if cid not in index:
-            if name in modelkeys:
-                self._tiewarn(
-                    f"Tie arguments naming {cid} name no component id in "
-                    f"the model, so they are read as model keys ({cid}_*). "
-                    "Ties name components by id (see Component.id)."
-                )
-            return name
-        comp = f"comp_{index[match.group(1)]:02d}"
-        key = f"{comp}_{match.group(2)}"
-        if key != name and name in modelkeys:
-            self._tiewarn(
-                f"Tie arguments naming {cid} refer to the component with id "
-                f"{cid}, which is {comp} in the model, not to the model "
-                f"keys {cid}_*. Ties name components by id (see "
-                "Component.id)."
-            )
-        return key
-
     def _boundkey(self, prior, key=None):
         """Model key of the parameter a boundto value refers to."""
         key = prior.key if key is None else key
         cid = prior._comp.id
         for nc, comp in enumerate(self.components):
             if comp is prior._comp:
-                return f"comp_{nc:02d}_{prior._attr}"
+                return f"{self._prefixes[nc]}_{prior._attr}"
         if cid not in self._index:
             raise ValueError(
                 f"{key} is bound to {prior.key}, but component "
@@ -665,27 +644,24 @@ class Model:
             )
         self._tiewarn(
             f"{key} is bound to a component that is not in the model; "
-            f"using comp_{self._index[cid]:02d}, which has the same id {cid}."
+            f"using the model's {cid}, which has the same id."
         )
-        return f"comp_{self._index[cid]:02d}_{prior._attr}"
+        return f"{cid}_{prior._attr}"
 
     def _tieargs(self, key):
         """Argument names of a tie and the model keys they refer to."""
         prior = self.priors[key]
         if isinstance(prior, _BoundTo):
             return {None: self._boundkey(prior, key)}
-        owner = int(re.match(r"comp_(\d+)_", key).group(1))
         alias = {p.replace(".", "_"): p for p in self.params}
         args = {}
         for name in inspect.signature(prior).parameters:
-            arg = self._tiekey(name, owner)
-            if arg not in self.priors and arg not in alias:
+            if name not in self.priors and name not in alias:
                 raise KeyError(
                     f"Tie argument {name} of {key} matches no parameter "
-                    "of the model. Ties name components by id (see "
-                    "Component.id)."
+                    f"of the model ({', '.join(self._prefixes)})."
                 )
-            args[name] = arg if arg in self.priors else alias[arg]
+            args[name] = name if name in self.priors else alias[name]
         return args
 
     def _resolve_ties(self, pars):
@@ -807,12 +783,11 @@ class Model:
 
         for nc in comp_:
             comp = self.components[nc]
+            prefix = self._prefixes[nc]
             if isinstance(comp, Bridge):
-                kwarg = comp._build_kwargs(
-                    pars, f"comp_{nc:02d}", self._tiekey, self._boundkey
-                )
+                kwarg = comp._build_kwargs(pars, prefix, self._boundkey)
             else:
-                kwarg = comp._build_kwargs(pars, f"comp_{nc:02d}")
+                kwarg = comp._build_kwargs(pars, prefix)
             mone = comp._evaluate(img, **kwarg)
 
             if self.positive[nc] and self.type[nc] != "Point":
@@ -865,4 +840,4 @@ class Model:
         return mraw, msmo, mbkg, mneg
 
 
-Component.idcls = 0
+Component.reset()

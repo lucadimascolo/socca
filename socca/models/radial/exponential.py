@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jp
 
 from .. import config
+from ...priors import _BoundTo
 from ..base import Component, _warn_range
 from .base import Profile
 
@@ -359,8 +360,12 @@ class PolyExpoRefact(Exponential):
         prof = PolyExponential(
             truncation=self.truncation, positive=self.positive, **kwargs
         )
-        Component.idcls -= 1
-        prof.id = self.id
+        Component._release([prof])
+        prof.id, prof._issue, prof._fixed = self.id, None, self._fixed
+        self._issue = None
+        for key, value in kwargs.items():
+            if isinstance(value, _BoundTo) and value._comp is self:
+                setattr(prof, key, _BoundTo(value.key, prof, value._attr))
         if self.truncation is not None:
             prof.rt, prof.wt = self.rt, self.wt
         prof._input_units = {

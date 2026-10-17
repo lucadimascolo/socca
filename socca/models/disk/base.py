@@ -92,6 +92,7 @@ class Disk(Component):
         The component ID is synchronized between the Disk, radial, and vertical
         components to ensure consistent parameter naming in composite models.
         """
+        self._check_free(radial, vertical, cid=kwargs.get("id"))
         super().__init__(**kwargs)
 
         # radial/vertical default to fresh instances per call, not shared
@@ -111,14 +112,7 @@ class Disk(Component):
 
         self._namespaces = {"radial": self.radial, "vertical": self.vertical}
 
-        if self.radial.id != self.id:
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
-            self.vertical.id = self.id
+        self._share_id(self.radial, self.vertical)
 
         self._rkw = [
             f"r_{key}"

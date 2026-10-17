@@ -1,8 +1,10 @@
 """Base component class for model profiles."""
 
 import inspect
+import re
 import threading
 import types
+import uuid
 import warnings
 
 import numpy as np
@@ -132,7 +134,34 @@ def _warn_span(value, name, span, unit="rad", note=""):
             )
 
 
-class Component:
+class _Counter(type):
+    """Metaclass keeping ``Component.idcls`` read-only."""
+
+    @property
+    def idcls(cls):
+        return Component._idcls
+
+    @idcls.setter
+    def idcls(cls, value):
+        raise AttributeError(
+            "Component.idcls cannot be set. Use Component.reset() to start "
+            "the ids again from comp_00."
+        )
+
+    def reset(cls):
+        """Start the ids again from comp_00, forgetting all ids given so far."""
+        Component._idcls = 0
+        Component._run += 1
+        for record in (
+            Component._explicit,
+            Component._issued,
+            Component._copied,
+            Component._named,
+        ):
+            record.clear()
+
+
+class Component(metaclass=_Counter):
     """
     Base class for all model components.
 
@@ -142,10 +171,16 @@ class Component:
 
     Attributes
     ----------
-    idcls : int (class variable)
-        Class-level counter for assigning unique IDs to component instances.
+    idcls : int (class variable, read-only)
+        Number of the next automatic ID. Numbers chosen explicitly with
+        ``id=`` are skipped. ``Component.reset()`` (e.g. at the top of a
+        notebook cell) starts again from ``comp_00``: the ids given so far
+        are forgotten, and sub-components wrapped before can be wrapped
+        again.
     id : str
-        Unique identifier for this component instance (e.g., 'comp_00', 'comp_01').
+        Identifier of this component (e.g., 'comp_00', 'comp_01'). It is the
+        prefix of the component's parameters in a Model, and the name used
+        to refer to them in tied parameters.
     positive : bool
         Whether to enforce positivity constraint on this component.
     hyper : list of str
@@ -161,7 +196,13 @@ class Component:
         are not periodic.
     """
 
-    idcls = 0
+    idcls = property(lambda self: Component._idcls)
+    _idcls = 0
+    _run = 0
+    _explicit = set()
+    _issued = {}
+    _copied = set()
+    _named = set()
 
     def __init__(self, **kwargs):
         """
@@ -174,15 +215,21 @@ class Component:
 
             positive : bool, optional
                 Override default positivity constraint.
+            id : int or str, optional
+                Component number (e.g. ``5`` or ``'comp_05'``). By default,
+                the next free number is assigned automatically.
 
         Notes
         -----
-        The component ID is automatically assigned and incremented for each
-        new instance. This ensures unique identification when multiple components
-        are combined in a model.
+        Automatic IDs increase with each new instance and skip numbers that
+        were chosen explicitly. An explicit ID gives the same name every
+        time the component is created, e.g. when re-running a notebook
+        cell. Components in the same model must have different IDs.
         """
-        self.id = f"comp_{Component.idcls:02d}"
-        Component.idcls += 1
+        self.id = Component._newid(kwargs.get("id"))
+        self._issue = Component._issued.get(self.id)
+        self._fixed = kwargs.get("id") is not None
+        self._wrapped = None
 
         self.positive = kwargs.get("positive", config.Component.positive)
         self.hyper = []
@@ -192,6 +239,173 @@ class Component:
         self.periodic = {}
         self._initialized = False
 
+    def __setstate__(self, state):
+        """Restore state; a copy is unwrapped unless copied with its wrapper."""
+        wrapped = self.__dict__.get("_wrapped")
+        self.__dict__.update(state)
+        self.__dict__.setdefault("_issue", None)
+        self.__dict__.setdefault("_fixed", False)
+        if self._issue is not None:
+            Component._copied.add(self._issue)
+        self.__dict__["_wrapped"] = wrapped
+        for value in state.values():
+            if isinstance(value, Component):
+                value.__dict__["_wrapped"] = Component._run
+
+    @staticmethod
+    def _newid(value=None):
+        """Return the id for an explicit number, or the next automatic one."""
+        if value is None:
+            while Component._idcls in Component._explicit:
+                Component._idcls += 1
+            number = Component._idcls
+            Component._idcls += 1
+            Component._issued[f"comp_{number:02d}"] = uuid.uuid4().hex
+        else:
+            number = Component._number(value)
+            Component._reserve(number)
+        return f"comp_{number:02d}"
+
+    @staticmethod
+    def _reserve(number):
+        """Keep an explicit number out of the automatic ids."""
+        cid = f"comp_{number:02d}"
+        if Component._issued.pop(cid, None) is not None:
+            warnings.warn(
+                f"{cid} was already given automatically to another "
+                "component. Components in the same model must have "
+                "different ids.",
+                UserWarning,
+                stacklevel=4,
+            )
+        Component._explicit.add(number)
+
+    @staticmethod
+    def _number(value):
+        """Component number of an id given as integer or 'comp_NN'."""
+        number = value
+        if isinstance(value, str):
+            number = value.removeprefix("comp_")
+        valid = not isinstance(number, bool) and (
+            (
+                isinstance(number, str)
+                and number.isascii()
+                and number.isdecimal()
+            )
+            or (isinstance(number, (int, np.integer)) and number >= 0)
+        )
+        if not valid:
+            raise ValueError(
+                f"Component id must be a non-negative integer or 'comp_NN', "
+                f"not {value!r}."
+            )
+        return int(number)
+
+    def _check_free(self, *subs, cid=None):
+        """Raise if sub-components cannot be wrapped, before changing any."""
+        subs = [comp for comp in subs if comp is not None]
+        for comp in subs:
+            if hasattr(comp, "_scale_amp") and "xc" not in comp.units:
+                raise ValueError(
+                    f"This {type(comp).__name__} was already used in an "
+                    "Ellipsoid or Bridge, which removed its position and "
+                    "shape parameters. Create a new one."
+                )
+            if comp._wrapped == Component._run:
+                raise ValueError(
+                    f"This {type(comp).__name__} is already part of "
+                    f"{comp.id}. Create a new one for each component, "
+                    "or pass a copy (copy.deepcopy)."
+                )
+        if cid is not None:
+            cid = f"comp_{Component._number(cid):02d}"
+        self._owner(subs, cid)
+
+    def _owner(self, comps, cid=None):
+        """
+        Return the id shared by comps, or None if none of theirs applies.
+
+        This is cid if given, then an id set explicitly on one of them, then
+        the lowest automatic id issued to one of them. Raises if this would
+        replace an explicit id or rename an id already in use.
+        """
+        if cid is None:
+            cid = next((comp.id for comp in comps if comp._fixed), None)
+        if cid is None:
+            owned = [comp.id for comp in comps if Component._owns(comp)]
+            cid = min(owned, key=Component._number, default=None)
+        for comp in comps:
+            if comp._fixed and comp.id != cid:
+                raise ValueError(
+                    f"The id {comp.id} of this {type(comp).__name__} would "
+                    f"be replaced by {cid}. Set the id on the "
+                    f"{type(self).__name__} instead."
+                )
+            if comp.id != cid and comp._issue in Component._named:
+                raise ValueError(
+                    f"{comp.id} is already used in a model or a tie, but "
+                    f"this {type(self).__name__} would rename it"
+                    f"{f' to {cid}' if cid else ''}. Wrap the "
+                    f"{type(comp).__name__} before referring to it, or "
+                    "refer to the wrapper's id."
+                )
+        return cid
+
+    def _share_id(self, *subs):
+        """
+        Give sub-components a single id.
+
+        An id set explicitly on this component wins, then one set explicitly
+        on a sub-component, then the lowest automatic id issued to any of
+        them. Unused automatic ids are given back to the counter, so the
+        next component gets the next number. The shared id is never given
+        back.
+        """
+        comps = (self, *subs)
+        cid = self._owner(comps, self.id if self._fixed else None) or self.id
+        fixed = any(comp._fixed for comp in comps)
+        if fixed:
+            for comp in comps:
+                if comp.id == cid and Component._owns(comp):
+                    del Component._issued[comp.id]
+            Component._reserve(Component._number(cid))
+        Component._release(comp for comp in comps if comp.id != cid)
+        for comp in comps:
+            comp.id, comp._issue, comp._fixed = cid, None, fixed
+        for comp in subs:
+            comp._wrapped = Component._run
+
+    @staticmethod
+    def _owns(comp):
+        """Whether comp holds the automatic id issued to it, never copied."""
+        return (
+            comp._issue is not None
+            and comp._issue == Component._issued.get(comp.id)
+            and comp._issue not in Component._copied
+        )
+
+    @staticmethod
+    def _release(comps):
+        """Give back ids issued to these components, if unused and latest."""
+        numbers = {
+            int(comp.id.removeprefix("comp_"))
+            for comp in comps
+            if Component._owns(comp)
+        }
+        number = Component._idcls - 1
+        while number in numbers or number in Component._explicit:
+            if number in numbers:
+                Component._idcls = number
+                Component._issued.pop(f"comp_{number:02d}", None)
+            number -= 1
+
+    @staticmethod
+    def _name(cid, issue=None):
+        """Record an id used as a model key or in a tie."""
+        issue = issue or Component._issued.get(cid)
+        if issue is not None:
+            Component._named.add(issue)
+
     def __setattr__(self, name, value):
         """Prevent adding undefined attributes after initialization."""
         if getattr(self, "_initialized", False) and not hasattr(self, name):
@@ -200,6 +414,15 @@ class Component:
                 f"{self.__class__.__name__}. "
                 f"Use addparameter() to add new parameters."
             )
+        if isinstance(value, (types.LambdaType, types.FunctionType)):
+            try:
+                args = inspect.signature(value).parameters
+            except (TypeError, ValueError):
+                args = {}
+            for arg in args:
+                match = re.match(r"(comp_\d+)_", arg)
+                if match:
+                    Component._name(match.group(1))
         super().__setattr__(name, value)
 
     #   Print model parameters

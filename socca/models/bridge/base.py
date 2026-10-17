@@ -83,6 +83,7 @@ class Bridge(Component):
     """
 
     def __init__(self, radial=None, parallel=None, **kwargs):
+        self._check_free(radial, parallel, cid=kwargs.get("id"))
         super().__init__(**kwargs)
 
         # radial/parallel default to fresh instances per call, not shared
@@ -127,16 +128,7 @@ class Bridge(Component):
         self.radial = radial
         self.parallel = parallel
 
-        for attr in [self.radial, self.parallel]:
-            if isinstance(attr, PolyExpoRefact):
-                raise TypeError(
-                    "PolyExpoRefact is not supported for Bridge. "
-                    "Use PolyExponential or another profile type instead."
-                )
-            if isinstance(attr, (Background, Point)):
-                raise TypeError(
-                    f"{type(attr).__name__} is not supported for Bridge."
-                )
+        self._share_id(self.radial, self.parallel)
 
         for key in ["xc", "yc", "theta", "e", "cbox"]:
             bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
@@ -163,14 +155,6 @@ class Bridge(Component):
             if bkey in self.parallel.__dict__:
                 delattr(self.parallel, bkey)
             self.parallel.units.pop(pname, None)
-
-        if self.radial.id != self.id:
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
 
         for attr in [self.parallel, self.radial]:
             attr.addparameter(attr._scale_amp, 1.00)
@@ -244,6 +228,20 @@ class Bridge(Component):
         )
 
         self.profile = None
+
+    def _check_free(self, radial, parallel, cid=None):
+        """Raise if radial or parallel cannot be used in this bridge."""
+        for attr in [radial, parallel]:
+            if isinstance(attr, PolyExpoRefact):
+                raise TypeError(
+                    "PolyExpoRefact is not supported for Bridge. "
+                    "Use PolyExponential or another profile type instead."
+                )
+            if isinstance(attr, (Background, Point)):
+                raise TypeError(
+                    f"{type(attr).__name__} is not supported for Bridge."
+                )
+        super()._check_free(radial, parallel, cid=cid)
 
     @property
     def rs(self):  # noqa: D102
@@ -393,7 +391,7 @@ class Bridge(Component):
 
         return rgrid, zgrid
 
-    def _build_kwargs(self, pars, comp_prefix, tiekey=None, boundkey=None):
+    def _build_kwargs(self, pars, comp_prefix, boundkey=None):
         """
         Build keyword arguments for _evaluate from the full parameters dict.
 
@@ -403,10 +401,6 @@ class Bridge(Component):
             Full parameters dictionary with prefixed keys.
         comp_prefix : str
             Component prefix (e.g., 'comp_00').
-        tiekey : callable, optional
-            Maps a tied-lambda argument name of another component to its
-            key in `pars`. Names with this component's id always map to
-            `comp_prefix`.
         boundkey : callable, optional
             Maps a boundto value to the key of the bound parameter in
             `pars`. Without it, the bound component is read directly.
@@ -422,8 +416,6 @@ class Bridge(Component):
         def parkey(name):
             if name.startswith(f"{self.id}_"):
                 name = f"{comp_prefix}_{name[len(self.id) + 1 :]}"
-            elif tiekey is not None:
-                name = tiekey(name)
             return name if name in pars else alias.get(name, name)
 
         kwarg = {}
@@ -714,6 +706,7 @@ class MesaBridge(Bridge):
     """
 
     def __init__(self, radial=None, parallel=None, **kwargs):
+        self._check_free(radial, parallel, cid=kwargs.get("id"))
         if radial is None:
             radial = Beta(
                 alpha=config.MesaBridge.r_alpha,
