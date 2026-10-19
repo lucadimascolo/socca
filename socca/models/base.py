@@ -1,5 +1,6 @@
 """Base component class for model profiles."""
 
+import functools
 import inspect
 import re
 import threading
@@ -132,6 +133,28 @@ def _warn_span(value, name, span, unit="rad", note=""):
                 UserWarning,
                 stacklevel=4,
             )
+
+
+def _format_value(value):
+    """Short text for a parameter value, prior or tie."""
+    if value is None:
+        return "None"
+    if isinstance(value, numpyro.distributions.Distribution):
+        return f"Distribution: {type(value).__name__}"
+    if isinstance(value, (types.LambdaType, types.FunctionType, _BoundTo)):
+        return "Tied parameter"
+    return f"{value:.4E}"
+
+
+def _format_rows(rows, indent=""):
+    """Lines for (name, unit, value, description) rows in aligned columns."""
+    width = max(len(f"{name} [{unit}]") for name, unit, _, _ in rows)
+    vwidth = max(len(value) for _, _, value, _ in rows)
+    return [
+        f"{indent}{name:<{width - len(unit) - 3}} [{unit}] : "
+        f"{value:<{vwidth}} | {desc}".rstrip(" |")
+        for name, unit, value, desc in rows
+    ]
 
 
 class _Counter(type):
@@ -439,8 +462,8 @@ class Component(metaclass=_Counter):
         -----
         Output format:
 
-        Model parameters
-        ================
+        ComponentType (comp_NN)
+        =======================
         parameter_name [units] : value | description
 
         Hyperparameters
@@ -457,64 +480,41 @@ class Component(metaclass=_Counter):
         >>> from socca.models import Beta
         >>> beta = Beta(xc=180.5, yc=45.2, rc=0.01, Ic=100, beta=0.5)
         >>> beta.parameters()
-        Model parameters
-        ================
-        xc    [deg]    : 1.8050E+02 | Right ascension of centroid
-        yc    [deg]    : 4.5200E+01 | Declination of centroid
-        rc    [deg]    : 1.0000E-02 | Core radius
-        Ic    [image]  : 1.0000E+02 | Central surface brightness
-        beta  []       : 5.0000E-01 | Slope parameter
-        theta [rad]    : 0.0000E+00 | Position angle (east from north)
-        e     []       : 0.0000E+00 | Projected axis ratio
-        cbox  []       : 0.0000E+00 | Projected boxiness
+        Beta (comp_00)
+        ==============
+        xc    [deg] : 1.8050E+02 | Right ascension of centroid
+        yc    [deg] : 4.5200E+01 | Declination of centroid
+        rc    [deg] : 1.0000E-02 | Core radius
+        Ic  [image] : 1.0000E+02 | Central surface brightness
+        beta     [] : 5.0000E-01 | Slope parameter
+        theta [rad] : 0.0000E+00 | Position angle (east from north)
+        e        [] : 0.0000E+00 | Projected axis ratio
+        cbox     [] : 0.0000E+00 | Projected boxiness
         """
         keyout = [key for key in self.units.keys() if key not in self.hyper]
 
         if len(keyout) > 0:
-            maxlen = np.max(
-                np.array(
-                    [
-                        len(f"{key} [{self.units[key]}]")
-                        for key in keyout + self.hyper
-                    ]
-                )
+            lines = _format_rows(
+                [
+                    (
+                        key,
+                        self.units[key],
+                        _format_value(
+                            functools.reduce(getattr, key.split("."), self)
+                        ),
+                        self.description.get(key, ""),
+                    )
+                    for key in keyout + self.hyper
+                ]
             )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
-                keypar = getattr(self, key)
-
-                if keypar is None:
-                    keyval = None
-                elif isinstance(keypar, numpyro.distributions.Distribution):
-                    keyval = f"Distribution: {keypar.__class__.__name__}"
-                elif isinstance(
-                    keypar, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
-                    keyval = "Tied keyparameter"
-                else:
-                    keyval = f"{keypar:.4E}"
-
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{keyval}".ljust(10)
-                    + f" | {self.description[key]}"
-                )
+            title = f"{type(self).__name__} ({self.id})"
+            print(f"\n{title}\n" + "=" * len(title))
+            print("\n".join(lines[: len(keyout)]))
 
             if len(self.hyper) > 0:
                 print("\nHyperparameters")
                 print("=" * 15)
-                for key in self.hyper:
-                    keylen = maxlen - len(f" [{self.units[key]}]")
-                    kvalue = getattr(self, key)
-                    kvalue = None if kvalue is None else f"{kvalue:.4E}"
-                    print(
-                        f"{key:<{keylen}} [{self.units[key]}] : "
-                        + f"{kvalue}".ljust(10)
-                        + f" | {self.description[key]}"
-                    )
+                print("\n".join(lines[len(keyout) :]))
 
         else:
             print("No parameters defined.")

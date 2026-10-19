@@ -126,23 +126,25 @@ The `params` array must contain the parameter values in the order expected by th
 
 Model parameters
 ================
-comp_00_xc    [deg] : 0.0000E+00
-comp_00_yc    [deg] : 0.0000E+00
-comp_00_theta [rad] : 0.0000E+00
-comp_00_e        [] : 0.0000E+00
-comp_00_cbox     [] : 0.0000E+00
-comp_00_re    [deg] : Distribution: LogUniform
-comp_00_Ie  [image] : Distribution: LogUniform
-comp_00_ns       [] : 1.0000E+00
+Sersic (comp_00)
+  xc    [deg] : 0.0000E+00               | Right ascension of centroid
+  yc    [deg] : 0.0000E+00               | Declination of centroid
+  theta [rad] : 0.0000E+00               | Position angle (east from north)
+  e        [] : 0.0000E+00               | Projected ellipticity (1 - axis ratio)
+  cbox     [] : 0.0000E+00               | Projected boxiness
+  re    [deg] : Distribution: LogUniform | Effective radius
+  Ie  [image] : Distribution: LogUniform | Surface brightness at re
+  ns       [] : 1.0000E+00               | Sersic index
 
 >>> model.parameters(freeonly=True) # Print only free parameters (those with priors)
 
 Model parameters
 ================
-comp_00_re    [deg] : Distribution: LogUniform
-comp_00_Ie  [image] : Distribution: LogUniform
+Sersic (comp_00)
+  re   [deg] : Distribution: LogUniform | Effective radius
+  Ie [image] : Distribution: LogUniform | Surface brightness at re
 ```
 
-Each label follows the pattern `<component_id>_<parameter_name>`, where `component_id` is the default name (e.g., `comp_00`, `comp_01`, ...) assigned by **``socca``** when initializing the corresponding component. This ordering is consistent throughout the inference process and must be respected when manually constructing parameter arrays for `getmodel()`.
+Parameters are listed under the type and id of their component. The full name of each parameter, used for instance in tied parameters and in `fit.labels`, follows the pattern `<component_id>_<parameter_name>` (here, `comp_00_re`), where `component_id` is the name (e.g., `comp_00`, `comp_01`, ...) assigned by **``socca``** when initializing the corresponding component. Printing the model (`print(model)`) lists only its components and their ids. The order of the parameters is consistent throughout the inference process and must be respected when manually constructing parameter arrays for `getmodel()`.
 
 In practice, when working with fitted models, the `fitter` object provides the more convenient `getmodel()` method (see the ["Running the model inference"](./tutorial_fitting.md) tutorial), which automatically uses the best-fit or median posterior parameters.

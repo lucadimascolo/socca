@@ -206,7 +206,7 @@ class Ellipsoid(Component):
                 eratio="Ratio of the second (vertical) minor axis's ellipticity to e",
                 inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
                 rot="Rotation applied after inclining, in the ellipsoid's own tilted frame",
-                losdepth="Half line-of-sigt extent for integration",
+                losdepth="Half line-of-sight extent for integration",
                 losbins="Number of points for line-of-sight integration",
             )
         )
@@ -529,117 +529,6 @@ class Ellipsoid(Component):
         xt, yt = xt * cosr + yt * sinr, -xt * sinr + yt * cosr
 
         return xt, yt, zt
-
-    def parameters(self):
-        """
-        Print formatted table of ellipsoid parameters from the radial component.
-
-        Displays parameters from both the radial sub-component (prefixed
-        as 'radial.parameter') and Ellipsoid's own
-        xc/yc/theta/e/eratio/inc/rot.
-        Separates regular parameters from hyperparameters (integration
-        settings).
-
-        Notes
-        -----
-        Output format:
-
-        Model parameters
-        ================
-        radial.re    [deg]   : value | Effective radius
-        radial.Ie    [image] : value | Surface brightness at re
-        radial.ns    []      : value | Sersic index
-        xc           [deg]   : value | Right ascension of centroid
-        theta        [rad]   : value | Position angle (east from north)
-        inc          [rad]   : value | Inclination angle (0=face-on)
-
-        Hyperparameters
-        ===============
-        losdepth     [deg]   : value | Half line-of-sight extent
-        losbins      []      : value | Number of integration points
-
-        Examples
-        --------
-        >>> from socca.models import Ellipsoid, Sersic
-        >>> ellipsoid = Ellipsoid(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
-        >>> ellipsoid.xc, ellipsoid.yc, ellipsoid.theta, ellipsoid.e = (
-        ...     180.5, 45.2, 0.5, 0.7
-        ... )
-        >>> ellipsoid.parameters()
-        Model parameters
-        ================
-        radial.re         [deg]    : 2.0000E-04 | Effective radius
-        ...
-        """
-        keyout = [key for key in self.units.keys() if key not in self.hyper]
-
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array(
-                    [
-                        len(f"{key} [{self.units[key]}]")
-                        for key in keyout + self.hyper
-                    ]
-                )
-            )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
-                if key.startswith("radial."):
-                    kvalue = getattr(self.radial, key.replace("radial.", ""))
-                else:
-                    kvalue = getattr(self, key)
-
-                if kvalue is None:
-                    kvalue = None
-                elif isinstance(kvalue, numpyro.distributions.Distribution):
-                    kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
-                    kvalue = "Tied parameter"
-                else:
-                    kvalue = f"{kvalue:.4E}"
-
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{kvalue}".ljust(10)
-                    + f" | {self.description[key]}"
-                )
-
-            if len(self.hyper) > 0:
-                print("\nHyperparameters")
-                print("=" * 15)
-                for key in self.hyper:
-                    keylen = maxlen - len(f" [{self.units[key]}]")
-                    if key.startswith("radial."):
-                        kvalue = getattr(
-                            self.radial, key.replace("radial.", "")
-                        )
-                    else:
-                        kvalue = getattr(self, key)
-
-                    if kvalue is None:
-                        kvalue = None
-                    elif isinstance(
-                        kvalue, numpyro.distributions.Distribution
-                    ):
-                        kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                    elif isinstance(
-                        kvalue,
-                        (types.LambdaType, types.FunctionType, _BoundTo),
-                    ):
-                        kvalue = "Tied parameter"
-                    else:
-                        kvalue = f"{kvalue:.4E}"
-
-                    print(
-                        f"{key:<{keylen}} [{self.units[key]}] : "
-                        + f"{kvalue}".ljust(10)
-                        + f" | {self.description[key]}"
-                    )
 
     def parlist(self):
         """

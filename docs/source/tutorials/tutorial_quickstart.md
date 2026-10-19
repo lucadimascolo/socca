@@ -63,9 +63,12 @@ The `point` object now represents a point-like model component that can be used 
 
 ```python
 >>> point.parameters()
-xc   [deg] : None       | Right ascension
-yc   [deg] : None       | Declination
-Ic [image] : None       | Peak surface brightness
+
+Point (comp_00)
+===============
+xc   [deg] : None | Right ascension
+yc   [deg] : None | Declination
+Ic [image] : None | Peak surface brightness
 ```
 
 As shown above, the `Point` model is described by a total of three parameters. The respective units are reported in square brackets next to each name, while a short description of each parameter is provided on the right. The `None` values indicate that no priors or fixed values have been assigned yet. These can be specified either by defining probability distributions or by fixing parameters to constant values:
@@ -90,6 +93,9 @@ Setting up a Sérsic (or any other) component follows the same procedure as for 
 ```python
 >>> sersic = socca.models.Sersic()
 >>> sersic.parameters()
+
+Sersic (comp_01)
+================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -97,7 +103,7 @@ e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 re    [deg] : None       | Effective radius
 Ie  [image] : None       | Surface brightness at re
-ns       [] : 5.0000E-01 | Sérsic index
+ns       [] : 5.0000E-01 | Sersic index
 ```
 
 Inspecting the image, we see that the diffuse component is centred on the bright point source. We therefore fix the `point` and `sersic` components to share the same centroid. This is achieved by binding the `xc` and `yc` parameters of the Sérsic component to those of the point source:
@@ -243,20 +249,17 @@ Finally, for a quick summary of the best-fit parameters and their uncertainties,
 >>> fit.parameters()
 
 Best-fit parameters
-========================================
+===================
+Point (comp_00)
+  xc    :  2.0000E+01 [+9.4877E-07/-9.6246E-07]
+  yc    : -1.0000E+01 [+8.6032E-07/-8.3115E-07]
+  Ic    :  9.8960E+00 [+4.2454E-01/-4.2952E-01]
 
-comp_00
--------
-xc :  2.0000E+01 [+9.4877E-07/-9.6246E-07]
-yc : -1.0000E+01 [+8.6032E-07/-8.3115E-07]
-Ic :  9.8960E+00 [+4.2454E-01/-4.2952E-01]
-
-comp_01
--------
-theta :  8.7960E-01 [+5.3261E-03/-5.2986E-03]
-e     :  5.9568E-01 [+4.3743E-03/-4.5214E-03]
-re    :  4.1541E-04 [+3.8318E-06/-3.7940E-06]
-Ie    :  2.9910E-01 [+3.5399E-03/-3.3804E-03]
+Sersic (comp_01)
+  theta :  8.7960E-01 [+5.3261E-03/-5.2986E-03]
+  e     :  5.9568E-01 [+4.3743E-03/-4.5214E-03]
+  re    :  4.1541E-04 [+3.8318E-06/-3.7940E-06]
+  Ie    :  2.9910E-01 [+3.5399E-03/-3.3804E-03]
 ```
 
 The output shows the weighted median (50th percentile) as the best-fit value for each parameter of the combined model, along with the associated uncertainties derived from the 16th and 84th percentiles.

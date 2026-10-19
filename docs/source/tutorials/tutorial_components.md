@@ -48,8 +48,8 @@ Each radial profile component inherits from the abstract base class `Profile`, w
 >>> comp = Profile()
 >>> comp.parameters()
 
-Model parameters
-================
+Profile (comp_00)
+=================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -104,17 +104,17 @@ The parameter $\alpha$ controls the radial exponent, with $\alpha = 2$ correspon
 >>> comp = Beta()
 >>> comp.parameters()
 
-Model parameters
-================
+Beta (comp_00)
+==============
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Core radius
-Ic  [image] : None       | Central surface brightness
 alpha    [] : 2.0000E+00 | Radial exponent
 beta     [] : 5.5000E-01 | Slope parameter
+Ic  [image] : None       | Central surface brightness
 ```
 
 #### gNFW
@@ -139,18 +139,18 @@ The integral is computed numerically using Gauss-Kronrod adaptive quadrature, as
 >>> comp = gNFW()
 >>> comp.parameters()
 
-Model parameters
-================
+gNFW (comp_00)
+==============
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Scale radius
-Ic  [image] : None       | Characteristic surface brightness
 alpha    [] : 1.0510E+00 | Intermediate slope
 beta     [] : 5.4905E+00 | Outer slope
 gamma    [] : 3.0810E-01 | Inner slope
+Ic  [image] : None       | Characteristic surface brightness
 ```
 
 #### Power
@@ -167,16 +167,16 @@ where $I_c$ is the characteristic surface brightness at the scale radius $r_c$, 
 >>> comp = Power()
 >>> comp.parameters()
 
-Model parameters
-================
+Power (comp_00)
+===============
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Scale radius
-Ic  [image] : None       | Characteristic surface brightness
 alpha    [] : 2.0000E+00 | Power law slope
+Ic  [image] : None       | Characteristic surface brightness
 ```
 
 #### TopHat
@@ -196,9 +196,15 @@ This profile is useful for modeling flat-topped emission regions or as a simple 
 >>> comp = TopHat()
 >>> comp.parameters()
 
-Model parameters
+TopHat (comp_00)
 ================
+xc    [deg] : None       | Right ascension of centroid
+yc    [deg] : None       | Declination of centroid
+theta [rad] : 0.0000E+00 | Position angle (east from north)
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
+cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Cutoff distance
+Ic  [image] : None       | Surface brightness
 ```
 
 ```{note}
@@ -222,7 +228,7 @@ The Sérsic profile encompasses several commonly used models as special cases, i
 >>> comp = Sersic()
 >>> comp.parameters()
 
-Model parameters
+Sersic (comp_00)
 ================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
@@ -248,8 +254,8 @@ where $I_s$ is the central surface brightness and $r_s$ is the scale radius (sta
 >>> comp = Gaussian()
 >>> comp.parameters()
 
-Model parameters
-================
+Gaussian (comp_00)
+==================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -273,8 +279,8 @@ where $I_s$ is the central surface brightness and $r_s$ is the exponential scale
 >>> comp = Exponential()
 >>> comp.parameters()
 
-Model parameters
-================
+Exponential (comp_00)
+=====================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -301,8 +307,8 @@ where $I_s$ is the central surface brightness, $r_s$ is a characteristic scale r
 >>> comp = PolyExponential()
 >>> comp.parameters()
 
-Model parameters
-================
+PolyExponential (comp_00)
+=========================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -310,11 +316,11 @@ e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
+rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 c1       [] : 0.0000E+00 | Polynomial coefficient 1
 c2       [] : 0.0000E+00 | Polynomial coefficient 2
 c3       [] : 0.0000E+00 | Polynomial coefficient 3
 c4       [] : 0.0000E+00 | Polynomial coefficient 4
-rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 ```
 
 (polyexporefact)=
@@ -330,8 +336,8 @@ $$
 >>> comp = PolyExpoRefact()
 >>> comp.parameters()
 
-Model parameters
-================
+PolyExpoRefact (comp_00)
+========================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -339,11 +345,11 @@ e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
+rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 I1  [image] : 0.0000E+00 | Polynomial intensity coefficient 1
 I2  [image] : 0.0000E+00 | Polynomial intensity coefficient 2
 I3  [image] : 0.0000E+00 | Polynomial intensity coefficient 3
 I4  [image] : 0.0000E+00 | Polynomial intensity coefficient 4
-rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 ```
 
 #### ModExponential
@@ -358,8 +364,8 @@ $$
 >>> comp = ModExponential()
 >>> comp.parameters()
 
-Model parameters
-================
+ModExponential (comp_00)
+========================
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -417,17 +423,17 @@ Truncation can be attached at construction time or set afterwards:
 >>>
 >>> comp.parameters()
 
-Model parameters
-================
+Beta (comp_02)
+==============
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Core radius
-Ic  [image] : None       | Central surface brightness
 alpha    [] : 2.0000E+00 | Radial exponent
 beta     [] : 5.5000E-01 | Slope parameter
+Ic  [image] : None       | Central surface brightness
 rt    [deg] : 1.0000E-02 | Truncation radius
 wt    [deg] : 5.0000E-04 | Truncation width
 ```
@@ -457,12 +463,12 @@ In case none of the built-in `Profile` subclasses adequately describe the desire
 >>> comp = CustomProfile(parameters=parameters, profile=custom_profile)
 >>> comp.parameters()
 
-Model parameters
-================
+CustomProfile (comp_00)
+=======================
 xc      [deg] : None       | Right ascension of centroid
 yc      [deg] : None       | Declination of centroid
 theta   [rad] : 0.0000E+00 | Position angle (east from north)
-e          [] : 0.0000E+00 | Projected axis ratio
+e          [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox       [] : 0.0000E+00 | Projected boxiness
 scale [image] : None       | Scaling factor
 ```
@@ -481,8 +487,8 @@ where $R$ and $z$ are the cylindrical coordinates in the disk frame, while $r$ a
 >>> comp = Disk()
 >>> comp.parameters()
 
-Model parameters
-================
+Disk (comp_00)
+==============
 radial.xc         [deg] : None       | Right ascension of centroid
 radial.yc         [deg] : None       | Declination of centroid
 radial.theta      [rad] : 0.0000E+00 | Position angle (east from north)
@@ -491,10 +497,11 @@ radial.Ie       [image] : None       | Surface brightness at re
 radial.ns            [] : 5.0000E-01 | Sersic index
 vertical.inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
 vertical.zs       [deg] : None       | Scale height
+vertical.alpha       [] : 2.0000E+00 | Exponent to the hyperbolic secant
 
 Hyperparameters
 ===============
-vertical.losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+vertical.losdepth [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 vertical.losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
@@ -514,13 +521,13 @@ The hyperparameters introduced above as well as the inclincation angle `inc` are
 >>> comp = Height()
 >>> comp.parameters()
 
-Model parameters
+Height (comp_00)
 ================
 inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
 
 Hyperparameters
 ===============
-losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+losdepth [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
@@ -544,15 +551,15 @@ Here, $z_s$ is the scale height of the disk, and $\alpha$ is an exponent that co
 >>> comp = HyperSecantHeight()
 >>> comp.parameters()
 
-Model parameters
-================
+HyperSecantHeight (comp_00)
+===========================
 inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
 zs       [deg] : None       | Scale height
 alpha       [] : 2.0000E+00 | Exponent to the hyperbolic secant
 
 Hyperparameters
 ===============
-losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+losdepth [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
@@ -619,8 +626,8 @@ Because inclining mixes the line-of-sight coordinate into $x_t$ *before* $\mathr
 >>> comp = Ellipsoid()
 >>> comp.parameters()
 
-Model parameters
-================
+Ellipsoid (comp_00)
+===================
 radial.re   [deg] : None       | Effective radius
 radial.Ie [image] : None       | Surface brightness at re
 radial.ns      [] : 5.0000E-01 | Sersic index
@@ -634,7 +641,7 @@ rot         [rad] : 0.0000E+00 | Rotation applied after inclining, in the ellips
 
 Hyperparameters
 ===============
-losdepth    [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+losdepth    [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 losbins        [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
@@ -704,16 +711,16 @@ This creates structures where the emission is the product of the two independent
 >>> comp = SimpleBridge()
 >>> comp.parameters()
 
-Model parameters
-================
-xc              [deg] : None       | Right ascension of the bridge centroid
-yc              [deg] : None       | Declination of the bridge centroid
-rs              [deg] : None       | Scale radius of the bridge profiles
-Is            [image] : None       | Scale intensity of the bridge profiles
-theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
-e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
-radial.alpha       [] : 2.0000E+00 | Radial exponent
-radial.beta        [] : 5.5000E-01 | Slope parameter
+SimpleBridge (comp_00)
+======================
+xc        [deg] : None       | Right ascension of the bridge centroid
+yc        [deg] : None       | Declination of the bridge centroid
+rs        [deg] : None       | Scale radius of the bridge profiles
+Is      [image] : None       | Scale intensity of the bridge profiles
+theta     [rad] : 0.0000E+00 | Position angle of the bridge major axis
+e            [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+radial.alpha [] : 2.0000E+00 | Radial exponent
+radial.beta  [] : 5.5000E-01 | Slope parameter
 ```
 
 ### MesaBridge
@@ -730,17 +737,17 @@ This creates smooth transitions between a flat central region and declining edge
 >>> comp = MesaBridge()
 >>> comp.parameters()
 
-Model parameters
-================
-xc              [deg] : None       | Right ascension of the bridge centroid
-yc              [deg] : None       | Declination of the bridge centroid
-rs              [deg] : None       | Scale radius of the bridge profiles
-Is            [image] : None       | Scale intensity of the bridge profiles
-theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
-e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
-radial.alpha       [] : 8.0000E+00 | Radial exponent
-radial.beta        [] : 1.0000E+00 | Slope parameter
-parallel.alpha     [] : 8.0000E+00 | Power law slope
+MesaBridge (comp_00)
+====================
+xc          [deg] : None       | Right ascension of the bridge centroid
+yc          [deg] : None       | Declination of the bridge centroid
+rs          [deg] : None       | Scale radius of the bridge profiles
+Is        [image] : None       | Scale intensity of the bridge profiles
+theta       [rad] : 0.0000E+00 | Position angle of the bridge major axis
+e              [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+radial.alpha   [] : 8.0000E+00 | Radial exponent
+radial.beta    [] : 1.0000E+00 | Slope parameter
+parallel.alpha [] : 8.0000E+00 | Power law slope
 ```
 
 This model is an adaptation of the intracluster bridge parameterization introduced by [Hincks et al. (2022)](https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract).
@@ -774,11 +781,11 @@ where $I_{c}$ is the peak surface brightness (or total flux) and $(x_c,y_c)$ den
 >>> comp = Point()
 >>> comp.parameters()
 
-Model parameters
-================
-xc   [deg] : None       | Right ascension
-yc   [deg] : None       | Declination
-Ic [image] : None       | Peak surface brightness
+Point (comp_00)
+===============
+xc   [deg] : None | Right ascension
+yc   [deg] : None | Declination
+Ic [image] : None | Peak surface brightness
 ```
 
 ```{caution}
@@ -808,19 +815,19 @@ $$
 >>> comp = Background()
 >>> comp.parameters()
 
-Model parameters
-================
+Background (comp_00)
+====================
 rs [deg] : 2.7778E-04 | Reference radius for polynomial terms
 a0    [] : None       | Polynomial coefficient 0
 a1x   [] : 0.0000E+00 | Polynomial coefficient 1 in x
 a1y   [] : 0.0000E+00 | Polynomial coefficient 1 in y
-a2xx  [] : 0.0000E+00 | Polynomial coefficient 2 in x*x
-a2xy  [] : 0.0000E+00 | Polynomial coefficient 2 in x*y
-a2yy  [] : 0.0000E+00 | Polynomial coefficient 2 in y*y
-a3xxx [] : 0.0000E+00 | Polynomial coefficient 3 in x*x*x
-a3xxy [] : 0.0000E+00 | Polynomial coefficient 3 in x*x*y
-a3xyy [] : 0.0000E+00 | Polynomial coefficient 3 in x*y*y
-a3yyy [] : 0.0000E+00 | Polynomial coefficient 3 in y*y*y
+a2xx  [] : 0.0000E+00 | Polynomial coefficient 2 in x·x
+a2xy  [] : 0.0000E+00 | Polynomial coefficient 2 in x·y
+a2yy  [] : 0.0000E+00 | Polynomial coefficient 2 in y·y
+a3xxx [] : 0.0000E+00 | Polynomial coefficient 3 in x·x·x
+a3xxy [] : 0.0000E+00 | Polynomial coefficient 3 in x·x·y
+a3xyy [] : 0.0000E+00 | Polynomial coefficient 3 in x·y·y
+a3yyy [] : 0.0000E+00 | Polynomial coefficient 3 in y·y·y
 ```
 
 ```{warning}

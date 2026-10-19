@@ -13,7 +13,7 @@ from socca.units import conversion_factor as _cfactor
 
 from ..priors import _BoundTo
 from . import config
-from .base import Component, _warn_span
+from .base import Component, _format_rows, _format_value, _warn_span
 from .misc import Point, Background
 from .disk import Disk
 from .ellipsoid import Ellipsoid
@@ -378,14 +378,16 @@ class Model:
 
         Notes
         -----
+        Parameters are grouped by component, under a ``Type (comp_NN)``
+        line. The model key of a parameter, used in ties and in
+        ``fit.labels``, is the component id followed by ``_`` and the
+        parameter name (e.g. ``comp_00_xc``, ``comp_01_radial.xc``).
+
         Parameter values are displayed as:
 
         - Fixed values: shown in scientific notation (e.g., 1.5000E-02)
         - Prior distributions: shown as "Distribution: DistributionName"
         - Tied parameters: shown as "Tied parameter"
-
-        The output format is:
-        parameter_name [units] : value
 
         Examples
         --------
@@ -395,52 +397,61 @@ class Model:
         >>> model.parameters()
         Model parameters
         ================
-        comp_00_xc   [deg]   : Distribution: Uniform
-        comp_00_yc   [deg]   : 4.5200E+01
-        comp_00_rc   [deg]   : 1.0000E-02
+        Beta (comp_00)
+          xc    [deg] : Distribution: Uniform | Right ascension of centroid
+          yc    [deg] : 4.5200E+01            | Declination of centroid
+          rc    [deg] : 1.0000E-02            | Core radius
         ...
         >>> model.parameters(freeonly=True)
         Model parameters
         ================
-        comp_00_xc   [deg]   : Distribution: Uniform
+        Beta (comp_00)
+          xc [deg] : Distribution: Uniform | Right ascension of centroid
         """
-        keyout = []
-        for key in self.params:
-            if freeonly:
-                if isinstance(
-                    self.priors[key], numpyro.distributions.Distribution
+        blocks = []
+        for nc, prefix in enumerate(self._prefixes):
+            comp = self.components[nc]
+            rows = []
+            for key in self.params:
+                if not key.startswith(f"{prefix}_"):
+                    continue
+                par = self.priors[key]
+                if freeonly and not isinstance(
+                    par, numpyro.distributions.Distribution
                 ):
-                    keyout.append(key)
-            else:
-                keyout.append(key)
+                    continue
+                name = key[len(prefix) + 1 :]
+                desc = comp.description.get(name, "")
+                rows.append((name, self.units[key], _format_value(par), desc))
+            if rows:
+                blocks.append((f"{self.type[nc]} ({prefix})", rows))
 
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array([len(f"{key} [{self.units[key]}]") for key in keyout])
+        if blocks:
+            lines = _format_rows(
+                [row for _, rows in blocks for row in rows], indent="  "
             )
-
             print("\nModel parameters")
             print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
-                par = self.priors[key]
-                if par is None:
-                    keyval = None
-                elif isinstance(par, numpyro.distributions.Distribution):
-                    keyval = f"Distribution: {par.__class__.__name__}"
-                elif isinstance(
-                    par, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
-                    keyval = "Tied parameter"
-                else:
-                    keyval = f"{par:.4E}"
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{keyval}".ljust(10)
-                )
-
+            for nb, (title, rows) in enumerate(blocks):
+                if nb > 0:
+                    print()
+                print(title)
+                print("\n".join(lines[: len(rows)]))
+                lines = lines[len(rows) :]
+        elif freeonly:
+            print("No free parameters.")
         else:
             print("No parameters defined.")
+
+    def __repr__(self):
+        """List the components of the model with their ids."""
+        lines = [
+            f"{ctype} ({prefix})"
+            for ctype, prefix in zip(self.type, self._prefixes)
+        ]
+        return "\n".join(
+            ["Model components", "=" * 16] + (lines or ["No components."])
+        )
 
     # Get the model map with fixed parameters
     # --------------------------------------------------------

@@ -2655,3 +2655,72 @@ class TestModelComposition:
         point = models.Point(xc=180.1, yc=45.1, Ic=100.0)
         mod.addcomponent(point)
         assert mod.ncomp == 2
+
+
+class TestParameterSummary:
+    """Printed summaries name each component by type and id."""
+
+    @staticmethod
+    def _model():
+        sersic = models.Sersic(xc=1.0, yc=1.0, Ie=1.0, ns=1.0)
+        sersic.re = priors.uniform(0.01, 0.2)
+        disk = models.Disk()
+        disk.radial.xc, disk.radial.yc = 1.0, 1.0
+        disk.radial.re, disk.radial.Ie = 0.1, 1.0
+        disk.vertical.zs = 0.01
+        mod = models.Model(sersic)
+        mod.addcomponent(disk)
+        mod.addcomponent(models.Background(a0=1.0))
+        return mod
+
+    def test_model_parameters_grouped(self, capsys):
+        """Parameters are listed under 'Type (id)', one block each."""
+        self._model().parameters()
+        lines = capsys.readouterr().out.split("\n")
+        assert lines[1:4] == ["Model parameters", "=" * 16, "Sersic (comp_00)"]
+        assert "Disk (comp_01)" in lines and "Background (comp_02)" in lines
+        assert lines[lines.index("Disk (comp_01)") - 1] == ""
+        rows = [line for line in lines if line.startswith("  ")]
+        assert len({row.index("] :") for row in rows}) == 1
+        assert len({row.index(" | ") for row in rows}) == 1
+        assert any(
+            row.split()[0] == "radial.xc" and "Right ascension" in row
+            for row in rows
+        )
+
+    def test_model_parameters_freeonly(self, capsys):
+        """Components without free parameters are left out."""
+        self._model().parameters(freeonly=True)
+        out = capsys.readouterr().out
+        assert "Sersic (comp_00)" in out and "  re " in out
+        assert "Disk" not in out and "Background" not in out
+        models.Model(models.Background(a0=1.0)).parameters(freeonly=True)
+        assert "No free parameters." in capsys.readouterr().out
+
+    def test_model_repr_lists_components(self):
+        """repr(model) lists the component headers."""
+        assert repr(self._model()).split("\n") == [
+            "Model components",
+            "=" * 16,
+            "Sersic (comp_00)",
+            "Disk (comp_01)",
+            "Background (comp_02)",
+        ]
+        assert repr(models.Model()).endswith("No components.")
+
+    @pytest.mark.parametrize(
+        "make, title",
+        [
+            (lambda: models.Sersic(), "Sersic (comp_00)"),
+            (lambda: models.Disk(), "Disk (comp_00)"),
+            (lambda: models.Ellipsoid(), "Ellipsoid (comp_00)"),
+            (lambda: models.SimpleBridge(), "SimpleBridge (comp_00)"),
+        ],
+    )
+    def test_component_parameters_title(self, make, title, capsys):
+        """A component's summary is headed by its type and id."""
+        make().parameters()
+        lines = capsys.readouterr().out.split("\n")
+        assert lines[1:3] == [title, "=" * len(title)]
+        rows = [line for line in lines[3:] if " : " in line]
+        assert len({row.index("] :") for row in rows}) == 1

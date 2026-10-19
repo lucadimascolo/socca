@@ -292,20 +292,17 @@ For a quick summary of the inferred parameters, the `parameters()` method prints
 >>> fit.parameters()
 
 Best-fit parameters
-========================================
+===================
+Point (comp_00)
+  xc    :  2.0000E+01 [+8.1399E-07/-8.0507E-07]
+  yc    : -1.0000E+01 [+7.4631E-07/-7.2487E-07]
+  Ic    :  9.7130E+00 [+3.5537E-01/-3.6794E-01]
 
-comp_00
--------
-xc :  2.0000E+01 [+8.1399E-07/-8.0507E-07]
-yc : -1.0000E+01 [+7.4631E-07/-7.2487E-07]
-Ic :  9.7130E+00 [+3.5537E-01/-3.6794E-01]
-
-comp_01
--------
-theta :  8.7389E-01 [+4.4078E-03/-4.2317E-03]
-e     :  6.0286E-01 [+3.7462E-03/-3.6892E-03]
-re    :  4.1755E-04 [+3.3501E-06/-3.2982E-06]
-Ie    :  3.0145E-01 [+2.9658E-03/-2.9120E-03]
+Sersic (comp_01)
+  theta :  8.7389E-01 [+4.4078E-03/-4.2317E-03]
+  e     :  6.0286E-01 [+3.7462E-03/-3.6892E-03]
+  re    :  4.1755E-04 [+3.3501E-06/-3.2982E-06]
+  Ie    :  3.0145E-01 [+2.9658E-03/-2.9120E-03]
 ```
 
 Both median value and uncertainties for each parameter are computed from the weighted posterior samples stored in `fit.samples` and `fit.weights`. For {ref}`periodic parameters <periodic-parameters>` (listed in `fit.periodic`), these are computed with a circular-aware quantile that recenters the samples on their circular mean before taking quantiles, so a posterior straddling the wrap boundary (e.g. clustered around `theta = 0` &equiv; `theta = pi`) is still summarized correctly instead of spuriously spanning most of the period.

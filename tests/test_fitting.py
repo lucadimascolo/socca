@@ -168,6 +168,22 @@ class TestFitter:
         mod = models.Model(gaussian)
         return fitting.fitter(img, mod)
 
+    def test_parameters_grouped_by_component(self, simple_fitter, capsys):
+        """Best-fit values are listed under 'Type (id)'."""
+        simple_fitter.method = "optimizer"
+        simple_fitter.results = type(
+            "R", (), {"parameters": np.array([1.0, -2.0])}
+        )()
+        simple_fitter.parameters()
+        lines = capsys.readouterr().out.split("\n")
+        assert lines[1:4] == [
+            "Best-fit parameters",
+            "=" * 19,
+            "Gaussian (comp_00)",
+        ]
+        assert lines[4] == "  xc :  1.0000E+00"
+        assert lines[5] == "  yc : -2.0000E+00"
+
     def test_initialization(self, simple_fitter):
         """Test fitter initialization."""
         assert simple_fitter.img is not None
