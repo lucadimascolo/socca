@@ -240,6 +240,12 @@ class Model:
 
     # Add a new component to the model
     # --------------------------------------------------------
+    def __setstate__(self, state):
+        """Restore state; the components of a loaded model keep their ids."""
+        self.__dict__.update(state)
+        for prof in self.__dict__.get("components", []):
+            prof.__dict__["_keyed"] = Component._run
+
     def addcomponent(self, prof, positive=None):
         """
         Add a profile component to the composite model.
@@ -360,6 +366,7 @@ class Model:
         self.components.append(prof)
         self._prefix = self._prefixes + [prof.id]
         Component._name(prof.id, prof._issue)
+        prof._keyed = Component._run
         self.ncomp += 1
 
     def parameters(self, freeonly=False):

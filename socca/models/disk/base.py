@@ -12,7 +12,7 @@ import numpyro.distributions
 
 import numpy as np
 
-from ..base import Component
+from ..base import Component, _atomic
 from ..radial import Sersic
 from ...priors import _BoundTo
 from ...utils import _offsets
@@ -74,6 +74,7 @@ class Disk(Component):
     >>> disk = Disk(radial=radial, vertical=vertical)
     """
 
+    @_atomic
     def __init__(self, radial=None, vertical=None, **kwargs):
         """
         Initialize a 3D disk model from radial and vertical profiles.

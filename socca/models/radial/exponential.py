@@ -361,8 +361,10 @@ class PolyExpoRefact(Exponential):
             truncation=self.truncation, positive=self.positive, **kwargs
         )
         Component._release([prof])
-        prof.id, prof._issue, prof._fixed = self.id, None, self._fixed
-        self._issue = None
+        prof.id, prof._issue, prof._fixed = self.id, self._issue, self._fixed
+        self._copy = True
+        if self._issue is not None:
+            Component._copied.add(self._issue)
         for key, value in kwargs.items():
             if isinstance(value, _BoundTo) and value._comp is self:
                 setattr(prof, key, _BoundTo(value.key, prof, value._attr))

@@ -1632,7 +1632,7 @@ class TestExplicitIds:
 
     @pytest.mark.parametrize("dup", ["deepcopy", "pickle"])
     def test_copied_ids_are_not_given_back(self, dup):
-        """An id held by a copy is neither issued again nor adopted."""
+        """A copied id is never issued again; only the original adopts it."""
         import copy
         import pickle
 
@@ -1645,16 +1645,16 @@ class TestExplicitIds:
 
         radial = models.Sersic()
         other = clone(radial)
-        assert models.Disk(radial).id == "comp_01"
+        assert models.Disk(radial).id == "comp_00"
         assert other.id == "comp_00"
-        assert models.Sersic().id == "comp_02"
+        assert models.Disk(other).id == "comp_01"
         radial = models.Sersic()
         vertical = HyperSecantHeight()
         held = clone(vertical)
         disk = models.Disk(radial, vertical)
-        assert held.id == "comp_04"
-        assert disk.id == "comp_03"
-        assert models.Sersic().id == "comp_05"
+        assert held.id == "comp_03"
+        assert disk.id == "comp_02"
+        assert models.Sersic().id == "comp_04"
 
     def test_old_copies_do_not_change_rerun_ids(self):
         """Copies made before a counter reset do not block the next run."""
@@ -1733,9 +1733,12 @@ class TestExplicitIds:
         host = self._sersic()
         radial = self._sersic()
         host.re = lambda comp_01_re: 0.5 * comp_01_re
-        copy.deepcopy(radial)
+        backup = copy.deepcopy(radial)
         with pytest.raises(ValueError, match="comp_01 is already used"):
-            models.Disk(radial=radial)
+            models.Disk(radial=radial, id=7)
+        with pytest.raises(ValueError, match="comp_01 is already used"):
+            models.Disk(radial=backup)
+        assert models.Disk(radial=radial).id == "comp_01"
         radial = self._sersic()
         models.Model(radial)
         with pytest.raises(ValueError, match="already used"):
@@ -1872,15 +1875,126 @@ class TestExplicitIds:
         ]
 
     def test_refactor_ids(self):
-        """A refactored profile keeps its id, which is never given back."""
+        """A refactored profile takes over the id of the original."""
         prof = models.PolyExpoRefact(Is=1.0)
         disk = models.Disk(radial=prof.refactor())
-        assert (prof.id, disk.id) == ("comp_00", "comp_01")
-        assert models.Sersic().id == "comp_02"
+        assert (prof.id, disk.id) == ("comp_00", "comp_00")
+        assert models.Sersic().id == "comp_01"
+        prof = models.PolyExpoRefact(Is=1.0)
+        models.Point().xc = lambda comp_02_xc: comp_02_xc
+        with pytest.raises(ValueError, match="comp_02 is already used"):
+            models.Disk(radial=prof.refactor(), id=8)
         refactored = models.PolyExpoRefact(Is=1.0)
         same = refactored.refactor()
         models.Disk(radial=refactored, id=9)
         assert models.Sersic().id != same.id
+
+    def test_loaded_model_components_are_not_renamed(self):
+        """A component of a model loaded in a new session keeps its id."""
+        import pickle
+
+        mod = models.Model(models.Point(xc=1.0, yc=1.0, Ic=1.0))
+        mod.addcomponent(self._sersic())
+        models.Component.reset()
+        loaded = pickle.loads(pickle.dumps(mod))
+        with pytest.raises(ValueError, match="comp_01 is already used"):
+            models.Disk(radial=loaded.components[1])
+
+    def test_model_components_wrap_when_not_renamed(self):
+        """A component of a model wraps if its id stays, or after reset."""
+        import copy
+        import pickle
+
+        sersic = self._sersic()
+        mod = models.Model(sersic)
+        models.Component.reset()
+        loaded = pickle.loads(pickle.dumps(mod))
+        assert models.Disk(radial=loaded.components[0]).id == "comp_00"
+        models.Component.reset()
+        models.Point()
+        assert models.Disk(radial=sersic).id == "comp_01"
+        models.Component.reset()
+        mod = models.Model(self._sersic())
+        models.Component.reset()
+        models.Point()
+        stale = copy.deepcopy(mod.components[0])
+        assert models.Disk(radial=stale).id == "comp_01"
+        with pytest.raises(ValueError, match="comp_00 is already used"):
+            models.Disk(radial=copy.deepcopy(mod).components[0])
+
+    def test_refactored_ids_are_not_given_back(self):
+        """The original's id is not issued again after a refactor."""
+        from socca.models.disk.vertical import ExponentialHeight
+
+        vertical = ExponentialHeight()
+        prof = models.PolyExpoRefact(Is=1.0)
+        models.Disk(radial=prof.refactor(), vertical=vertical)
+        assert models.Sersic().id == "comp_02"
+
+    @pytest.mark.parametrize(
+        "wrapper", ["Disk", "Ellipsoid", "SimpleBridge", "MesaBridge"]
+    )
+    @pytest.mark.parametrize("cid", [None, 0, 7])
+    def test_failed_wrapper_restores_ids(self, monkeypatch, wrapper, cid):
+        """A wrapper failing after sharing its id leaves ids unchanged."""
+        share = models.Component._share_id
+
+        def failing(self, *subs):
+            share(self, *subs)
+            raise RuntimeError("late failure")
+
+        models.Point()
+        radial = models.Beta()
+        records = lambda: (  # noqa: E731
+            models.Component.idcls,
+            dict(models.Component._issued),
+            set(models.Component._explicit),
+            (radial.id, radial._issue, radial._fixed, radial._wrapped),
+        )
+        before = records()
+        monkeypatch.setattr(models.Component, "_share_id", failing)
+        kwargs = {} if cid is None else {"id": cid}
+        with pytest.raises(RuntimeError, match="late failure"):
+            getattr(models, wrapper)(radial=radial, **kwargs)
+        assert records() == before
+        assert models.Component._holds(radial)
+
+    def test_unsupported_subs_raise_before_any_change(self):
+        """Unsupported sub-profiles raise before ids or parameters change."""
+        custom = models.CustomProfile(
+            [{"name": "a", "unit": "image", "description": ""}],
+            lambda r, a: a * r,
+        )
+        units = dict(custom.units)
+        for wrapper in [models.SimpleBridge, models.MesaBridge]:
+            with pytest.raises(TypeError, match="not supported for Bridge"):
+                wrapper(radial=custom)
+        with pytest.raises(TypeError, match="not supported for Bridge"):
+            models.Bridge(radial=models.Disk())
+        for radial in [models.Point(), models.Background(), models.Disk()]:
+            with pytest.raises(TypeError, match="not supported for Elli"):
+                models.Ellipsoid(radial=radial)
+        assert custom.units == units and custom._wrapped is None
+        assert models.Sersic().id == "comp_05"
+
+    def test_explicit_wrapper_id_held_by_sub_does_not_warn(self):
+        """An explicit wrapper id held automatically by its sub is no clash."""
+        radial = models.Sersic()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            disk = models.Disk(radial=radial, id=0)
+        assert (disk.id, radial.id) == ("comp_00", "comp_00")
+        assert models.Sersic().id == "comp_01"
+
+    def test_same_sub_twice_raises(self):
+        """One object cannot be two sub-components of a wrapper."""
+        beta = models.Beta()
+        with pytest.raises(ValueError, match="passed twice"):
+            models.SimpleBridge(radial=beta, parallel=beta)
+        sersic = models.Sersic()
+        with pytest.raises(ValueError, match="passed twice"):
+            models.Disk(radial=sersic, vertical=sersic)
+        assert models.SimpleBridge(radial=beta).id == "comp_00"
 
     def test_refactor_rebinds_self_boundto(self):
         """A boundto on the profile itself follows the refactored profile."""

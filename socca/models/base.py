@@ -157,6 +157,46 @@ def _format_rows(rows, indent=""):
     ]
 
 
+def _atomic(init):
+    """Undo id changes made by a wrapper whose construction raises."""
+
+    @functools.wraps(init)
+    def wrapper(self, *args, **kwargs):
+        records = (
+            Component._idcls,
+            set(Component._explicit),
+            dict(Component._issued),
+            set(Component._copied),
+            set(Component._named),
+        )
+        fields = ["id", "_issue", "_fixed", "_wrapped"]
+        subs = {
+            comp: [comp.__dict__.get(key) for key in fields]
+            for comp in [*args, *kwargs.values()]
+            if isinstance(comp, Component)
+        }
+        try:
+            init(self, *args, **kwargs)
+        except Exception:
+            Component._idcls = records[0]
+            for record, saved in zip(
+                (
+                    Component._explicit,
+                    Component._issued,
+                    Component._copied,
+                    Component._named,
+                ),
+                records[1:],
+            ):
+                record.clear()
+                record.update(saved)
+            for comp, values in subs.items():
+                comp.__dict__.update(zip(fields, values))
+            raise
+
+    return wrapper
+
+
 class _Counter(type):
     """Metaclass keeping ``Component.idcls`` read-only."""
 
@@ -253,6 +293,8 @@ class Component(metaclass=_Counter):
         self._issue = Component._issued.get(self.id)
         self._fixed = kwargs.get("id") is not None
         self._wrapped = None
+        self._copy = False
+        self._keyed = None
 
         self.positive = kwargs.get("positive", config.Component.positive)
         self.hyper = []
@@ -268,6 +310,8 @@ class Component(metaclass=_Counter):
         self.__dict__.update(state)
         self.__dict__.setdefault("_issue", None)
         self.__dict__.setdefault("_fixed", False)
+        self.__dict__["_keyed"] = None
+        self.__dict__["_copy"] = True
         if self._issue is not None:
             Component._copied.add(self._issue)
         self.__dict__["_wrapped"] = wrapped
@@ -279,15 +323,21 @@ class Component(metaclass=_Counter):
     def _newid(value=None):
         """Return the id for an explicit number, or the next automatic one."""
         if value is None:
-            while Component._idcls in Component._explicit:
-                Component._idcls += 1
-            number = Component._idcls
+            number = Component._idcls = Component._next()
             Component._idcls += 1
             Component._issued[f"comp_{number:02d}"] = uuid.uuid4().hex
         else:
             number = Component._number(value)
             Component._reserve(number)
         return f"comp_{number:02d}"
+
+    @staticmethod
+    def _next():
+        """Return the number of the next automatic id."""
+        number = Component._idcls
+        while number in Component._explicit:
+            number += 1
+        return number
 
     @staticmethod
     def _reserve(number):
@@ -325,8 +375,18 @@ class Component(metaclass=_Counter):
         return int(number)
 
     def _check_free(self, *subs, cid=None):
-        """Raise if sub-components cannot be wrapped, before changing any."""
+        """
+        Raise if sub-components cannot be wrapped, before changing any.
+
+        An explicit cid held automatically by one of them is taken back, so
+        reserving it for the wrapper does not warn.
+        """
         subs = [comp for comp in subs if comp is not None]
+        if len({id(comp) for comp in subs}) < len(subs):
+            raise ValueError(
+                f"The same component cannot be passed twice to a "
+                f"{type(self).__name__}. Pass a copy (copy.deepcopy)."
+            )
         for comp in subs:
             if hasattr(comp, "_scale_amp") and "xc" not in comp.units:
                 raise ValueError(
@@ -342,11 +402,14 @@ class Component(metaclass=_Counter):
                 )
         if cid is not None:
             cid = f"comp_{Component._number(cid):02d}"
-        self._owner(subs, cid)
+        self._owner(subs, cid, f"comp_{Component._next():02d}")
+        for comp in subs:
+            if comp.id == cid and Component._holds(comp):
+                del Component._issued[cid]
 
-    def _owner(self, comps, cid=None):
+    def _owner(self, comps, cid=None, default=None):
         """
-        Return the id shared by comps, or None if none of theirs applies.
+        Return the id shared by comps, or default if none of theirs applies.
 
         This is cid if given, then an id set explicitly on one of them, then
         the lowest automatic id issued to one of them. Raises if this would
@@ -355,8 +418,8 @@ class Component(metaclass=_Counter):
         if cid is None:
             cid = next((comp.id for comp in comps if comp._fixed), None)
         if cid is None:
-            owned = [comp.id for comp in comps if Component._owns(comp)]
-            cid = min(owned, key=Component._number, default=None)
+            owned = [comp.id for comp in comps if Component._holds(comp)]
+            cid = min(owned, key=Component._number, default=default)
         for comp in comps:
             if comp._fixed and comp.id != cid:
                 raise ValueError(
@@ -364,7 +427,10 @@ class Component(metaclass=_Counter):
                     f"be replaced by {cid}. Set the id on the "
                     f"{type(self).__name__} instead."
                 )
-            if comp.id != cid and comp._issue in Component._named:
+            if comp.id != cid and (
+                comp._keyed == Component._run
+                or comp._issue in Component._named
+            ):
                 raise ValueError(
                     f"{comp.id} is already used in a model or a tie, but "
                     f"this {type(self).__name__} would rename it"
@@ -389,7 +455,7 @@ class Component(metaclass=_Counter):
         fixed = any(comp._fixed for comp in comps)
         if fixed:
             for comp in comps:
-                if comp.id == cid and Component._owns(comp):
+                if comp.id == cid and Component._holds(comp):
                     del Component._issued[comp.id]
             Component._reserve(Component._number(cid))
         Component._release(comp for comp in comps if comp.id != cid)
@@ -399,13 +465,18 @@ class Component(metaclass=_Counter):
             comp._wrapped = Component._run
 
     @staticmethod
-    def _owns(comp):
-        """Whether comp holds the automatic id issued to it, never copied."""
+    def _holds(comp):
+        """Whether comp holds the automatic id issued to it, and is no copy."""
         return (
-            comp._issue is not None
+            not comp._copy
+            and comp._issue is not None
             and comp._issue == Component._issued.get(comp.id)
-            and comp._issue not in Component._copied
         )
+
+    @staticmethod
+    def _owns(comp):
+        """Whether comp holds its automatic id, and it was never copied."""
+        return Component._holds(comp) and comp._issue not in Component._copied
 
     @staticmethod
     def _release(comps):

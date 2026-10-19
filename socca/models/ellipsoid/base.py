@@ -13,8 +13,9 @@ import numpyro.distributions
 import numpy as np
 
 from .. import config
-from ..base import Component, _warn_range
+from ..base import Component, _atomic, _warn_range
 from ..radial import Sersic
+from ..radial.base import Profile
 from ...priors import _BoundTo
 from ...utils import _offsets
 
@@ -103,6 +104,7 @@ class Ellipsoid(Component):
     >>> bar.inc = boundto(disk, "inc")
     """
 
+    @_atomic
     def __init__(self, radial=None, **kwargs):
         self._check_free(radial, cid=kwargs.get("id"))
         super().__init__(**kwargs)
@@ -212,6 +214,15 @@ class Ellipsoid(Component):
         )
 
         self._initialized = True
+
+    def _check_free(self, radial, cid=None):
+        """Raise if radial cannot be used in this ellipsoid."""
+        if radial is not None and not isinstance(radial, Profile):
+            raise TypeError(
+                f"{type(radial).__name__} is not supported for Ellipsoid. "
+                "Use a radial profile, e.g. Sersic."
+            )
+        super()._check_free(radial, cid=cid)
 
     @property
     def e(self):  # noqa: D102

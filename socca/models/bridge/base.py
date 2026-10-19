@@ -16,8 +16,7 @@ import numpyro.distributions
 
 import numpy as np
 
-from ..base import Component, _warn_range
-from ..misc import Background, Point
+from ..base import Component, _atomic, _warn_range
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
 from ...priors import _BoundTo
@@ -82,6 +81,7 @@ class Bridge(Component):
     MesaBridge : Harmonic mean combination for mesa-like profiles.
     """
 
+    @_atomic
     def __init__(self, radial=None, parallel=None, **kwargs):
         self._check_free(radial, parallel, cid=kwargs.get("id"))
         super().__init__(**kwargs)
@@ -237,7 +237,10 @@ class Bridge(Component):
                     "PolyExpoRefact is not supported for Bridge. "
                     "Use PolyExponential or another profile type instead."
                 )
-            if isinstance(attr, (Background, Point)):
+            if attr is not None and None in (
+                getattr(attr, "_scale_amp", None),
+                getattr(attr, "_scale_radius", None),
+            ):
                 raise TypeError(
                     f"{type(attr).__name__} is not supported for Bridge."
                 )
@@ -631,6 +634,7 @@ class MesaBridge(Bridge):
     parallel.alpha     [] : 8.0000E+00 | Power law slope
     """
 
+    @_atomic
     def __init__(self, radial=None, parallel=None, **kwargs):
         self._check_free(radial, parallel, cid=kwargs.get("id"))
         if radial is None:
