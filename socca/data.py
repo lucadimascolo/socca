@@ -108,21 +108,50 @@ def _sym_center(kernel):
     return center
 
 
-def _psf_center(kernel, size=128, niter=50, tol=1e-9):
+def _window(kernel, center, r):
+    """Pixels of a stamp within ``r`` of center, and their lower corner."""
+    lo = [max(int(np.ceil(c - rr)), 0) for c, rr in zip(center, r)]
+    hi = [int(np.floor(c + rr)) + 1 for c, rr in zip(center, r)]
+    return kernel[lo[0] : hi[0], lo[1] : hi[1]], np.array(lo)
+
+
+def _asymmetry(kernel, center):
+    """Asymmetry of a stamp about the half-pixel nearest to center."""
+    h = np.round(2.00 * np.asarray(center)) / 2.00
+    r = [min(hh, s - 1 - hh) for hh, s in zip(h, kernel.shape)]
+    if min(r) < 1:
+        return np.inf
+    sub, _ = _window(kernel, h, r)
+    norm = np.sum(sub**2)
+    if norm == 0:
+        return np.inf
+    return np.sum((sub - sub[::-1, ::-1]) ** 2) / norm
+
+
+def _psf_center(kernel, size=128, niter=50, tol=1e-9, offset=0.25):
     """
     Centre of point symmetry ``(y, x)`` of a PSF stamp, in sub-pixels.
 
-    Refined on tapered windows symmetric about the current estimate, so
-    that truncation by the stamp edges does not bias it.
+    Started from the more symmetric of two estimates, on the stamp around
+    the peak and on a window symmetric about the peak, and refined on
+    tapered windows symmetric about the current estimate, so that
+    truncation by the stamp edges does not bias it. Warns when the centre
+    is more than ``offset`` pixels from the peak.
     """
     kernel = np.nan_to_num(np.asarray(kernel, dtype=float))
     if not np.any(kernel):
         raise ValueError("The PSF is empty.")
     nz = np.nonzero(np.abs(kernel) > 1e-12 * np.abs(kernel).max())
     peak = np.unravel_index(np.argmax(kernel), kernel.shape)
-    lo = [max(p - size, 0) for p in peak]
-    hi = [p + size + 1 for p in peak]
-    center = _sym_center(kernel[lo[0] : hi[0], lo[1] : hi[1]]) + np.array(lo)
+    starts = []
+    for r in [
+        [min(p, s - 1 - p, size) for p, s in zip(peak, kernel.shape)],
+        [size, size],
+    ]:
+        if min(r) >= 2:
+            sub, lo = _window(kernel, peak, r)
+            starts.append(_sym_center(sub) + lo)
+    center = min(starts, key=lambda c: _asymmetry(kernel, c))
     step = np.inf
     for _ in range(niter):
         h = np.round(2.00 * center) / 2.00
@@ -130,17 +159,15 @@ def _psf_center(kernel, size=128, niter=50, tol=1e-9):
             min(hh, s - 1 - hh, size, max(hh - i.min(), i.max() - hh) + 1)
             for hh, s, i in zip(h, kernel.shape, nz)
         ]
-        lo = [int(np.ceil(hh - rr)) for hh, rr in zip(h, r)]
-        hi = [int(np.floor(hh + rr)) + 1 for hh, rr in zip(h, r)]
-        if any(b - a < 3 for a, b in zip(lo, hi)):
+        sub, lo = _window(kernel, h, r)
+        if min(sub.shape) < 3:
             break
-        sub = kernel[lo[0] : hi[0], lo[1] : hi[1]]
         w = np.ones(sub.shape)
-        for ax, (a, b) in enumerate(zip(lo, hi)):
-            t = 1.00 - np.abs(np.arange(a, b) - center[ax]) / (0.50 * (b - a))
+        for ax, (a, n) in enumerate(zip(lo, sub.shape)):
+            t = 1.00 - np.abs(np.arange(a, a + n) - center[ax]) / (0.50 * n)
             t = np.sin(np.pi * np.clip(t, 0.00, 0.50)) ** 2
             w = w * np.expand_dims(t, 1 - ax)
-        new = _sym_center(sub * w) + np.array(lo)
+        new = _sym_center(sub * w) + lo
         step = np.max(np.abs(new - center))
         center = new
         if step < tol:
@@ -152,6 +179,15 @@ def _psf_center(kernel, size=128, niter=50, tol=1e-9):
     snap = np.abs(center - np.round(center)) < 1e-6
     center = np.where(snap, np.round(center), center)
     center = np.clip(center, 0.00, np.array(kernel.shape) - 1.00)
+    top = _peak(kernel)
+    dist = np.max(np.abs(center - top))
+    if dist > offset:
+        warnings.warn(
+            f"The PSF centre {tuple(center.round(2).tolist())} is "
+            f"{dist:.2f} px from its peak "
+            f"{tuple(top.round(2).tolist())}: pass center= to addpsf if "
+            "this is not where the PSF should be centred."
+        )
     return tuple(float(c) for c in center)
 
 

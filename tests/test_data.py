@@ -733,6 +733,13 @@ class TestPSFCenter:
         psf = self._gauss(shape, center)
         np.testing.assert_allclose(data._psf_center(psf), center, atol=1e-12)
 
+    @pytest.mark.parametrize("n", [8, 12, 24, 64])
+    @pytest.mark.parametrize("width", [0.5, 1.0, 2.0])
+    def test_centred_psf_wider_than_stamp(self, n, width):
+        """A centred PSF cut inside its core by an even stamp stays put."""
+        psf = self._gauss((n, n), (n // 2, n // 2), sigma=width * n)
+        assert data._psf_center(psf) == (n // 2, n // 2)
+
     @pytest.mark.parametrize(
         "center, atol",
         [((12.3, 9.8), 1e-6), ((4.6, 17.25), 5e-3), ((20.1, 3.4), 5e-3)],
