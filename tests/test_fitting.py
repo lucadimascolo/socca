@@ -1369,6 +1369,16 @@ class TestLoadWithPSF:
         fit = fitting.load(tmp_path / "fit.pickle")
         assert float(fit._log_likelihood(pp)) == before
 
+    def test_new_components_skip_loaded_ids(self, psf_fitter, tmp_path):
+        """In a new session, components added to a loaded fit get new ids."""
+        psf_fitter.dump(tmp_path / "fit.pickle")
+        models.Component.reset()
+        fit = fitting.load(tmp_path / "fit.pickle")
+        point = models.Point(xc=0.0, yc=0.0, Ic=1.0)
+        assert point.id not in fit.mod._prefixes
+        fit.mod.addcomponent(point)
+        assert fit.mod._prefixes[-1] == point.id
+
     def test_legacy_operators_rebuilt(self, psf_fitter, tmp_path):
         """Fits saved with the old FFT conventions are rebuilt on load."""
         pp = jp.array([4.0])
@@ -1379,9 +1389,18 @@ class TestLoadWithPSF:
         )
         del psf_fitter.img.grid.tx
         del psf_fitter.img.fft._header
+        periodic = dict(psf_fitter.mod.periodic)
+        del psf_fitter.mod.periodic
+        for comp in psf_fitter.mod.components:
+            del comp.periodic
         psf_fitter.dump(tmp_path / "fit.pickle")
         with pytest.warns(UserWarning, match="socca <= 1.4"):
             fit = fitting.load(tmp_path / "fit.pickle")
+        assert fit.mod.periodic == periodic
+        assert [c.periodic for c in fit.mod.components] == [
+            c._periods for c in fit.mod.components
+        ]
+        assert fit.plot.fit is fit
         assert not hasattr(fit.img.fft, "center")
         assert hasattr(fit.img.grid, "tx")
         assert hasattr(fit.img.fft, "world2pix")

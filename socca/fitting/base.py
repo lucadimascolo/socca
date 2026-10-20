@@ -1037,4 +1037,5 @@ def load(filename):
     fit = fitter(img=img, mod=odict["mod"])
     for key in odict.keys():
         fit.__dict__[key] = odict[key]
+    fit.plot = Plotter(fit)
     return fit

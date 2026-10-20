@@ -1,5 +1,6 @@
 """Tests for socca.models module."""
 
+import copy
 import warnings
 
 import jax.numpy as jp
@@ -1317,6 +1318,27 @@ class TestTiesByComponentId:
         with pytest.raises(ValueError, match="Circular ties"):
             mod.getmap(img)
 
+    def test_legacy_model_periods_rebuilt(self):
+        """Models pickled without periods get them back from the components."""
+        sersic = models.Sersic()
+        sersic.set_units(theta="deg")
+        disk = models.Disk()
+        for comp in [sersic, disk]:
+            for name in comp.parlist():
+                if eval(f"comp.{name}") is None:
+                    exec(f"comp.{name} = 0.5")
+        mod = models.Model(sersic)
+        mod.addcomponent(disk)
+        expected = dict(mod.periodic)
+        assert expected[f"{sersic.id}_theta"] == pytest.approx(180.0)
+        del mod.periodic
+        for comp in mod.components:
+            for sub in [comp, *vars(comp).values()]:
+                if isinstance(sub, models.Component):
+                    sub.__dict__.pop("periodic", None)
+        loaded = copy.deepcopy(mod)
+        assert loaded.periodic == expected
+
     def test_boundto_component_not_in_model_raises(self, simple_hdu):
         """A boundto target missing from the model raises."""
         img = data.Image(simple_hdu)
@@ -1897,8 +1919,8 @@ class TestExplicitIds:
         mod.addcomponent(self._sersic())
         models.Component.reset()
         loaded = pickle.loads(pickle.dumps(mod))
-        with pytest.raises(ValueError, match="comp_01 is already used"):
-            models.Disk(radial=loaded.components[1])
+        assert models.Disk(radial=loaded.components[1]).id == "comp_01"
+        assert models.Point().id == "comp_02"
 
     def test_model_components_wrap_when_not_renamed(self):
         """A component of a model wraps if its id stays, or after reset."""
@@ -1919,7 +1941,7 @@ class TestExplicitIds:
         models.Point()
         stale = copy.deepcopy(mod.components[0])
         assert models.Disk(radial=stale).id == "comp_01"
-        with pytest.raises(ValueError, match="comp_00 is already used"):
+        with pytest.warns(UserWarning, match="comp_00 was already given"):
             models.Disk(radial=copy.deepcopy(mod).components[0])
 
     def test_refactored_ids_are_not_given_back(self):

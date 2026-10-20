@@ -104,6 +104,8 @@ class Ellipsoid(Component):
     >>> bar.inc = boundto(disk, "inc")
     """
 
+    _periods = dict(theta=jp.pi, rot=jp.pi)
+
     @_atomic
     def __init__(self, radial=None, **kwargs):
         self._check_free(radial, cid=kwargs.get("id"))
@@ -191,7 +193,6 @@ class Ellipsoid(Component):
         for key in inherited:
             if key in self.radial._input_units:
                 self._input_units[key] = self.radial._input_units[key]
-        self.periodic.update(dict(theta=jp.pi, rot=jp.pi))
 
         self.description.update(
             {

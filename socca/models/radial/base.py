@@ -62,6 +62,8 @@ class Profile(Component):
     defines the radial surface brightness distribution.
     """
 
+    _periods = dict(theta=jp.pi)
+
     _scale_radius = None
     _scale_amp = None
 
@@ -84,7 +86,6 @@ class Profile(Component):
         self.cbox = kwargs.get("cbox", config.Profile.cbox)
 
         self.units.update(dict(xc="deg", yc="deg", theta="rad", e="", cbox=""))
-        self.periodic.update(dict(theta=jp.pi))
 
         self.description.update(
             dict(

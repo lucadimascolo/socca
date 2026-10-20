@@ -266,6 +266,7 @@ class Component(metaclass=_Counter):
     _issued = {}
     _copied = set()
     _named = set()
+    _periods = {}
 
     def __init__(self, **kwargs):
         """
@@ -301,7 +302,7 @@ class Component(metaclass=_Counter):
         self.units = {}
         self._input_units = {}
         self.description = {}
-        self.periodic = {}
+        self.periodic = dict(self._periods)
         self._initialized = False
 
     def __setstate__(self, state):
@@ -310,6 +311,7 @@ class Component(metaclass=_Counter):
         self.__dict__.update(state)
         self.__dict__.setdefault("_issue", None)
         self.__dict__.setdefault("_fixed", False)
+        self.__dict__.setdefault("periodic", dict(self._periods))
         self.__dict__["_keyed"] = None
         self.__dict__["_copy"] = True
         if self._issue is not None:

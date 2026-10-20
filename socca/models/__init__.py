@@ -243,8 +243,20 @@ class Model:
     def __setstate__(self, state):
         """Restore state; the components of a loaded model keep their ids."""
         self.__dict__.update(state)
+        if "periodic" not in state:
+            self.periodic = {}
+            for prefix, prof in zip(self._prefixes, self.components):
+                for p in prof.parlist():
+                    key = f"{prefix}_{p}"
+                    period = self._period(prof, p)
+                    if period is not None:
+                        factor = self.conversions.get(key, 1.00)
+                        self.periodic[key] = period / factor
         for prof in self.__dict__.get("components", []):
             prof.__dict__["_keyed"] = Component._run
+            prof.__dict__["_fixed"] = True
+        for cid in [*self._prefixes, *(c.id for c in self.components)]:
+            Component._explicit.add(Component._number(cid))
 
     def addcomponent(self, prof, positive=None):
         """
