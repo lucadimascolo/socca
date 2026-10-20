@@ -575,15 +575,16 @@ As in the previous case, $z_s$ is the scale height of the disk.
 ```python
 >>> from socca.models.disk.vertical import ExponentialHeight
 >>> comp = ExponentialHeight()
+>>> comp.parameters()
 
-Model parameters
-================
+ExponentialHeight (comp_00)
+===========================
 inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
 zs       [deg] : None       | Scale height
 
 Hyperparameters
 ===============
-losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+losdepth [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
