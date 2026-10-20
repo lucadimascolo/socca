@@ -1,5 +1,7 @@
 """Tests for socca.data module."""
 
+import warnings
+
 import jax.numpy as jp
 import numpy as np
 import pytest
@@ -503,7 +505,9 @@ class TestImageAddpsf:
         """Test that a PSF larger than the image is stored unchanged."""
         img = data.Image(simple_hdu)
         large_psf = np.ones((100, 100))
-        img.addpsf(large_psf)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            img.addpsf(large_psf)
         assert img.psf.shape == large_psf.shape
         padded = data.pad_size(simple_hdu.data.shape)
         assert img.convolve.psf_fft.shape == (padded[0], padded[1] // 2 + 1)
@@ -748,6 +752,61 @@ class TestPSFCenter:
         """Sub-pixel centres are recovered, also with the wings cut off."""
         psf = self._gauss((25, 23), center)
         np.testing.assert_allclose(data._psf_center(psf), center, atol=atol)
+
+    def test_warns_far_from_peak(self, recwarn):
+        """A centre far from the peak warns; a symmetric PSF does not."""
+        data._psf_center(self._gauss((25, 23), (12.3, 9.8)))
+        assert not [w for w in recwarn if "peak" in str(w.message)]
+        psf = self._gauss((33, 33), (16, 16))
+        psf += 0.3 * self._gauss((33, 33), (16, 24), sigma=2.0)
+        with pytest.warns(UserWarning, match="px from its peak"):
+            data._psf_center(psf)
+
+    @pytest.mark.parametrize("center", [(16, 16), (16.5, 16.5), (16.3, 15.8)])
+    @pytest.mark.parametrize("theta", [0.0, 0.5, 1.2])
+    def test_no_warning_on_symmetric_psfs(self, center, theta):
+        """Elliptical and flat-topped symmetric PSFs do not warn."""
+        y, x = np.indices((33, 33)).astype(float) - np.reshape(
+            center, (2, 1, 1)
+        )
+        u = x * np.cos(theta) + y * np.sin(theta)
+        v = y * np.cos(theta) - x * np.sin(theta)
+        ellipse = np.exp(-0.5 * (u**2 / 5.0**2 + v**2 / 1.5**2))
+        disk = (np.hypot(y, x) <= 6).astype(float)
+        disk *= 1.0 + 1e-15 * np.random.default_rng(0).normal(size=disk.shape)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            data._psf_center(ellipse)
+            data._psf_center(disk)
+
+    @pytest.mark.parametrize(
+        "shape, center", [((32, 33), (15.5, 16.3)), ((33, 32), (16.3, 15.5))]
+    )
+    def test_no_warning_on_half_pixel_axis(self, shape, center):
+        """A centre on a half pixel in one axis only does not warn."""
+        psf = self._gauss(shape, center, sigma=2.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            data._psf_center(psf)
+
+    def test_no_warning_on_bad_core_pixel(self):
+        """One bad pixel next to the peak does not make it warn."""
+        psf = self._gauss((33, 33), (16.3, 15.8))
+        psf[17, 16] = np.nan
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            data._psf_center(psf)
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_no_warning_on_broad_noisy_psf(self, seed):
+        """Noise on a broad PSF does not make it warn."""
+        rng = np.random.default_rng(seed)
+        center = 32 + rng.uniform(-0.5, 0.5, 2)
+        psf = self._gauss((65, 65), center, sigma=8.0)
+        psf += 0.01 * rng.normal(size=psf.shape)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            data._psf_center(psf)
 
     def test_zero_sum_beam(self):
         """A beam summing to zero is centred on its reference pixel."""

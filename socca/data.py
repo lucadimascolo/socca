@@ -191,6 +191,34 @@ def _psf_center(kernel, size=128, niter=50, tol=1e-9, offset=0.25):
     return tuple(float(c) for c in center)
 
 
+def _peak(kernel):
+    """Sub-pixel peak ``(y, x)`` of a stamp, from a quadric fit in log."""
+    top = kernel.max()
+    ties = np.argwhere(kernel >= top - 1e-12 * abs(top))
+    mean = ties.mean(0)
+    span = np.ptp(ties, 0) > 0
+    if np.all(span):
+        return mean
+    peak = ties[0]
+    r = np.sqrt(np.count_nonzero(kernel > 0.50 * top) / np.pi)
+    r = min(int(np.clip(r, 1, 8)), *peak, *(np.array(kernel.shape) - 1 - peak))
+    if r < 1:
+        return mean
+    v = _window(kernel, peak, [r, r])[0].ravel()
+    y, x = [a.ravel() for a in np.mgrid[-r : r + 1, -r : r + 1]]
+    sel = ((v > 0.30 * top) | ((np.abs(y) < 2) & (np.abs(x) < 2))) & (v > 0)
+    y, x, v = y[sel], x[sel], v[sel]
+    a = np.stack([np.ones(v.size), y, x, y**2, x * y, x**2], 1)
+    if np.linalg.matrix_rank(a) < 6:
+        return mean
+    c = np.linalg.lstsq(a * v[:, None], np.log(v) * v, rcond=None)[0]
+    hess = np.array([[2.00 * c[3], c[4]], [c[4], 2.00 * c[5]]])
+    if np.any(np.linalg.eigvalsh(hess) >= 0):
+        return mean
+    step = np.clip(-np.linalg.solve(hess, c[1:3]), -r, r)
+    return np.where(span, mean, peak + step)
+
+
 class SkyToPixel:
     """
     Differentiable world-to-pixel transform of an image WCS.
@@ -889,7 +917,10 @@ class Image:
             PSF centre ``(y, x)`` in pixels of the stamp. "auto" (default)
             estimates it as the centre of point symmetry, to sub-pixel
             precision; None takes pixel ``n // 2`` along each axis, i.e.
-            no recentring.
+            no recentring. An asymmetric PSF is moved to its centre of
+            symmetry, which can differ from its peak (socca warns beyond
+            0.25 pixels): pass the centre explicitly for a PSF already
+            centred by construction.
 
         Notes
         -----
