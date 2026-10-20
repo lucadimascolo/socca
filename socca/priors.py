@@ -684,7 +684,10 @@ def boundto(comp, var):
     names (its units dict) -- not the sub-component's, since a sub-component
     may have attributes the parent doesn't actually expose as a parameter
     (e.g. Ellipsoid.radial is a full Sersic profile, but Ellipsoid keeps
-    xc/yc/theta/e on itself rather than delegating to radial).
+    xc/yc/theta/e on itself rather than delegating to radial). A name found
+    in more than one sub-component (e.g. ``alpha`` of a Disk with a Beta
+    radial and a HyperSecantHeight vertical) raises; pass the full name,
+    e.g. ``'vertical.alpha'``.
 
     Tied parameters resolve correctly both through Model.getmap()/
     getmodel() and when calling a single component's own getmap()
@@ -695,14 +698,18 @@ def boundto(comp, var):
     if isinstance(comp, str):
         comp = eval(comp)
 
-    namespaces = getattr(comp, "_namespaces", None)
-    if namespaces:
-        for namespace in namespaces:
-            if f"{namespace}.{var}" in comp.units:
-                attr = f"{namespace}.{var}"
-                return _BoundTo(f"{comp.id}_{attr}", comp, attr)
-
-    return _BoundTo(f"{comp.id}_{var}", comp, var)
+    found = [
+        f"{namespace}.{var}"
+        for namespace in getattr(comp, "_namespaces", None) or []
+        if f"{namespace}.{var}" in comp.units
+    ]
+    if len(found) > 1:
+        raise ValueError(
+            f"{var!r} is a parameter of more than one sub-component of "
+            f"{comp.id}: use one of {', '.join(map(repr, found))}."
+        )
+    attr = found[0] if found else var
+    return _BoundTo(f"{comp.id}_{attr}", comp, attr)
 
 
 # pocoMC prior refactor for numpyro

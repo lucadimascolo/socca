@@ -682,6 +682,12 @@ class Component(metaclass=_Counter):
             Keyword arguments mapping parameter names to unit strings
             (any string recognised by :mod:`astropy.units`).
 
+        Notes
+        -----
+        Units are taken when the component is added to a Model, so call
+        this before. Tied parameters always take and give values in the
+        internal units, whatever is declared here.
+
         Warns
         -----
         UserWarning

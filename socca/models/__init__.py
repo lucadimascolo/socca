@@ -711,6 +711,17 @@ class Model:
                 raise ValueError(f"Circular ties among {', '.join(pending)}.")
             for key in ready:
                 args = pending.pop(key)
+                units = [
+                    f"{name} in {self.units[name]}"
+                    for name in [key, *args.values()]
+                    if self.conversions.get(name, 1.00) != 1.00
+                ]
+                if units and None not in args:
+                    self._tiewarn(
+                        f"{key} is tied, with {', '.join(units)}: ties take "
+                        "and give values in native units (deg, rad), "
+                        "whatever set_units says."
+                    )
                 if None in args:
                     pars[key] = self.priors[key](pars[args[None]])
                 else:

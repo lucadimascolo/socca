@@ -1318,6 +1318,29 @@ class TestTiesByComponentId:
         with pytest.raises(ValueError, match="Circular ties"):
             mod.getmap(img)
 
+    def test_tie_with_declared_units_warns_once(self):
+        """Lambda ties involving declared units warn once; boundto does not."""
+        a = models.Point(xc=10.0, yc=0.0, Ic=1.0)
+        b = models.Point(yc=0.0, Ic=1.0)
+        b.set_units(xc="arcsec")
+        b.xc = lambda comp_00_xc: comp_00_xc + 5 / 3600
+        c = models.Point(yc=0.0, Ic=1.0)
+        c.set_units(xc="arcsec")
+        c.xc = priors.boundto(a, "xc")
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        mod.addcomponent(c)
+        pars = {"comp_00_xc": 10.0}
+        with pytest.warns(UserWarning, match="native units") as record:
+            mod._resolve_ties(dict(pars))
+            mod._resolve_ties(dict(pars))
+        assert len(record) == 1
+        assert "comp_01_xc in arcsec" in str(record[0].message)
+        values = dict(pars)
+        mod._resolve_ties(values)
+        assert values["comp_01_xc"] == 10.0 + 5 / 3600
+        assert values["comp_02_xc"] == 10.0
+
     def test_legacy_model_periods_rebuilt(self):
         """Models pickled without periods get them back from the components."""
         sersic = models.Sersic()
@@ -1338,6 +1361,16 @@ class TestTiesByComponentId:
                     sub.__dict__.pop("periodic", None)
         loaded = copy.deepcopy(mod)
         assert loaded.periodic == expected
+
+    def test_boundto_ambiguous_name_raises(self):
+        """A short name found in two Disk sub-components raises."""
+        disk = models.Disk(radial=models.Beta(alpha=1.5))
+        with pytest.raises(ValueError, match="'vertical.alpha'"):
+            priors.boundto(disk, "alpha")
+        tied = priors.boundto(disk, "vertical.alpha")
+        assert tied.key == f"{disk.id}_vertical.alpha"
+        assert priors.boundto(disk, "inc").key == f"{disk.id}_vertical.inc"
+        assert priors.boundto(disk, "xc").key == f"{disk.id}_radial.xc"
 
     def test_boundto_component_not_in_model_raises(self, simple_hdu):
         """A boundto target missing from the model raises."""
