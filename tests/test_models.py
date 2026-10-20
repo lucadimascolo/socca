@@ -1362,6 +1362,17 @@ class TestTiesByComponentId:
         loaded = copy.deepcopy(mod)
         assert loaded.periodic == expected
 
+    def test_tie_with_native_unit_alias_does_not_warn(self, recwarn):
+        """Declaring a native unit under another name does not warn."""
+        a = models.Point(xc=10.0, yc=0.0, Ic=1.0)
+        b = models.Point(yc=0.0, Ic=1.0)
+        b.set_units(xc="degree")
+        b.xc = lambda comp_00_xc: comp_00_xc + 1.0
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        mod._resolve_ties({"comp_00_xc": 10.0})
+        assert not [w for w in recwarn if "native units" in str(w.message)]
+
     def test_boundto_ambiguous_name_raises(self):
         """A short name found in two Disk sub-components raises."""
         disk = models.Disk(radial=models.Beta(alpha=1.5))

@@ -11,6 +11,7 @@ from scipy.fft import next_fast_len
 
 import copy
 import inspect
+import os
 import warnings
 
 from astropy.io import fits
@@ -768,12 +769,13 @@ class Image:
 
         Parameters
         ----------
-        regions : list
-            List of regions to be masked. Elements can be:
+        regions : list or region
+            Region, or list of regions, to be masked. Regions can be:
 
-            - str: Path to a region file (DS9/CRTF format)
-            - pyregion.Shape: pyregion shape object
-            - numpy.ndarray: Binary mask array (1=valid, 0=masked)
+            - str or path: Path to a region file (DS9/CRTF format)
+            - pyregion.Shape or pyregion.ShapeList: pyregion shapes, e.g.
+              from ``pyregion.parse``
+            - array: Binary mask array (1=valid, 0=masked), or a stack of them
             - fits.ImageHDU or fits.PrimaryHDU: FITS mask HDU
         combine : bool, optional
             If True, combine with the existing mask (logical AND).
@@ -793,19 +795,34 @@ class Image:
 
         hdu = fits.PrimaryHDU(data=mask, header=self.hdu.header.copy())
 
+        single = (str, os.PathLike, pyregion.ShapeList, pyregion.Shape)
+        if isinstance(regions, (*single, fits.ImageHDU, fits.PrimaryHDU)) or (
+            isinstance(regions, (np.ndarray, jax.Array)) and regions.ndim == 2
+        ):
+            regions = [regions]
+
         for ri, r in enumerate(regions):
-            if isinstance(r, str):
-                reg = pyregion.open(r)
-                idx = reg.get_mask(hdu=hdu)
-                idx = idx.astype(bool)
-                hdu.data[idx] = 0.00
-            elif isinstance(r, pyregion.Shape):
-                idx = r.get_mask(hdu=hdu).astype(bool)
-                hdu.data[idx] = 0.00
-            elif isinstance(r, np.ndarray):
-                hdu.data = hdu.data * (r == 1.00).astype(float)
+            if isinstance(r, (str, os.PathLike)):
+                r = pyregion.open(os.fspath(r))
+            if isinstance(r, pyregion.Shape):
+                r = pyregion.ShapeList([r])
+            if isinstance(r, pyregion.ShapeList):
+                if r:
+                    hdu.data[r.get_mask(hdu=hdu).astype(bool)] = 0.00
+            elif isinstance(r, (np.ndarray, jax.Array)):
+                if r.shape != hdu.data.shape:
+                    raise ValueError(
+                        f"Mask {ri} has shape {r.shape}, but the image has "
+                        f"shape {hdu.data.shape}."
+                    )
+                hdu.data = hdu.data * (np.asarray(r) == 1.00).astype(float)
             elif isinstance(r, (fits.ImageHDU, fits.PrimaryHDU)):
                 hdu.data = hdu.data * _hdu_mask(r, self.hdu)
+            else:
+                raise TypeError(
+                    f"Cannot mask with a {type(r).__name__} (region {ri}): "
+                    "use a region file, pyregion shapes, an array or an HDU."
+                )
 
         self.mask = hdu.data.astype(int).copy()
 

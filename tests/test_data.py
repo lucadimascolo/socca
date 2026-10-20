@@ -876,6 +876,57 @@ class TestImageAddmask:
         assert img.mask[15, 15] == 0
         assert img.mask[0, 0] == 1
 
+    def test_addmask_from_pyregion(self, simple_hdu, tmp_path):
+        """Shapes from pyregion mask the same pixels as the region file."""
+        import pyregion
+
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        ra, dec = img.wcs.all_pix2world(30.0, 40.0, 0)
+        text = f'fk5;circle({ra:.10f},{dec:.10f},20")'
+        region = tmp_path / "mask.reg"
+        region.write_text(text)
+        img.addmask([str(region)], combine=False)
+        expected = np.asarray(img.mask).copy()
+        assert (expected == 0).any()
+        shapes = pyregion.parse(text)
+        for regions in [[shapes], [shapes[0]]]:
+            img.addmask(regions, combine=False)
+            assert np.array_equal(np.asarray(img.mask), expected)
+        for regions in [region, (str(f) for f in [region]), {str(region)}]:
+            img.addmask(regions, combine=False)
+            assert np.array_equal(np.asarray(img.mask), expected)
+        with pytest.raises(TypeError, match="Cannot mask with a dict"):
+            img.addmask([{}])
+
+    def test_addmask_array_stack(self, simple_hdu):
+        """A stack of masks masks their union; a wrong shape raises."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        masks = np.ones((2, *simple_hdu.data.shape))
+        masks[0, :10] = 0
+        masks[1, :, :10] = 0
+        img.addmask(masks, combine=False)
+        assert np.array_equal(np.asarray(img.mask), masks[0] * masks[1])
+        with pytest.raises(ValueError, match="shape"):
+            img.addmask([masks[0, :10]])
+
+    def test_addmask_pyregion_exclusion(self, simple_hdu, tmp_path):
+        """Exclusion shapes are kept, however the shapes are passed."""
+        import pyregion
+
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        text = "image\ncircle(30,40,10)\n-circle(30,40,4)"
+        region = tmp_path / "mask.reg"
+        region.write_text(text)
+        img.addmask([str(region)], combine=False)
+        expected = np.asarray(img.mask).copy()
+        assert expected[39, 29] == 1 and expected[39, 37] == 0
+        shapes = pyregion.parse(text)
+        for regions in [shapes, [shapes]]:
+            img.addmask(regions, combine=False)
+            assert np.array_equal(np.asarray(img.mask), expected)
+        img.addmask([pyregion.ShapeList([])], combine=False)
+        assert np.all(np.asarray(img.mask) == 1)
+
     def test_addmask_combine_true(self, simple_hdu):
         """Test combining masks with existing mask."""
         img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
