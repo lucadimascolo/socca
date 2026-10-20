@@ -689,6 +689,9 @@ def boundto(comp, var):
     radial and a HyperSecantHeight vertical) raises; pass the full name,
     e.g. ``'vertical.alpha'``.
 
+    The bound value is copied in internal units, so it is correct whatever
+    units were declared with ``set_units`` on either component.
+
     Tied parameters resolve correctly both through Model.getmap()/
     getmodel() and when calling a single component's own getmap()
     directly (outside of a Model) -- the latter reads the referenced

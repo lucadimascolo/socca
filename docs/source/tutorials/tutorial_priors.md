@@ -97,6 +97,8 @@ Component IDs are assigned automatically by **``socca``** upon component creatio
 
 Automatic IDs skip the numbers chosen explicitly, and each component in a model must have a different ID.
 
+Tied parameters always take and give values in **``socca``**'s native units (degrees for positions and sizes, radians for angles), whatever units were declared with `set_units`. A tie that copies a value, or `boundto()`, is therefore correct whatever the units, while constants in a `lambda` must be written in native units: to place `comp2` 5 arcsec north of `comp1` (here `comp_01`), use `comp2.yc = lambda comp_01_yc: comp_01_yc + 5 / 3600`, even if `comp2.set_units(yc="arcsec")` was called. **``socca``** warns when a `lambda` tie involves a parameter with declared units.
+
 ## Positive constraints
 In some cases, it may be useful to enforce positivity constraints on the surface brightness of a given model component throughout the image domain. This is particularly relevant in cases like the {ref}`PolyExponential <polyexponential>` or {ref}`PolyExpoRefact <polyexporefact>` models, where the polynomial terms can lead to negative surface brightness values. Such constraints can be implemented by setting the `positive` attribute of the model component to `True`, e.g.,:
 
