@@ -477,6 +477,9 @@ class TestPocomcPrior:
         prior = priors.pocomcPrior(dists)
         samples = prior.rvs(size=10)
         assert samples.shape == (10, 2)
+        samples[0] = samples[1]
+        logp = prior.logpdf(samples)
+        logp[0] = logp[1]
 
     def test_rvs_in_bounds(self):
         """Test rvs samples are within bounds."""

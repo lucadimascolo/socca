@@ -10,6 +10,7 @@ from astropy.io import fits
 
 import socca.data as data
 import socca.fitting as fitting
+import socca.fitting.methods.pocomc as pocomc_backend
 from socca.fitting.methods.utils import (
     circular_quantile,
     circular_recenter,
@@ -1010,6 +1011,54 @@ class TestSamplerIntegration:
         yc_mean = np.average(fit.samples[:, 1], weights=fit.weights)
         assert abs(xc_mean - xc_true) < 0.01
         assert abs(yc_mean - yc_true) < 0.01
+
+
+class TestResume:
+    """Resuming checks the checkpoint against the current model."""
+
+    @staticmethod
+    def _fitter(hdu, scale=1.0, width=0.01, positive=False):
+        hdu = fits.PrimaryHDU(data=hdu.data * scale, header=hdu.header)
+        img = data.Image(hdu, noise=noise.Normal(sigma=0.1))
+        xc, yc = hdu.header["CRVAL1"], hdu.header["CRVAL2"]
+        gaussian = models.Gaussian(
+            xc=priors.uniform(xc - width, xc + width),
+            yc=priors.uniform(yc - width, yc + width),
+            rs=0.005,
+            Is=priors.uniform(-10.0, 20.0) if positive else 10.0,
+        )
+        return fitting.fitter(
+            img=img, mod=models.Model(gaussian, positive=positive)
+        )
+
+    def test_pocomc_infinite_likelihood(self, simple_hdu):
+        """Prior draws with -inf likelihood do not stop pocomc."""
+        fit = self._fitter(simple_hdu, positive=True)
+        fit.run(method="pocomc", nlive=100, progress=False)
+        assert np.isfinite(fit.logz)
+
+    def test_pocomc_log_weights(self, simple_hdu, monkeypatch):
+        """Results of pocomc use its log-weights, exponentiated once."""
+        logw = np.log(np.array([0.1, 0.2, 0.7]))
+
+        class Fake:
+            def __init__(self, **kwargs):
+                pass
+
+            def run(self, **kwargs):
+                pass
+
+            def posterior(self, return_logw=False):
+                weights = logw if return_logw else np.exp(logw)
+                return np.zeros((3, 2)), weights, None, None
+
+            def evidence(self):
+                return 0.0, 0.0
+
+        monkeypatch.setattr(pocomc_backend.pocomc, "Sampler", Fake)
+        fit = self._fitter(simple_hdu)
+        fit.run(method="pocomc", progress=False)
+        np.testing.assert_allclose(fit.weights, [0.1, 0.2, 0.7])
 
 
 class TestPocoMCVectorize:

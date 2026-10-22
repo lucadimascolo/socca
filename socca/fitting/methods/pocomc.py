@@ -1,7 +1,9 @@
 """pocoMC preconditioned Monte Carlo sampling backend."""
 
+import jax
 import pocomc
 import numpyro
+import numpy as np
 
 import inspect
 import glob
@@ -227,9 +229,6 @@ def run_pocomc(
         log_likelihood = pool.likelihood
 
     if vectorize:
-        import jax
-        import numpy as np
-
         _ll_vmap = jax.jit(jax.vmap(log_likelihood))
 
         def log_likelihood(theta_batch):
@@ -268,7 +267,7 @@ def run_pocomc(
         )
         print(f"Elapsed time: {dt}")
 
-    self.samples, self.logw, _, _ = self.sampler.posterior()
+    self.samples, self.logw, _, _ = self.sampler.posterior(return_logw=True)
     self.logz, _ = self.sampler.evidence()
 
     self.weights = get_imp_weights(self.logw, self.logz)

@@ -748,7 +748,7 @@ class pocomcPrior:
         """
         logp = np.zeros(len(x))
         for i, dist in enumerate(self.dists):
-            logp += dist.log_prob(x[:, i])
+            logp += np.asarray(dist.log_prob(x[:, i]))
         return logp
 
     def rvs(self, size=1):
@@ -765,7 +765,7 @@ class pocomcPrior:
 
         Returns
         -------
-        jax.numpy.ndarray, shape (size, n_dims)
+        numpy.ndarray, shape (size, n_dims)
             Array of random samples, where each column corresponds to
             a parameter dimension.
 
@@ -778,7 +778,7 @@ class pocomcPrior:
         self.key, keys = keys[0], keys[1:]
 
         samples = [d.sample(k, (size,)) for d, k in zip(self.dists, keys)]
-        return jp.column_stack(samples)
+        return np.array(jp.column_stack(samples))
 
     @property
     def bounds(self):
