@@ -109,7 +109,9 @@ class MultiPool:
 
     def map(self, func, iterable):
         """Map a function over an iterable in parallel."""
-        return list(self._executor.map(func, iterable))
+        items = list(iterable)
+        chunksize = max(1, len(items) // (4 * self._n_processes))
+        return list(self._executor.map(func, items, chunksize=chunksize))
 
     def close(self, kill=False):
         """Shut down the worker pool, killing running tasks if kill."""
