@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import dill
+import jax.numpy as jp
 import numpy as np
 import pytest
 
@@ -22,6 +23,7 @@ from socca.pool.mp import (
 )
 from socca.pool.mpi import (
     FunctionTag,
+    TransformTag,
     MPI_RANK,
     MPI_SIZE,
     MPI_COMM,
@@ -63,6 +65,16 @@ class TestMultiPool:
         results = pool.map(pool.likelihood, inputs)
         expected = [float(x) ** 2 for x in inputs]
         np.testing.assert_allclose(results, expected)
+        pool.close()
+
+    def test_map_transform(self):
+        """The prior transform is pre-loaded and called through its tag."""
+        pool = MultiPool(2, self._square, transform=jp.negative)
+        results = pool.map(pool.transform, [np.ones(2), np.zeros(2)])
+        np.testing.assert_allclose(results, [-np.ones(2), np.zeros(2)])
+        assert all(type(r) is np.ndarray for r in results)
+        assert type(pool.transform(np.ones(2))) is np.ndarray
+        assert pool.likelihood(3.0) == 9.0
         pool.close()
 
     def test_close_pools_keeps_older_pools(self):
@@ -119,14 +131,14 @@ class TestPoolInit:
         """Test that _pool_init deserializes into _POOL_FUNC."""
         import socca.pool.mp as mp_mod
 
-        original = mp_mod._POOL_FUNC
+        original = mp_mod._POOL_FUNC, mp_mod._POOL_TRANSFORM
         try:
             func = lambda x: float(x) + 1.0  # noqa: E731
             _pool_init(dill.dumps(func))
             assert mp_mod._POOL_FUNC is not None
             assert mp_mod._POOL_FUNC(4.0) == 5.0
         finally:
-            mp_mod._POOL_FUNC = original
+            mp_mod._POOL_FUNC, mp_mod._POOL_TRANSFORM = original
 
 
 # ========================================================
@@ -168,6 +180,17 @@ class TestFunctionTag:
             assert tag(7.0) == 14.0
         finally:
             FunctionTag._func = original
+
+    def test_transform_tag(self):
+        """TransformTag pickles by reference and calls the local transform."""
+        original = TransformTag._func
+        try:
+            TransformTag._func = jp.negative
+            tag = dill.loads(dill.dumps(TransformTag()))
+            np.testing.assert_allclose(tag(np.ones(2)), -np.ones(2))
+            assert type(tag(np.ones(2))) is np.ndarray
+        finally:
+            TransformTag._func = original
 
 
 class TestRootOnly:

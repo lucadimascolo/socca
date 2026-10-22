@@ -10,7 +10,7 @@ dynesty.utils.pickle_module = dill
 import inspect
 import os
 
-from ...pool.mpi import FunctionTag, MPIPool
+from ...pool.mpi import FunctionTag, MPIPool, TransformTag
 from ...pool.mpi import MPI_RANK, MPI_SIZE
 from ...pool.mpi import receive_results, send_results
 
@@ -140,6 +140,7 @@ def run_dynesty(
             )
 
         FunctionTag._func = log_likelihood
+        TransformTag._func = prior_transform
 
         pool = MPIPool()
 
@@ -150,18 +151,19 @@ def run_dynesty(
             return
 
     if ncores is not None and pool is None:
-        pool = MultiPool(ncores, log_likelihood)
+        pool = MultiPool(ncores, log_likelihood, prior_transform)
 
     print("\n* Running the main sampling step")
+    transform = prior_transform
     if isinstance(pool, MPIPool):
-        log_likelihood = FunctionTag()
+        log_likelihood, transform = FunctionTag(), TransformTag()
     elif isinstance(pool, MultiPool):
-        log_likelihood = pool.likelihood
+        log_likelihood, transform = pool.likelihood, pool.transform
 
     if not resume or not os.path.exists(checkpoint):
         sampler = dynesty.NestedSampler(
             loglikelihood=log_likelihood,
-            prior_transform=prior_transform,
+            prior_transform=transform,
             ndim=ndims,
             nlive=nlive,
             pool=pool,
@@ -177,7 +179,7 @@ def run_dynesty(
         )
         check_resume(checkpoint, loglike, sampler.live_v, sampler.live_logl)
         sampler.loglikelihood.loglikelihood.func = log_likelihood
-        sampler.prior_transform.func = prior_transform
+        sampler.prior_transform.func = transform
         sampler.queue_size = sampler_kwargs.get("queue_size") or (
             pool.size if pool is not None else 1
         )

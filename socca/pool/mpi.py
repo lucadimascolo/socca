@@ -3,6 +3,7 @@
 from functools import wraps
 
 import dill
+import numpy as np
 import os
 import sys
 import traceback
@@ -131,6 +132,18 @@ class FunctionTag:
 
     def __reduce__(self):  # noqa: D105
         return (FunctionTag, ())
+
+
+class TransformTag:
+    """Like :class:`FunctionTag`, for the prior transform."""
+
+    _func = None
+
+    def __call__(self, u):  # noqa: D102
+        return np.asarray(TransformTag._func(u))
+
+    def __reduce__(self):  # noqa: D105
+        return (TransformTag, ())
 
 
 # Custom MPI pool

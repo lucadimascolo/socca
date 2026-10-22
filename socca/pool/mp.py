@@ -3,6 +3,7 @@
 import os
 
 import dill
+import numpy as np
 from loky import ProcessPoolExecutor
 import loky.process_executor as _loky_pe
 
@@ -12,16 +13,18 @@ import loky.process_executor as _loky_pe
 _loky_pe._MAX_MEMORY_LEAK_SIZE = int(1e9)
 
 _POOL_FUNC = None
+_POOL_TRANSFORM = None
 
 
-def _pool_init(func_bytes):
-    """Initialize worker with deserialized likelihood function."""
+def _pool_init(func_bytes, transform_bytes=None):
+    """Initialize worker with deserialized likelihood and prior transform."""
     os.environ["JAX_ENABLE_X64"] = "True"
     import jax
 
     jax.config.update("jax_enable_x64", True)
-    global _POOL_FUNC
+    global _POOL_FUNC, _POOL_TRANSFORM
     _POOL_FUNC = dill.loads(func_bytes)
+    _POOL_TRANSFORM = transform_bytes and dill.loads(transform_bytes)
 
 
 class PoolFunctionTag:
@@ -39,6 +42,16 @@ class PoolFunctionTag:
 
     def __reduce__(self):  # noqa: D105
         return (PoolFunctionTag, ())
+
+
+class PoolTransformTag:
+    """Like :class:`PoolFunctionTag`, for the prior transform."""
+
+    def __call__(self, u):  # noqa: D102
+        return np.asarray(_POOL_TRANSFORM(u))
+
+    def __reduce__(self):  # noqa: D105
+        return (PoolTransformTag, ())
 
 
 class MultiPool:
@@ -59,18 +72,22 @@ class MultiPool:
         Number of worker processes.
     likelihood : callable
         Likelihood function to evaluate in parallel.
+    transform : callable, optional
+        Prior transform to pre-load in the workers as well.
     """
 
     # pools not closed yet, shut down by fitter.run if a run fails
     _open = []
 
-    def __init__(self, processes, likelihood):
+    def __init__(self, processes, likelihood, transform=None):
+        global _POOL_FUNC, _POOL_TRANSFORM
+        # the tags also work here, for what samplers evaluate locally
+        _POOL_FUNC, _POOL_TRANSFORM = likelihood, transform
         self._n_processes = processes
-        func_bytes = dill.dumps(likelihood)
         self._executor = ProcessPoolExecutor(
             max_workers=processes,
             initializer=_pool_init,
-            initargs=(func_bytes,),
+            initargs=(dill.dumps(likelihood), dill.dumps(transform)),
             timeout=None,
         )
         MultiPool._open.append(self)
@@ -84,6 +101,11 @@ class MultiPool:
     def likelihood(self):
         """Return a picklable proxy for the pre-loaded likelihood."""
         return PoolFunctionTag()
+
+    @property
+    def transform(self):
+        """Return a picklable proxy for the pre-loaded prior transform."""
+        return PoolTransformTag()
 
     def map(self, func, iterable):
         """Map a function over an iterable in parallel."""
