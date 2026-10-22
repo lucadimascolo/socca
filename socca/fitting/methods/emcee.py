@@ -14,6 +14,8 @@ from ...pool.mpi import KWCAST
 
 from ...pool.mp import MultiPool
 
+from .utils import check_resume
+
 
 #   Fitting method - emcee sampler
 #   --------------------------------------------------------
@@ -223,6 +225,8 @@ def run_emcee(
     istep = 0
     nsteps_total = nsteps
     if resume and backend is not None and backend.iteration > 0:
+        last = backend.get_last_sample()
+        check_resume(checkpoint, log_posterior, last.coords, last.log_prob)
         initial_state = None
         istep = backend.iteration
         nsteps = max(0, nsteps - istep)

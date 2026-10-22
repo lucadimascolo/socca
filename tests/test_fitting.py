@@ -13,6 +13,7 @@ import socca.fitting as fitting
 import socca.fitting.methods.pocomc as pocomc_backend
 from socca.fitting.methods.pocomc import _Sampler, _latest_state
 from socca.fitting.methods.utils import (
+    check_resume,
     circular_quantile,
     circular_recenter,
     get_imp_weights,
@@ -1037,6 +1038,38 @@ class TestResume:
         checkpoint = str(tmp_path / "d")
         return dict(kwargs, method="dynesty", nlive=50, checkpoint=checkpoint)
 
+    def test_check_resume(self):
+        """Matching saved values pass, others raise, nothing saved passes."""
+        points = np.arange(12.0).reshape(6, 2)
+        saved = points.sum(1)
+        check_resume("ckpt", np.sum, points, saved)
+        check_resume("ckpt", np.sum, points[:0], saved[:0])
+        with pytest.raises(ValueError, match="ckpt was made with"):
+            check_resume("ckpt", np.sum, points, saved + 1e-3)
+        with pytest.raises(ValueError, match="ckpt was made with"):
+            check_resume("ckpt", np.sum, points * 1e-12, saved * 2e-12)
+        with pytest.raises(ValueError, match="ckpt was made with"):
+            check_resume("ckpt", np.sum, points, (saved + 1) * (1 + 1e-9))
+        check_resume("ckpt", lambda p: -np.inf, points, np.full(6, -1e300))
+        check_resume("ckpt", lambda p: np.nan, points, np.full(6, np.nan))
+        with pytest.raises(ValueError, match="ckpt was made with"):
+            check_resume("ckpt", lambda p: p[3], points, saved)
+
+    @pytest.mark.parametrize(
+        "change, ncores", [({"scale": 2.0}, None), ({"width": 0.02}, 2)]
+    )
+    def test_dynesty(self, simple_hdu, tmp_path, change, ncores):
+        """A dynesty run resumes the same model and refuses a changed one."""
+        kwargs = self._dynesty(tmp_path, ncores=ncores)
+        first = self._fitter(simple_hdu)
+        first.run(maxiter=100, add_live=False, resume=False, **kwargs)
+        with pytest.raises(ValueError, match="different model"):
+            self._fitter(simple_hdu, **change).run(**kwargs)
+        fit = self._fitter(simple_hdu)
+        fit.run(**kwargs)
+        assert len(fit.samples) > len(first.samples)
+        assert np.isfinite(fit.logz)
+
     def test_dynesty_finished(self, simple_hdu, tmp_path):
         """A finished dynesty run continues to a stricter dlogz."""
         kwargs = self._dynesty(tmp_path)
@@ -1048,6 +1081,16 @@ class TestResume:
         fit = self._fitter(simple_hdu)
         fit.run(**kwargs)
         assert len(fit.samples) > len(first.samples)
+        assert np.isfinite(fit.logz)
+
+    def test_dynesty_infinite_likelihood(self, simple_hdu, tmp_path):
+        """Live points at -inf likelihood do not block resuming."""
+        kwargs = self._dynesty(tmp_path)
+        self._fitter(simple_hdu, positive=True).run(
+            maxiter=5, add_live=False, resume=False, **kwargs
+        )
+        fit = self._fitter(simple_hdu, positive=True)
+        fit.run(maxiter=50, **kwargs)
         assert np.isfinite(fit.logz)
 
     def test_dynesty_uses_current_fitter(self, simple_hdu, tmp_path):
@@ -1083,6 +1126,36 @@ class TestResume:
         fit = self._fitter(simple_hdu)
         fit.run(maxiter=200, ncores=then, **kwargs)
         assert np.isfinite(fit.logz)
+
+    @pytest.mark.parametrize("change", [{"scale": 2.0}, {"width": 0.02}])
+    def test_emcee(self, simple_hdu, tmp_path, change):
+        """An emcee run resumes the same model and refuses a changed one."""
+        kwargs = dict(
+            method="emcee",
+            nwalkers=8,
+            checkpoint=str(tmp_path / "emcee.hdf5"),
+            progress=False,
+        )
+        self._fitter(simple_hdu).run(nsteps=20, resume=False, **kwargs)
+        fit = self._fitter(simple_hdu)
+        fit.run(nsteps=40, **kwargs)
+        assert fit.sampler.iteration == 40
+        with pytest.raises(ValueError, match="different model"):
+            self._fitter(simple_hdu, **change).run(nsteps=60, **kwargs)
+
+    @pytest.mark.parametrize("change", [{"scale": 2.0}, {"width": 0.02}])
+    def test_nautilus(self, simple_hdu, tmp_path, change):
+        """A nautilus run resumes the same model and refuses a changed one."""
+        kwargs = dict(
+            method="nautilus",
+            n_live=100,
+            checkpoint=str(tmp_path / "nautilus.hdf5"),
+            verbose=False,
+        )
+        self._fitter(simple_hdu).run(n_like_max=500, resume=False, **kwargs)
+        self._fitter(simple_hdu).run(n_like_max=1000, **kwargs)
+        with pytest.raises(ValueError, match="different model"):
+            self._fitter(simple_hdu, **change).run(n_like_max=1500, **kwargs)
 
     def test_no_default_checkpoint(self, simple_hdu, tmp_path, monkeypatch):
         """Without a checkpoint, emcee writes and resumes nothing."""

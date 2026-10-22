@@ -1,11 +1,12 @@
 """Nautilus neural network-accelerated nested sampling backend."""
 
 import nautilus
+import numpy as np
 import inspect
 
 import time
 
-from .utils import get_imp_weights
+from .utils import check_resume, get_imp_weights
 
 from ...pool.mpi import FunctionTag, MPIPool
 from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
@@ -89,6 +90,7 @@ def run_nautilus(
         resume = False
 
     ndims = len(self.mod.paridx)
+    loglike = log_likelihood
 
     nlive = 1000
     for key in ["nlive", "n_live"]:
@@ -164,6 +166,14 @@ def run_nautilus(
     )
 
     discard_exploration = kwargs.pop("discard_exploration", True)
+
+    if resume and self.sampler.points:
+        check_resume(
+            checkpoint,
+            lambda u: loglike(prior_transform(u)),
+            np.concatenate(self.sampler.points),
+            np.concatenate(self.sampler.log_l),
+        )
 
     if MPI_RANK == 0:
         toc = time.time()

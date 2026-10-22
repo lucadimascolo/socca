@@ -4,6 +4,32 @@ import scipy.special
 import numpy as np
 
 
+def check_resume(checkpoint, func, points, saved, n=5):
+    """
+    Raise if a checkpoint was made with another model, data or priors.
+
+    Evaluates ``func`` at up to ``n`` of the saved ``points`` and compares
+    the result with the values saved with them. Values below -1e300 count
+    as -inf, as samplers store them so.
+    """
+    points, saved = np.asarray(points), np.asarray(saved, dtype=float)
+    if len(saved) == 0:
+        return
+    idx = np.unique(np.linspace(0, len(saved) - 1, n).astype(int))
+    error = None
+    try:
+        now = np.array([np.asarray(func(points[i]), dtype=float) for i in idx])
+        now, saved = [np.maximum(v, -1e300) for v in (now, saved[idx])]
+        if np.allclose(now, saved, rtol=1e-10, atol=0.0, equal_nan=True):
+            return
+    except Exception as e:
+        error = e
+    raise ValueError(
+        f"The checkpoint {checkpoint} was made with a different model, "
+        "data or priors: run with resume=False to start again."
+    ) from error
+
+
 # Support functions
 # ========================================================
 # Compute importance weights for nested sampling

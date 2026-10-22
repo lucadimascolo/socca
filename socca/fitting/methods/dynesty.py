@@ -16,6 +16,8 @@ from ...pool.mpi import KWCAST
 
 from ...pool.mp import MultiPool
 
+from .utils import check_resume
+
 
 #   Fitting method - Dynesty sampler
 #   --------------------------------------------------------
@@ -90,6 +92,7 @@ def run_dynesty(
         resume = False
 
     ndims = len(self.mod.paridx)
+    loglike = log_likelihood
 
     nlive = kwargs.pop("nlive", 1000)
     dlogz = kwargs.pop("dlogz", 0.01)
@@ -170,6 +173,10 @@ def run_dynesty(
         )
     else:
         sampler = dynesty.NestedSampler.restore(checkpoint, pool=pool)
+        check_resume(
+            checkpoint, prior_transform, sampler.live_u, sampler.live_v
+        )
+        check_resume(checkpoint, loglike, sampler.live_v, sampler.live_logl)
         sampler.loglikelihood.loglikelihood.func = log_likelihood
         sampler.prior_transform.func = prior_transform
         sampler.queue_size = sampler_kwargs.get("queue_size") or (

@@ -5,6 +5,7 @@ import pocomc
 import numpyro
 import numpy as np
 
+import dill
 import inspect
 import glob
 import os
@@ -30,7 +31,7 @@ def _safe_ow_getattr(self, name):
 
 tqdm.utils.ObjectWrapper.__getattr__ = _safe_ow_getattr
 
-from .utils import get_imp_weights
+from .utils import check_resume, get_imp_weights
 
 from ...priors import pocomcPrior
 
@@ -161,6 +162,7 @@ def run_pocomc(
     """
     if checkpoint is None:
         resume = False
+    loglike = log_likelihood
 
     save_every = (
         kwargs.pop("save_every", 10) if checkpoint is not None else None
@@ -274,6 +276,17 @@ def run_pocomc(
             return np.array(_ll_vmap(theta_batch))
 
     state = _latest_state(pocodir) if resume else None
+    if state is not None:
+        with open(state, "rb") as f:
+            particles = dill.load(f)["particles"]
+        x = particles.get("x", -1)
+        check_resume(state, loglike, x, particles.get("logl", -1))
+        check_resume(
+            state,
+            lambda xi: prior.logpdf(xi[None])[0],
+            x,
+            particles.get("logp", -1),
+        )
 
     self.sampler = _Sampler(
         likelihood=log_likelihood,
