@@ -85,6 +85,9 @@ def run_nautilus(
     Lange, J. U., MNRAS, 525, 3181 (2023)
     Nautilus documentation: https://nautilus-sampler.readthedocs.io/en/latest/
     """
+    if checkpoint is None:
+        resume = False
+
     ndims = len(self.mod.paridx)
 
     nlive = 1000

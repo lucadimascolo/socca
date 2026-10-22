@@ -7,6 +7,7 @@ import numpy as np
 
 import inspect
 import glob
+import os
 
 import time
 
@@ -40,6 +41,44 @@ from ...pool.mpi import KWCAST
 from ...pool.mp import MultiPool
 
 
+class _Sampler(pocomc.Sampler):
+    """pocomc sampler that keeps its functions and pool when resuming."""
+
+    _keep = [
+        "prior",
+        "log_prior",
+        "sample_prior",
+        "bounds",
+        "log_likelihood",
+        "vectorize",
+        "pool",
+        "distribute",
+    ]
+
+    def load_state(self, path):
+        """Load a saved state, but not its likelihood, prior or pool."""
+        keep = {key: self.__dict__[key] for key in self._keep}
+        super().load_state(path)
+        self.__dict__.update(keep)
+        # older states hold read-only JAX arrays
+        if isinstance(self.prior_samples, jax.Array):
+            self.prior_samples = np.array(self.prior_samples)
+        for key, value in (self.current_particles or {}).items():
+            if isinstance(value, jax.Array):
+                self.current_particles[key] = np.array(value)
+
+
+def _latest_state(pocodir):
+    """Most recent pocomc state file in pocodir, by iteration, or None."""
+
+    def order(path):
+        tag = os.path.basename(path)[: -len(".state")].rsplit("_", 1)[-1]
+        return (tag == "final", int(tag) if tag.isdigit() else -1)
+
+    states = glob.glob(os.path.join(pocodir, "*.state"))
+    return max(states, key=order) if states else None
+
+
 #   Fitting method - PocoMC sampler
 #   --------------------------------------------------------
 def run_pocomc(
@@ -65,12 +104,12 @@ def run_pocomc(
     log_prior : callable
         Function that computes the log-prior given parameters.
     checkpoint : str or None
-        Path prefix for checkpoint files. If None and resume=True,
-        defaults to "run". Checkpoint files are saved in a directory
-        named "{checkpoint}_pocomc_dump".
+        Path prefix for checkpoint files, saved in a directory named
+        "{checkpoint}_pocomc_dump". If None, no checkpointing is
+        performed.
     resume : bool
-        If True, resume from the latest saved state in the checkpoint
-        directory.
+        If True and a checkpoint is given, resume from the latest saved
+        state in the checkpoint directory.
     getzprior : bool
         If True, run a second nested sampling to estimate the prior
         evidence for Bayesian model comparison with prior deboosting.
@@ -120,8 +159,8 @@ def run_pocomc(
     Karamanis, M., Nabergoj, D., Beutler, F., Peacock, J. A., Seljak, U., arXiv:2207.05660 (2022)
     pocoMC documentation: https://pocomc.readthedocs.io/en/latest/
     """
-    if checkpoint is None and resume:
-        checkpoint = "run"
+    if checkpoint is None:
+        resume = False
 
     save_every = (
         kwargs.pop("save_every", 10) if checkpoint is not None else None
@@ -234,7 +273,9 @@ def run_pocomc(
         def log_likelihood(theta_batch):
             return np.array(_ll_vmap(theta_batch))
 
-    self.sampler = pocomc.Sampler(
+    state = _latest_state(pocodir) if resume else None
+
+    self.sampler = _Sampler(
         likelihood=log_likelihood,
         prior=prior,
         n_effective=nlive,
@@ -248,10 +289,9 @@ def run_pocomc(
     if MPI_SIZE > 1 and MPI_RANK == 0 or isinstance(pool, int):
         toc = time.time()
 
-    states_ = sorted(glob.glob(f"{pocodir}/*.state")) if resume else []
     self.sampler.run(
         save_every=save_every,
-        resume_state_path=states_[-1] if len(states_) else None,
+        resume_state_path=state,
         progress=progress,
         **run_kwargs,
     )

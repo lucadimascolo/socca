@@ -49,6 +49,8 @@ def run_dynesty(
         If None, no checkpointing is performed.
     resume : bool
         If True and checkpoint file exists, resume from saved state.
+        A finished run continues until it meets the new stopping
+        criteria; maxiter and maxcall count from the resume.
     getzprior : bool
         If True, run a second nested sampling to estimate the prior
         evidence for Bayesian model comparison with prior deboosting.
@@ -168,7 +170,16 @@ def run_dynesty(
         )
     else:
         sampler = dynesty.NestedSampler.restore(checkpoint, pool=pool)
-        sampler.run_nested(resume=True)
+        sampler.loglikelihood.loglikelihood.func = log_likelihood
+        sampler.prior_transform.func = prior_transform
+        sampler.queue_size = sampler_kwargs.get("queue_size") or (
+            pool.size if pool is not None else 1
+        )
+        if sampler.added_live:
+            sampler._remove_live_points()
+        sampler.run_nested(
+            dlogz=dlogz, checkpoint_file=checkpoint, resume=True, **run_kwargs
+        )
 
     results = sampler.results
 

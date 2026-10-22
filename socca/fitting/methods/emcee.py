@@ -39,10 +39,10 @@ def run_emcee(
     log_prior : callable
         Function that computes the log-prior given parameters.
     checkpoint : str or None
-        Path to the HDF5 backend file for checkpointing. If None
-        and resume=True, defaults to "run.hdf5".
+        Path to the HDF5 backend file for checkpointing. If None,
+        no checkpointing is performed.
     resume : bool
-        If True, resume from the checkpoint file.
+        If True and a checkpoint is given, resume from it.
     **kwargs : dict
         Additional keyword arguments passed to emcee.EnsembleSampler
         and its run_mcmc method. Common options include:
@@ -98,8 +98,8 @@ def run_emcee(
     Foreman-Mackey, D., Hogg, D. W., Lang, D., Goodman, J., PASP, 125, 306 (2013)
     emcee documentation: https://emcee.readthedocs.io/en/stable/
     """
-    if checkpoint is None and resume:
-        checkpoint = "run"
+    if checkpoint is None:
+        resume = False
 
     ndim = len(self.mod.paridx)
 

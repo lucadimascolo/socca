@@ -11,6 +11,7 @@ from astropy.io import fits
 import socca.data as data
 import socca.fitting as fitting
 import socca.fitting.methods.pocomc as pocomc_backend
+from socca.fitting.methods.pocomc import _Sampler, _latest_state
 from socca.fitting.methods.utils import (
     circular_quantile,
     circular_recenter,
@@ -1031,6 +1032,96 @@ class TestResume:
             img=img, mod=models.Model(gaussian, positive=positive)
         )
 
+    @staticmethod
+    def _dynesty(tmp_path, **kwargs):
+        checkpoint = str(tmp_path / "d")
+        return dict(kwargs, method="dynesty", nlive=50, checkpoint=checkpoint)
+
+    def test_dynesty_finished(self, simple_hdu, tmp_path):
+        """A finished dynesty run continues to a stricter dlogz."""
+        kwargs = self._dynesty(tmp_path)
+        first = self._fitter(simple_hdu)
+        first.run(dlogz=50.0, resume=False, **kwargs)
+        same = self._fitter(simple_hdu)
+        same.run(dlogz=50.0, **kwargs)
+        assert len(same.samples) == len(first.samples)
+        fit = self._fitter(simple_hdu)
+        fit.run(**kwargs)
+        assert len(fit.samples) > len(first.samples)
+        assert np.isfinite(fit.logz)
+
+    def test_dynesty_uses_current_fitter(self, simple_hdu, tmp_path):
+        """A resumed dynesty run evaluates the current fitter, not a copy."""
+        import dynesty
+
+        restored = []
+        restore = dynesty.NestedSampler.restore
+
+        def capture(*args, **kwargs):
+            restored.append(restore(*args, **kwargs))
+            return restored[-1]
+
+        kwargs = self._dynesty(tmp_path)
+        self._fitter(simple_hdu).run(maxiter=100, resume=False, **kwargs)
+        fit = self._fitter(simple_hdu)
+        with patch.object(dynesty.NestedSampler, "restore", capture):
+            fit.run(maxiter=200, **kwargs)
+        sampler = restored[0]
+        for func in [
+            sampler.loglikelihood.loglikelihood.func,
+            sampler.prior_transform.func,
+        ]:
+            assert func.__closure__[0].cell_contents is fit
+
+    @pytest.mark.parametrize("first, then", [(2, None), (None, 2)])
+    def test_dynesty_pool_switch(self, simple_hdu, tmp_path, first, then):
+        """A dynesty run resumes after switching between serial and a pool."""
+        kwargs = self._dynesty(tmp_path)
+        self._fitter(simple_hdu).run(
+            maxiter=100, resume=False, ncores=first, **kwargs
+        )
+        fit = self._fitter(simple_hdu)
+        fit.run(maxiter=200, ncores=then, **kwargs)
+        assert np.isfinite(fit.logz)
+
+    def test_no_default_checkpoint(self, simple_hdu, tmp_path, monkeypatch):
+        """Without a checkpoint, emcee writes and resumes nothing."""
+        monkeypatch.chdir(tmp_path)
+        self._fitter(simple_hdu).run(
+            method="emcee", nwalkers=8, nsteps=5, progress=False
+        )
+        assert not list(tmp_path.iterdir())
+
+    def test_pocomc_latest_state(self, tmp_path):
+        """Resuming pocomc takes the latest iteration, then the final state."""
+        for tag in ["10", "90", "110"]:
+            (tmp_path / f"pmc_{tag}.state").touch()
+        assert _latest_state(str(tmp_path)).endswith("pmc_110.state")
+        (tmp_path / "pmc_final.state").touch()
+        assert _latest_state(str(tmp_path)).endswith("pmc_final.state")
+        assert _latest_state(str(tmp_path / "missing")) is None
+
+    @pytest.mark.parametrize("particles", [None, "jax"])
+    def test_pocomc_load_state(self, tmp_path, particles):
+        """A loaded pocomc state keeps the current functions and arrays."""
+        prior = priors.pocomcPrior(
+            [priors.uniform(0.0, 1.0), priors.uniform(0.0, 1.0)]
+        )
+        old = _Sampler(likelihood=lambda x: 0.0, prior=prior, n_active=10)
+        old.t = 7
+        old.pbar = None
+        if particles:
+            old.prior_samples = jp.zeros((10, 2))
+            old.current_particles = {"x": jp.zeros((10, 2)), "iter": 3}
+        old.save_state(tmp_path / "pmc_7.state")
+        new = _Sampler(likelihood=lambda x: 1.0, prior=prior, n_active=10)
+        new.load_state(tmp_path / "pmc_7.state")
+        assert new.t == 7
+        assert new.log_likelihood(np.zeros(2)) == 1.0
+        if particles:
+            new.prior_samples[0] = 1.0
+            new.current_particles["x"][0] = 1.0
+
     def test_pocomc_infinite_likelihood(self, simple_hdu):
         """Prior draws with -inf likelihood do not stop pocomc."""
         fit = self._fitter(simple_hdu, positive=True)
@@ -1055,7 +1146,7 @@ class TestResume:
             def evidence(self):
                 return 0.0, 0.0
 
-        monkeypatch.setattr(pocomc_backend.pocomc, "Sampler", Fake)
+        monkeypatch.setattr(pocomc_backend, "_Sampler", Fake)
         fit = self._fitter(simple_hdu)
         fit.run(method="pocomc", progress=False)
         np.testing.assert_allclose(fit.weights, [0.1, 0.2, 0.7])
