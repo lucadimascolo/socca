@@ -238,7 +238,9 @@ def run_pocomc(
             self.mod.priors[key], numpyro.distributions.Distribution
         ):
             prior.append(self.mod.priors[key])
-    prior = pocomcPrior(prior, seed=kwargs.pop("seed", 0))
+    seed = kwargs.pop("seed", 0)
+    sampler_kwargs.setdefault("random_state", seed)
+    prior = pocomcPrior(prior, seed=seed)
     warn_unused(kwargs, "pocomc")
 
     if MPI_SIZE > 1:

@@ -1226,6 +1226,17 @@ class TestResume:
         fit.run(method="pocomc", progress=False)
         np.testing.assert_allclose(fit.weights, [0.1, 0.2, 0.7])
 
+    def test_pocomc_seed(self, simple_hdu):
+        """Runs of pocomc with the same seed return the same samples."""
+        kwargs = dict(method="pocomc", nlive=50, n_total=100, n_evidence=100)
+        samples = []
+        for extra in [{}, {}, {"random_state": 1}]:
+            fit = self._fitter(simple_hdu)
+            fit.run(progress=False, **kwargs, **extra)
+            samples.append(fit.samples)
+        np.testing.assert_array_equal(samples[0], samples[1])
+        assert not np.array_equal(samples[0], samples[2])
+
     def test_unknown_keyword_warns(self, simple_hdu):
         """Keyword arguments a backend does not use are reported."""
         with pytest.warns(UserWarning, match="method='optimizer': bogus"):
