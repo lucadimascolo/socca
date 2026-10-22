@@ -9,8 +9,8 @@ import warnings
 import emcee
 
 from ...pool.mpi import FunctionTag, MPIPool
-from ...pool.mpi import MPI_COMM, MPI_SIZE
-from ...pool.mpi import KWCAST
+from ...pool.mpi import MPI_SIZE
+from ...pool.mpi import KWCAST, receive_results, send_results
 
 from ...pool.mp import MultiPool
 
@@ -159,12 +159,6 @@ def run_emcee(
         ll = log_likelihood(theta)
         return float(ll) + float(lp)
 
-    backend = None
-    if checkpoint is not None:
-        backend = emcee.backends.HDFBackend(checkpoint)
-        if not resume:
-            backend.reset(nwalkers, ndim)
-
     sampler_kwargs = {}
     for key in inspect.signature(emcee.EnsembleSampler).parameters.keys():
         if key not in [
@@ -198,9 +192,7 @@ def run_emcee(
         if not pool.is_master():
             pool.wait()
 
-            results = MPI_COMM.bcast(None, root=0)
-            for key in KWCAST:
-                setattr(self, key, results[key])
+            receive_results(self)
             return
 
     if ncores is not None and pool is None:
@@ -213,6 +205,12 @@ def run_emcee(
         log_posterior_fn = pool.likelihood
     else:
         log_posterior_fn = log_posterior
+
+    backend = None
+    if checkpoint is not None:
+        backend = emcee.backends.HDFBackend(checkpoint)
+        if not resume:
+            backend.reset(nwalkers, ndim)
 
     self.sampler = emcee.EnsembleSampler(
         nwalkers,
@@ -352,9 +350,10 @@ def run_emcee(
         discard=discard, thin=thin, flat=True
     )
     self.weights = np.ones(self.samples.shape[0])
+    self.logw = self.logz = None
 
     if pool is not None:
         pool.close()
 
     if MPI_SIZE > 1:
-        MPI_COMM.bcast({key: getattr(self, key) for key in KWCAST}, root=0)
+        send_results(self, KWCAST + ["tau", "tau_history"])

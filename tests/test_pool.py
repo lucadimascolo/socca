@@ -1,12 +1,21 @@
 """Tests for socca.pool parallelization module."""
 
 import io
+import os
+import shutil
+import signal
+import subprocess
+import sys
+
 import dill
 import numpy as np
 import pytest
 
+import socca
+
 from socca.pool.mp import (
     MultiPool,
+    close_pools,
     PoolFunctionTag,
     _pool_init,
     _POOL_FUNC,
@@ -55,6 +64,16 @@ class TestMultiPool:
         expected = [float(x) ** 2 for x in inputs]
         np.testing.assert_allclose(results, expected)
         pool.close()
+
+    def test_close_pools_keeps_older_pools(self):
+        """Only pools opened after the given count are killed."""
+        older = MultiPool(2, self._square)
+        start = len(MultiPool._open)
+        newer = MultiPool(2, self._square)
+        close_pools(start)
+        assert newer not in MultiPool._open
+        assert older.map(older.likelihood, [2.0]) == [4.0]
+        older.close()
 
     def test_likelihood_returns_pool_function_tag(self):
         """Test that likelihood property returns a PoolFunctionTag."""
@@ -352,3 +371,157 @@ class TestParallelSamplingIntegration:
 
         assert multi_param_fitter.samples.shape[0] > 0
         assert np.isfinite(multi_param_fitter.logz)
+
+
+# ========================================================
+# Runs under mpiexec
+# ========================================================
+_MPI_SCRIPT = """
+import sys
+import numpy as np
+from astropy.io import fits
+from socca import data, fitting, models, noise, priors
+from socca.pool.mpi import MPI_RANK
+
+method, checkpoint, mode = sys.argv[1:]
+header = fits.Header()
+header.update(NAXIS=2, NAXIS1=16, NAXIS2=16, CRPIX1=8.5, CRPIX2=8.5,
+              CRVAL1=180.0, CRVAL2=0.0, CDELT1=-1 / 3600, CDELT2=1 / 3600,
+              CTYPE1="RA---TAN", CTYPE2="DEC--TAN")
+y, x = np.mgrid[:16, :16]
+image = np.exp(-((x - 8) ** 2 + (y - 8) ** 2) / 8.0)
+scale = 2.0 if mode == "changed" else 1.0
+gaussian = models.Gaussian(xc=priors.uniform(179.999, 180.001), yc=0.0,
+                           rs=1e-3, Is=priors.uniform(0.1, 2.0))
+fit = fitting.fitter(
+    img=data.Image(fits.PrimaryHDU(image * scale, header),
+                   noise=noise.Normal(sigma=0.1)),
+    mod=models.Model(gaussian),
+)
+if mode == "raise" and MPI_RANK == 1:
+    def fail(pp):
+        raise ZeroDivisionError("likelihood failed")
+    fit._log_likelihood = fail
+kwargs = dict(emcee=dict(nsteps=10, nwalkers=4, progress=False),
+              nautilus=dict(nlive=20, n_like_max=200, verbose=False))[method]
+try:
+    fit.run(method=method, checkpoint=checkpoint,
+            resume=mode == "changed", **kwargs)
+    print(f"RESULT {MPI_RANK} {len(fit.samples)}", flush=True)
+except Exception as error:
+    print(f"RESULT {MPI_RANK} {type(error).__name__}", flush=True)
+"""
+
+
+_MPI_POOL_SCRIPT = """
+from socca.pool.mpi import MPI_RANK, MPIPool
+
+
+class Unpicklable:
+    def __call__(self, x):
+        return x
+
+    def __reduce__(self):
+        raise TypeError("cannot pickle")
+
+
+class Unloadable(Unpicklable):
+    def __reduce__(self):
+        return (Unloadable, (), {})
+
+    def __setstate__(self, state):
+        raise TypeError("cannot unpickle")
+
+
+pool = MPIPool()
+if not pool.is_master():
+    pool.wait()
+    print(f"RESULT {MPI_RANK} closed", flush=True)
+else:
+    for func in [Unpicklable(), Unloadable()]:
+        try:
+            pool.map(func, [1, 2, 3])
+        except TypeError as error:
+            print(f"RESULT {MPI_RANK} {error}".replace("cannot ", "cannot_"))
+    print(f"RESULT {MPI_RANK} {sum(pool.map(abs, [-1, -2, -3]))}", flush=True)
+    pool.close()
+"""
+
+
+@pytest.mark.skipif(MPI_COMM is None, reason="mpi4py is not installed")
+class TestMPIRun:
+    """Runs under mpiexec finish, or fail on every rank, without hanging."""
+
+    @staticmethod
+    def _mpiexec(tmp_path, *args, script=_MPI_SCRIPT):
+        mpiexec = shutil.which("mpiexec") or shutil.which("mpirun")
+        if mpiexec is None:
+            pytest.skip("mpiexec is not available")
+
+        path = tmp_path / "run.py"
+        path.write_text(script)
+        root = os.path.dirname(os.path.dirname(socca.__file__))
+        env = dict(os.environ, PYTHONPATH=root)
+        process = subprocess.Popen(
+            [mpiexec, "-n", "2", sys.executable, str(path), *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            start_new_session=True,
+        )
+        try:
+            out, _ = process.communicate(timeout=120)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            pytest.fail("the MPI run hung")
+        lines = [line.split() for line in out.splitlines()]
+        return [
+            (int(line[1]), line[2]) for line in lines if line[:1] == ["RESULT"]
+        ]
+
+    def test_emcee_checkpoint(self, tmp_path):
+        """An emcee run with a checkpoint finishes under MPI."""
+        results = dict(
+            self._mpiexec(tmp_path, "emcee", str(tmp_path / "e.h5"), "fresh")
+        )
+        assert results.keys() == {0, 1}
+        assert len(set(results.values())) == 1
+        assert results[0].isdigit()
+
+    def test_refused_resume(self, tmp_path):
+        """A refused resume stops the workers too."""
+        checkpoint = str(tmp_path / "n.h5")
+        self._mpiexec(tmp_path, "nautilus", checkpoint, "fresh")
+        results = dict(
+            self._mpiexec(tmp_path, "nautilus", checkpoint, "changed")
+        )
+        assert results == {0: "ValueError", 1: "RuntimeError"}
+
+    def test_worker_error(self, tmp_path):
+        """An error on a worker stops every rank."""
+        results = dict(
+            self._mpiexec(
+                tmp_path, "nautilus", str(tmp_path / "n.h5"), "raise"
+            )
+        )
+        assert results == {0: "RuntimeError", 1: "RuntimeError"}
+
+    def test_emcee_bad_checkpoint(self, tmp_path):
+        """A checkpoint that cannot be created stops the workers too."""
+        results = dict(
+            self._mpiexec(
+                tmp_path, "emcee", str(tmp_path / "missing" / "e.h5"), "fresh"
+            )
+        )
+        assert results == {0: "FileNotFoundError", 1: "RuntimeError"}
+
+    def test_unpicklable_tasks(self, tmp_path):
+        """Tasks that fail to (un)pickle raise and keep the ranks in step."""
+        results = self._mpiexec(tmp_path, script=_MPI_POOL_SCRIPT)
+        assert sorted(results) == [
+            (0, "6"),
+            (0, "cannot_pickle"),
+            (0, "cannot_unpickle"),
+            (1, "closed"),
+        ]

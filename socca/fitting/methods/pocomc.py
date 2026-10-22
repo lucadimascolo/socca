@@ -36,8 +36,8 @@ from .utils import check_resume, get_imp_weights, warn_unused
 from ...priors import pocomcPrior
 
 from ...pool.mpi import FunctionTag, MPIPool
-from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
-from ...pool.mpi import KWCAST
+from ...pool.mpi import MPI_RANK, MPI_SIZE
+from ...pool.mpi import receive_results, send_results
 
 from ...pool.mp import MultiPool
 
@@ -256,9 +256,7 @@ def run_pocomc(
         if not pool.is_master():
             pool.wait()
 
-            results = MPI_COMM.bcast(None, root=0)
-            for key in KWCAST:
-                setattr(self, key, results[key])
+            receive_results(self)
             return
 
     if ncores is not None and pool is None:
@@ -346,4 +344,4 @@ def run_pocomc(
         pool.close()
 
     if MPI_SIZE > 1:
-        MPI_COMM.bcast({key: getattr(self, key) for key in KWCAST}, root=0)
+        send_results(self)

@@ -5,6 +5,7 @@ from functools import wraps
 import dill
 import os
 import sys
+import traceback
 
 KWCAST = ["samples", "weights", "logw", "logz", "logz_prior"]
 
@@ -137,6 +138,9 @@ class FunctionTag:
 class MPIPool:
     """MPI pool where all ranks evaluate tasks."""
 
+    # pool of the run in progress on this rank, until its results are sent
+    _active = None
+
     def __init__(self, comm=None):
         if comm is None:
             comm = MPI.COMM_WORLD
@@ -144,6 +148,8 @@ class MPIPool:
         self.comm = comm
         self.rank = comm.Get_rank()
         self.size = comm.Get_size()
+        self.closed = False
+        MPIPool._active = self
 
     def is_master(self):
         """Return True if this is the master rank."""
@@ -154,44 +160,91 @@ class MPIPool:
         tasks = list(iterable)
         n = len(tasks)
 
-        self.comm.bcast(True, root=0)
-        self.comm.bcast(func, root=0)
-
         chunk_size = -(-n // self.size)
         padded = tasks + [None] * (chunk_size * self.size - n)
+        # serialize before any message, so a failure here leaves workers idle
+        func = dill.dumps(func)
         chunks = [
-            padded[i * chunk_size : (i + 1) * chunk_size]
+            dill.dumps(padded[i * chunk_size : (i + 1) * chunk_size])
             for i in range(self.size)
         ]
 
+        self.comm.bcast(func, root=0)
         local_chunk = self.comm.scatter(chunks, root=0)
-        local_results = [
-            func(t) if t is not None else None for t in local_chunk
-        ]
-        all_results = self.comm.gather(local_results, root=0)
+        try:
+            results = _evaluate(func, local_chunk)
+        finally:
+            all_results = self.comm.gather(None, root=0)
 
-        results = []
-        for chunk in all_results:
-            results.extend(chunk)
+        for chunk in all_results[1:]:
+            if isinstance(chunk, _Failure):
+                raise RuntimeError(f"An MPI worker failed:\n{chunk}")
+            results.extend(dill.loads(chunk))
         return results[:n]
 
     def wait(self):
         """Block non-root ranks, processing batches until closed."""
         while True:
-            has_work = self.comm.bcast(None, root=0)
-            if not has_work:
+            func = self.comm.bcast(None, root=0)
+            if not func:
                 return
 
-            eval_func = self.comm.bcast(None, root=0)
             local_chunk = self.comm.scatter(None, root=0)
-            local_results = [
-                eval_func(t) if t is not None else None for t in local_chunk
-            ]
+            try:
+                local_results = dill.dumps(_evaluate(func, local_chunk))
+            except Exception:
+                local_results = _Failure(traceback.format_exc())
             self.comm.gather(local_results, root=0)
 
     def close(self):
         """Signal workers to exit."""
-        self.comm.bcast(False, root=0)
+        if not self.closed:
+            self.closed = True
+            self.comm.bcast(False, root=0)
+
+
+class _Failure(str):
+    """Error message sent between ranks in place of results."""
+
+
+def _evaluate(func, chunk):
+    """Evaluate a serialized function on a serialized chunk of tasks."""
+    func, chunk = dill.loads(func), dill.loads(chunk)
+    return [func(t) if t is not None else None for t in chunk]
+
+
+def send_results(fitter, keys=KWCAST):
+    """Send the results of a run from the master to the workers."""
+    results = {key: getattr(fitter, key) for key in keys}
+    MPIPool._active = None
+    MPI_COMM.bcast(results, root=0)
+
+
+def stop_ranks(error):
+    """After a failed run, make waiting workers raise, or end all ranks."""
+    pool, MPIPool._active = MPIPool._active, None
+    if pool is None:
+        return
+    if not isinstance(error, Exception):
+        print(
+            f"\nRun interrupted on MPI rank {MPI_RANK}: ending all ranks.",
+            file=sys.stderr,
+            flush=True,
+        )
+        MPI_COMM.Abort(1)
+    if pool.is_master():
+        pool.close()
+        MPI_COMM.bcast(_Failure(f"{type(error).__name__}: {error}"), root=0)
+
+
+def receive_results(fitter):
+    """Set the results of a run on a worker, or raise if the master failed."""
+    results = MPI_COMM.bcast(None, root=0)
+    MPIPool._active = None
+    if isinstance(results, _Failure):
+        raise RuntimeError(f"The MPI master process failed: {results}")
+    for key, value in results.items():
+        setattr(fitter, key, value)
 
 
 # Root decorator for mpi-safe functions

@@ -61,6 +61,9 @@ class MultiPool:
         Likelihood function to evaluate in parallel.
     """
 
+    # pools not closed yet, shut down by fitter.run if a run fails
+    _open = []
+
     def __init__(self, processes, likelihood):
         self._n_processes = processes
         func_bytes = dill.dumps(likelihood)
@@ -70,6 +73,7 @@ class MultiPool:
             initargs=(func_bytes,),
             timeout=None,
         )
+        MultiPool._open.append(self)
 
     @property
     def size(self):
@@ -85,6 +89,14 @@ class MultiPool:
         """Map a function over an iterable in parallel."""
         return list(self._executor.map(func, iterable))
 
-    def close(self):
-        """Shut down the worker pool."""
-        self._executor.shutdown(wait=True)
+    def close(self, kill=False):
+        """Shut down the worker pool, killing running tasks if kill."""
+        if self in MultiPool._open:
+            MultiPool._open.remove(self)
+            self._executor.shutdown(wait=not kill, kill_workers=kill)
+
+
+def close_pools(start=0):
+    """Kill the pools opened after the first ``start`` ones."""
+    for pool in MultiPool._open[start:]:
+        pool.close(kill=True)

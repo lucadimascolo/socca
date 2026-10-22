@@ -12,6 +12,7 @@ import socca.data as data
 import socca.fitting as fitting
 import socca.fitting.methods.pocomc as pocomc_backend
 from socca.fitting.methods.pocomc import _Sampler, _latest_state
+from socca.pool.mp import MultiPool
 from socca.fitting.methods.utils import (
     check_resume,
     circular_quantile,
@@ -1065,6 +1066,7 @@ class TestResume:
         first.run(maxiter=100, add_live=False, resume=False, **kwargs)
         with pytest.raises(ValueError, match="different model"):
             self._fitter(simple_hdu, **change).run(**kwargs)
+        assert not MultiPool._open
         fit = self._fitter(simple_hdu)
         fit.run(**kwargs)
         assert len(fit.samples) > len(first.samples)

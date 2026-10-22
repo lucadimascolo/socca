@@ -32,7 +32,8 @@ from .methods.utils import circular_quantile
 from .methods.utils import weighted_quantile
 
 from ..pool.mpi import MPI_RANK
-from ..pool.mpi import root_only
+from ..pool.mp import MultiPool, close_pools
+from ..pool.mpi import root_only, stop_ranks
 
 
 # Fitter constructor
@@ -460,7 +461,13 @@ class fitter:
                     kwargs["periodic"] = auto_periodic
 
             self.__dict__.pop("samples", None)
-            sampler_methods[self.method](**sampler_kwargs, **kwargs)
+            opened = len(MultiPool._open)
+            try:
+                sampler_methods[self.method](**sampler_kwargs, **kwargs)
+            except BaseException as error:
+                close_pools(opened)
+                stop_ranks(error)
+                raise
 
             if self.method == "optimizer":
                 self.results.parameters = self._to_model(
