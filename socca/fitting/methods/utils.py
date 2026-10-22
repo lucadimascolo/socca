@@ -1,7 +1,22 @@
 """Utility functions for sampler output processing."""
 
+import warnings
+
 import scipy.special
 import numpy as np
+
+from ...pool.mpi import MPI_RANK
+
+
+def warn_unused(kwargs, method):
+    """Warn about keyword arguments that a sampler backend did not use."""
+    if kwargs and MPI_RANK == 0:
+        warnings.warn(
+            f"Ignoring unknown keyword argument(s) for method='{method}': "
+            f"{', '.join(sorted(kwargs))}",
+            UserWarning,
+            stacklevel=4,
+        )
 
 
 def check_resume(checkpoint, func, points, saved, n=5):

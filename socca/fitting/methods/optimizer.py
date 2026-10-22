@@ -9,6 +9,7 @@ import numpy as np
 import inspect
 
 from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
+from .utils import warn_unused
 
 
 #   Fitting method - optimizer
@@ -97,6 +98,7 @@ def run_optimizer(self, pinits, **kwargs):
         if key not in ["fun", "x0", "jac", "bounds", "method"]:
             if key in kwargs:
                 opt_kwargs[key] = kwargs.pop(key)
+    warn_unused(kwargs, "optimizer")
 
     def _opt_prior(pp):
         return jp.array(self._prior_transform(pp))

@@ -1224,6 +1224,19 @@ class TestResume:
         fit.run(method="pocomc", progress=False)
         np.testing.assert_allclose(fit.weights, [0.1, 0.2, 0.7])
 
+    def test_unknown_keyword_warns(self, simple_hdu):
+        """Keyword arguments a backend does not use are reported."""
+        with pytest.warns(UserWarning, match="method='optimizer': bogus"):
+            self._fitter(simple_hdu).run(method="optimizer", bogus=1)
+
+    @pytest.mark.parametrize("verbose", [True, False])
+    def test_nautilus_verbose(self, simple_hdu, capsys, verbose):
+        """Progress of nautilus is printed only when verbose."""
+        self._fitter(simple_hdu).run(
+            method="nautilus", n_live=100, n_like_max=500, verbose=verbose
+        )
+        assert ("Status" in capsys.readouterr().out) == verbose
+
 
 class TestPocoMCVectorize:
     """Tests for pocomc vectorize argument validation."""

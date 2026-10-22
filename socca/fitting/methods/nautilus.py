@@ -6,7 +6,7 @@ import inspect
 
 import time
 
-from .utils import check_resume, get_imp_weights
+from .utils import check_resume, get_imp_weights, warn_unused
 
 from ...pool.mpi import FunctionTag, MPIPool
 from ...pool.mpi import MPI_COMM, MPI_RANK, MPI_SIZE
@@ -166,6 +166,8 @@ def run_nautilus(
     )
 
     discard_exploration = kwargs.pop("discard_exploration", True)
+    verbose = kwargs.pop("verbose", True)
+    warn_unused(kwargs, "nautilus")
 
     if resume and self.sampler.points:
         check_resume(
@@ -180,7 +182,7 @@ def run_nautilus(
 
     self.sampler.run(
         f_live=flive,
-        verbose=True,
+        verbose=verbose,
         discard_exploration=discard_exploration,
         **run_kwargs,
     )
@@ -212,7 +214,7 @@ def run_nautilus(
         )
         self.sampler_prior.run(
             f_live=flive,
-            verbose=True,
+            verbose=verbose,
             discard_exploration=discard_exploration,
             **run_kwargs,
         )

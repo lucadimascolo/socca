@@ -31,7 +31,7 @@ def _safe_ow_getattr(self, name):
 
 tqdm.utils.ObjectWrapper.__getattr__ = _safe_ow_getattr
 
-from .utils import check_resume, get_imp_weights
+from .utils import check_resume, get_imp_weights, warn_unused
 
 from ...priors import pocomcPrior
 
@@ -180,7 +180,7 @@ def run_pocomc(
     for key in ["nlive", "n_live", "n_effective"]:
         nlive = kwargs.pop(key, nlive)
 
-    n_active = kwargs.get("n_active", nlive // 2)
+    n_active = kwargs.pop("n_active", nlive // 2)
 
     progress = kwargs.pop("progress", True)
 
@@ -239,6 +239,7 @@ def run_pocomc(
         ):
             prior.append(self.mod.priors[key])
     prior = pocomcPrior(prior, seed=kwargs.pop("seed", 0))
+    warn_unused(kwargs, "pocomc")
 
     if MPI_SIZE > 1:
         if MPI_RANK == 0:

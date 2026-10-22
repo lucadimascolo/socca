@@ -16,7 +16,7 @@ from ...pool.mpi import KWCAST
 
 from ...pool.mp import MultiPool
 
-from .utils import check_resume
+from .utils import check_resume, warn_unused
 
 
 #   Fitting method - Dynesty sampler
@@ -128,6 +128,7 @@ def run_dynesty(
         if key not in ["dlogz", "checkpoint_file", "resume"]:
             if key in kwargs:
                 run_kwargs[key] = kwargs.pop(key)
+    warn_unused(kwargs, "dynesty")
 
     if MPI_SIZE > 1:
         if MPI_RANK == 0:

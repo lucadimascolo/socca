@@ -14,7 +14,7 @@ from ...pool.mpi import KWCAST
 
 from ...pool.mp import MultiPool
 
-from .utils import check_resume
+from .utils import check_resume, warn_unused
 
 
 #   Fitting method - emcee sampler
@@ -188,6 +188,7 @@ def run_emcee(
         ]:
             if key in kwargs:
                 run_kwargs[key] = kwargs.pop(key)
+    warn_unused(kwargs, "emcee")
 
     if MPI_SIZE > 1:
         FunctionTag._func = log_posterior
