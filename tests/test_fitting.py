@@ -1,6 +1,8 @@
 """Tests for socca.fitting module."""
 
 from unittest.mock import patch
+import subprocess
+import sys
 import warnings
 
 import jax.numpy as jp
@@ -583,6 +585,21 @@ class TestPeriodicAutoDetection:
 
         assert not any("periodic" in m.lower() for m in msgs)
         assert "periodic" not in inst.run.call_args.kwargs
+
+
+class TestNumpyroDevices:
+    """Tests for running numpyro chains on several CPU devices."""
+
+    def test_set_host_device_count_after_import(self):
+        """Importing socca leaves the CPU device count to the user."""
+        code = (
+            "import socca, numpyro; numpyro.set_host_device_count(2); "
+            "import jax; print(jax.local_device_count())"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        assert out.stdout.split()[-1] == "2", out.stderr
 
 
 class TestLogSampledPriors:

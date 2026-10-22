@@ -20,9 +20,6 @@ from .base import Profile
 n_ = np.linspace(0.25, 10.00, 1000)
 b_ = gammaincinv(2.00 * n_, 0.5)
 
-n_ = jp.array(n_)
-b_ = jp.array(b_)
-
 
 class Sersic(Profile):
     """

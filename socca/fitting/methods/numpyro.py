@@ -33,6 +33,9 @@ def run_numpyro(self, log_likelihood, **kwargs):
         - n_samples/nsamples/num_samples : int, number of posterior
             samples (default: 2000)
         - seed : int, random seed (default: 0)
+        - num_chains/ncores : int, number of chains (default: 1). On
+            CPU, chains run in parallel only with as many JAX devices,
+            e.g. after numpyro.set_host_device_count(num_chains).
 
     Attributes Set
     --------------
