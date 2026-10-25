@@ -5,7 +5,7 @@ import warnings
 import scipy.special
 import numpy as np
 
-from ...pool.mpi import MPI_RANK
+from ...pool.mpi import MPI_RANK, MPI_SIZE
 
 
 def warn_unused(kwargs, method):
@@ -43,6 +43,29 @@ def check_resume(checkpoint, func, points, saved, n=5):
         f"The checkpoint {checkpoint} was made with a different model, "
         "data or priors: run with resume=False to start again."
     ) from error
+
+
+def get_batch_size(pool, ncores, n, kwargs):
+    """Batch size for vectorize=True: each worker's share of n points."""
+    if pool is not None:
+        raise ValueError(
+            "vectorize=True works with ncores or MPI, not with a pool object."
+        )
+    workers = MPI_SIZE if MPI_SIZE > 1 else ncores or 1
+    size = int(kwargs.pop("batch_size", -(-n // workers)))
+    if size < 1:
+        raise ValueError("batch_size must be a positive integer.")
+    return size
+
+
+def split_batches(pool, func):
+    """Evaluate func on each batch of points split over the pool workers."""
+
+    def batched(xx):
+        parts = np.array_split(xx, min(pool.size, len(xx)))
+        return np.concatenate(pool.map(func, parts))
+
+    return batched
 
 
 # Support functions

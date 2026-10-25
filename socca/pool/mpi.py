@@ -128,7 +128,8 @@ class FunctionTag:
     _func = None
 
     def __call__(self, theta):  # noqa: D102
-        return float(FunctionTag._func(theta))
+        out = np.asarray(FunctionTag._func(theta))
+        return float(out) if out.ndim == 0 else out
 
     def __reduce__(self):  # noqa: D105
         return (FunctionTag, ())

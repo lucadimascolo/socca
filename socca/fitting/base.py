@@ -56,6 +56,8 @@ class fitter:
     _run_emcee = run_emcee
     _run_optimizer = run_optimizer
 
+    batch_size = 32
+
     def __init__(self, img, mod):
         """
         Initialize the fitter with an image and model.
@@ -287,6 +289,34 @@ class fitter:
             key = self.mod.params[self.mod.paridx[pi]]
             prior.append(self.mod.priors[key].icdf(p))
         return jp.array(prior)
+
+    #   Batched evaluation
+    #   --------------------------------------------------------
+    @partial(jax.jit, static_argnames=["self", "name"])
+    def _vmap(self, name, xx):
+        return jax.vmap(getattr(self, name))(xx)
+
+    def _batched(self, name, xx):
+        """Evaluate a method on the rows of xx, vmapped in padded chunks."""
+        xx = np.atleast_2d(np.asarray(xx, dtype=float))
+        n, size = len(xx), self.batch_size
+        rows = max(1, -(-n // size)) * size
+        pad = xx[-1:] if n else np.zeros((1, xx.shape[1]))
+        xx = np.concatenate([xx, np.repeat(pad, rows - n, axis=0)])
+        out = [self._vmap(name, x) for x in np.split(xx, rows // size)]
+        return np.concatenate([np.asarray(o) for o in out])[:n]
+
+    def _log_likelihood_batch(self, xx):
+        """Compute the log-likelihood of each row of xx."""
+        return self._batched("_log_likelihood", xx)
+
+    def _log_prior_batch(self, xx):
+        """Compute the log-prior of each row of xx."""
+        return self._batched("_log_prior", xx)
+
+    def _prior_transform_batch(self, xx):
+        """Transform each row of xx from the unit hypercube."""
+        return self._batched("_prior_transform", xx)
 
     #   Resolve a periodic= entry (name or index) to a fit.labels index
     #   --------------------------------------------------------

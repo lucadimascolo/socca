@@ -1,6 +1,6 @@
 # Parallelization
 
-**``socca``** supports parallel likelihood evaluation to speed up sampling runs. Two parallelization modes are available: **multi-process** parallelization on a single machine, and **MPI-based** distributed parallelization across multiple nodes. Both modes are supported by the `nautilus`, `dynesty`, and `pocomc` sampling backends.
+**``socca``** supports parallel likelihood evaluation to speed up sampling runs. Two parallelization modes are available: **multi-process** parallelization on a single machine, and **MPI-based** distributed parallelization across multiple nodes. Both modes are supported by the `nautilus`, `dynesty`, `pocomc` and `emcee` sampling backends.
 
 ```{important}
 Parallelization is most beneficial when the likelihood evaluation is computationally expensive (e.g., involving large images, complex models, or PSF convolution on fine grids). If the likelihood is fast to evaluate, the overhead of inter-process communication can outweigh the speedup, resulting in *slower* runs than serial execution. This is especially true for `dynesty` and `pocomc`, where the sampler frequently synchronizes with the worker pool. `nautilus` is less affected due to its batch-oriented point proposal, but even in that case the gains diminish for cheap likelihoods, resulting in a sub-linear scaling with the number of processes/cores. 
@@ -67,29 +67,31 @@ Dynesty might not benefit from MPI parallelization due to its sequential
 point proposal. Consider using method='nautilus' for MPI runs.
 ```
 
-## JAX vectorization (pocomc only)
+## JAX vectorization
 
-For `pocomc`, an alternative to process-based parallelization is **JAX vectorization** via `vectorize=True`. Instead of dispatching one likelihood call per particle to a pool of workers, the entire batch of active particles is evaluated in a single `jax.vmap`-compiled call:
+For `nautilus`, `pocomc` and `emcee`, `vectorize=True` evaluates each batch of points the sampler proposes at once, with `jax.vmap`, instead of one likelihood call per point:
 
 ```python
->>> fit.run(method='pocomc', vectorize=True)
+>>> fit.run(method='nautilus', vectorize=True)
 ```
 
-This eliminates the Python-level overhead of N separate likelihood dispatches and leverages SIMD instructions (or GPU parallelism if available), without spawning any worker processes. It is particularly effective when the likelihood is a JAX-compiled function, as in **``socca``**.
+The points are evaluated in chunks of `batch_size` points (padded, so the likelihood compiles once), which by default hold the whole batch, or each worker's share of it; pass `batch_size=` to `fit.run` to change it. This removes the per-call overhead and pays off most for models that are cheap per pixel but costly per call, such as `gNFW`; for `Disk` and `Ellipsoid` on large images, a smaller `batch_size` can be faster. Seeded runs give the same results as without `vectorize`.
 
-```{important}
-`vectorize=True` is **incompatible** with `pool`/`ncores` and with MPI. pocomc's internal vectorization path bypasses the pool entirely, so combining them raises a `ValueError`. Use one or the other:
-
-- Single node, JAX model → `vectorize=True`
-- Multi-node cluster → MPI (without `vectorize`)
-```
+`vectorize=True` can be combined with `ncores` and with MPI: each batch is then split across the workers, and each worker evaluates its share at once. It cannot be combined with a `pool` object; `dynesty` ignores it, with a warning.
 
 ## NumPyro NUTS
 
-The `numpyro` backend does not support MPI parallelization (an error is raised if attempted). However, the `ncores` or `pool` arguments can be passed to control the number of parallel MCMC chains:
+The `numpyro` backend does not support MPI parallelization (an error is raised if attempted). The `ncores` or `pool` arguments set the number of MCMC chains:
 
 ```python
->>> fit.run(method='numpyro', ncores=4)  # runs 4 chains in parallel
+>>> fit.run(method='numpyro', ncores=4)  # runs 4 chains
+```
+
+On CPU, JAX has a single device unless more are requested, so the chains run one after the other. To run them in parallel, ask for one device per chain before running any JAX computation:
+
+```python
+>>> import numpyro
+>>> numpyro.set_host_device_count(4)
 ```
 
 ## MPI-safe post-processing
@@ -100,8 +102,9 @@ When running under MPI, several post-processing methods are restricted to rank 0
 
 | Method | Multi-process | MPI | Notes |
 |:------:|:-------------:|:---:|-------|
-| `'nautilus'` | `ncores` / `pool` | automatic | Recommended for MPI runs |
+| `'nautilus'` | `ncores` / `pool` | automatic | Recommended for MPI runs; supports `vectorize=True` |
 | `'dynesty'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient |
-| `'pocomc'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient; also supports `vectorize=True` (incompatible with pool/MPI) |
-| `'numpyro'` | `ncores` (chains) | not supported | `ncores` sets number of chains |
+| `'pocomc'` | `ncores` / `pool` | automatic | MPI supported, but might not be efficient; supports `vectorize=True` |
+| `'emcee'` | `ncores` / `pool` | automatic | Supports `vectorize=True` |
+| `'numpyro'` | `ncores` (chains) | not supported | `ncores` sets number of chains; parallel with `numpyro.set_host_device_count` |
 | `'optimizer'` | not supported | not supported | Single-process only |

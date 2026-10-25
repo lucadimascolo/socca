@@ -14,7 +14,7 @@ from ...pool.mpi import KWCAST, receive_results, send_results
 
 from ...pool.mp import MultiPool
 
-from .utils import check_resume, warn_unused
+from .utils import get_batch_size, split_batches, check_resume, warn_unused
 
 
 #   Fitting method - emcee sampler
@@ -57,6 +57,11 @@ def run_emcee(
             auto-set to 2 * max(tau).
         - thin : int, thinning factor (default: 1)
         - seed : int, random seed (default: None)
+        - vectorize : bool, evaluate all walkers of a step at once, in
+            vmapped chunks of batch_size points; with ncores or MPI,
+            each worker evaluates its share (default: False)
+        - batch_size : int, points per vmapped chunk (default: each
+            worker's share of nwalkers // 2)
         - converge : bool, if True run until convergence based on
             autocorrelation time estimates (default: False)
         - check_every : int, check convergence every N steps
@@ -159,6 +164,18 @@ def run_emcee(
         ll = log_likelihood(theta)
         return float(ll) + float(lp)
 
+    def log_posterior_batch(xx):
+        lp = self._log_prior_batch(xx)
+        ll = self._log_likelihood_batch(xx)
+        return np.where(np.isfinite(lp), lp + ll, -np.inf)
+
+    vectorize = kwargs.pop("vectorize", False)
+    posterior = log_posterior
+    if vectorize:
+        n = -(-nwalkers // 2)
+        self.batch_size = get_batch_size(pool, ncores, n, kwargs)
+        posterior = log_posterior_batch
+
     sampler_kwargs = {}
     for key in inspect.signature(emcee.EnsembleSampler).parameters.keys():
         if key not in [
@@ -185,7 +202,7 @@ def run_emcee(
     warn_unused(kwargs, "emcee")
 
     if MPI_SIZE > 1:
-        FunctionTag._func = log_posterior
+        FunctionTag._func = posterior
 
         pool = MPIPool()
 
@@ -196,7 +213,7 @@ def run_emcee(
             return
 
     if ncores is not None and pool is None:
-        pool = MultiPool(ncores, log_posterior)
+        pool = MultiPool(ncores, posterior)
 
     print("\n* Running emcee ensemble sampler")
     if isinstance(pool, MPIPool):
@@ -204,7 +221,9 @@ def run_emcee(
     elif isinstance(pool, MultiPool):
         log_posterior_fn = pool.likelihood
     else:
-        log_posterior_fn = log_posterior
+        log_posterior_fn = posterior
+    if vectorize and pool is not None:
+        log_posterior_fn = split_batches(pool, log_posterior_fn)
 
     backend = None
     if checkpoint is not None:
@@ -216,8 +235,9 @@ def run_emcee(
         nwalkers,
         ndim,
         log_posterior_fn,
-        pool=pool,
+        pool=None if vectorize else pool,
         backend=backend,
+        vectorize=vectorize,
         **sampler_kwargs,
     )
 

@@ -421,16 +421,19 @@ fit = fitting.fitter(
                    noise=noise.Normal(sigma=0.1)),
     mod=models.Model(gaussian),
 )
-if mode == "raise" and MPI_RANK == 1:
+if mode.startswith("raise") and MPI_RANK == 1:
     def fail(pp):
         raise ZeroDivisionError("likelihood failed")
     fit._log_likelihood = fail
 kwargs = dict(emcee=dict(nsteps=10, nwalkers=4, progress=False),
               nautilus=dict(nlive=20, n_like_max=200, verbose=False))[method]
+if mode.endswith("vectorize") or mode == "plain":
+    kwargs.update(seed=1, vectorize=mode.endswith("vectorize"))
 try:
     fit.run(method=method, checkpoint=checkpoint,
             resume=mode == "changed", **kwargs)
-    print(f"RESULT {MPI_RANK} {len(fit.samples)}", flush=True)
+    value = fit.logz if mode in ("plain", "vectorize") else len(fit.samples)
+    print(f"RESULT {MPI_RANK} {value}", flush=True)
 except Exception as error:
     print(f"RESULT {MPI_RANK} {type(error).__name__}", flush=True)
 """
@@ -521,14 +524,22 @@ class TestMPIRun:
         )
         assert results == {0: "ValueError", 1: "RuntimeError"}
 
-    def test_worker_error(self, tmp_path):
+    @pytest.mark.parametrize("mode", ["raise", "raise-vectorize"])
+    def test_worker_error(self, tmp_path, mode):
         """An error on a worker stops every rank."""
         results = dict(
-            self._mpiexec(
-                tmp_path, "nautilus", str(tmp_path / "n.h5"), "raise"
-            )
+            self._mpiexec(tmp_path, "nautilus", str(tmp_path / "n.h5"), mode)
         )
         assert results == {0: "RuntimeError", 1: "RuntimeError"}
+
+    def test_vectorize(self, tmp_path):
+        """A vectorized run gives the same result on every rank as without."""
+        results = [
+            dict(self._mpiexec(tmp_path, "nautilus", str(tmp_path / m), m))
+            for m in ["plain", "vectorize"]
+        ]
+        assert results[0] == results[1]
+        assert len(set(results[0].values())) == 1
 
     def test_emcee_bad_checkpoint(self, tmp_path):
         """A checkpoint that cannot be created stops the workers too."""

@@ -31,7 +31,13 @@ def _safe_ow_getattr(self, name):
 
 tqdm.utils.ObjectWrapper.__getattr__ = _safe_ow_getattr
 
-from .utils import check_resume, get_imp_weights, warn_unused
+from .utils import (
+    get_batch_size,
+    split_batches,
+    check_resume,
+    get_imp_weights,
+    warn_unused,
+)
 
 from ...priors import pocomcPrior
 
@@ -55,6 +61,15 @@ class _Sampler(pocomc.Sampler):
         "pool",
         "distribute",
     ]
+
+    def save_state(self, path):
+        """Save a state without the likelihood, prior or pool."""
+        keep = {key: self.__dict__[key] for key in self._keep}
+        self.__dict__.update(dict.fromkeys(self._keep))
+        try:
+            super().save_state(path)
+        finally:
+            self.__dict__.update(keep)
 
     def load_state(self, path):
         """Load a saved state, but not its likelihood, prior or pool."""
@@ -125,11 +140,11 @@ def run_pocomc(
         - save_every : int, save state every N iterations
             (default: 10)
         - seed : int, random seed (default: 0)
-        - vectorize : bool, if True evaluate the likelihood on the
-            full batch of active particles at once using JAX vmap,
-            rather than calling it once per particle. Incompatible
-            with pool/ncores and MPI (raises ValueError if combined).
-            (default: False)
+        - vectorize : bool, evaluate the active particles at once, in
+            vmapped chunks of batch_size points; with ncores or MPI,
+            each worker evaluates its share (default: False)
+        - batch_size : int, points per vmapped chunk (default: each
+            worker's share of n_active)
 
     Attributes Set
     --------------
@@ -198,19 +213,9 @@ def run_pocomc(
         ncores = pool
         pool = None
 
-    if vectorize and (ncores is not None or pool is not None):
-        raise ValueError(
-            "pocomc does not support combining vectorize=True with a pool. "
-            "Use either JAX vectorization (vectorize=True) or "
-            "multiprocessing (pool/ncores), not both."
-        )
-
-    if vectorize and MPI_SIZE > 1:
-        raise ValueError(
-            "pocomc does not support combining vectorize=True with MPI. "
-            "Use either JAX vectorization (vectorize=True, single node) or "
-            "MPI parallelization (vectorize=False), not both."
-        )
+    if vectorize:
+        self.batch_size = get_batch_size(pool, ncores, n_active, kwargs)
+        log_likelihood = self._log_likelihood_batch
 
     sampler_kwargs = {}
     for key in inspect.signature(pocomc.Sampler).parameters.keys():
@@ -270,11 +275,8 @@ def run_pocomc(
     elif isinstance(pool, MultiPool):
         log_likelihood = pool.likelihood
 
-    if vectorize:
-        _ll_vmap = jax.jit(jax.vmap(log_likelihood))
-
-        def log_likelihood(theta_batch):
-            return np.array(_ll_vmap(theta_batch))
+    if vectorize and pool is not None:
+        log_likelihood = split_batches(pool, log_likelihood)
 
     state = _latest_state(pocodir) if resume else None
     if state is not None:
@@ -296,7 +298,7 @@ def run_pocomc(
         n_active=n_active,
         vectorize=vectorize,
         output_dir=pocodir if checkpoint is not None else None,
-        pool=pool,
+        pool=None if vectorize else pool,
         **sampler_kwargs,
     )
 

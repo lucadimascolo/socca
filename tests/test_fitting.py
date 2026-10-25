@@ -1268,40 +1268,119 @@ class TestResume:
         assert ("Status" in capsys.readouterr().out) == verbose
 
 
-class TestPocoMCVectorize:
-    """Tests for pocomc vectorize argument validation."""
+class TestVectorize:
+    """Tests for vectorize=True, with and without ncores."""
 
     @pytest.fixture
-    def simple_fitter(self, simple_hdu, gaussian_psf):
-        """Create a simple fitter for validation testing."""
+    def simple_fitter(self, simple_hdu):
+        """Create a fitter whose likelihood is -inf for negative fluxes."""
         img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
-        img.addpsf(gaussian_psf)
-
         xc = simple_hdu.header["CRVAL1"]
         yc = simple_hdu.header["CRVAL2"]
-
         gaussian = models.Gaussian(
             xc=priors.uniform(xc - 0.01, xc + 0.01),
             yc=priors.uniform(yc - 0.01, yc + 0.01),
             rs=0.005,
-            Is=10.0,
+            Is=priors.uniform(-5.0, 15.0),
         )
-        mod = models.Model(gaussian)
+        mod = models.Model(gaussian, positive=True)
         return fitting.fitter(img=img, mod=mod)
 
-    def test_vectorize_with_pool_raises(self, simple_fitter):
-        """Test that vectorize=True with pool raises ValueError."""
-        with pytest.raises(ValueError, match="pocomc does not support"):
-            simple_fitter.run(
-                method="pocomc", vectorize=True, pool=2, resume=False
+    def test_batches_match_points(self, simple_fitter):
+        """Batched evaluation matches per-point, compiling once."""
+        fit = simple_fitter
+        fit.batch_size = 8
+        uu = np.random.default_rng(0).uniform(size=(33, 3))
+        pp = np.array([fit._prior_transform(u) for u in uu])
+        ll = np.array([float(fit._log_likelihood(p)) for p in pp])
+        assert np.isinf(ll).any() and np.isfinite(ll).any()
+        cache = type(fit)._vmap._cache_size()
+        for n in [1, 5, 8, 33]:
+            np.testing.assert_allclose(
+                fit._log_likelihood_batch(pp[:n]), ll[:n]
             )
+        assert type(fit)._vmap._cache_size() == cache + 1
+        np.testing.assert_allclose(fit._prior_transform_batch(uu), pp)
+        lp = [float(fit._log_prior(p)) for p in pp]
+        np.testing.assert_allclose(fit._log_prior_batch(pp), lp)
 
-    def test_vectorize_with_ncores_raises(self, simple_fitter):
-        """Test that vectorize=True with ncores raises ValueError."""
-        with pytest.raises(ValueError, match="pocomc does not support"):
+    @pytest.mark.parametrize("ncores", [None, 2])
+    @pytest.mark.parametrize("method", ["nautilus", "pocomc"])
+    def test_runs_match(self, simple_fitter, method, ncores):
+        """Seeded runs give the same samples with and without vectorize."""
+        kwargs = dict(
+            nautilus=dict(nlive=50, n_like_max=500, verbose=False),
+            pocomc=dict(nlive=50, n_total=100, n_evidence=100, progress=False),
+        )[method]
+        samples = []
+        for vectorize in [False, True]:
             simple_fitter.run(
-                method="pocomc", vectorize=True, ncores=2, resume=False
+                method=method,
+                seed=1,
+                ncores=ncores,
+                vectorize=vectorize,
+                **kwargs,
             )
+            samples.append(simple_fitter.samples)
+        np.testing.assert_array_equal(samples[0], samples[1])
+        assert not MultiPool._open
+
+    @pytest.mark.parametrize("ncores", [None, 2])
+    def test_emcee(self, simple_fitter, ncores):
+        """Vectorized emcee stores the per-point log-posterior."""
+        fit = simple_fitter
+        fit.run(
+            method="emcee",
+            nwalkers=8,
+            nsteps=20,
+            progress=False,
+            ncores=ncores,
+            vectorize=True,
+        )
+        chain = fit.sampler.get_chain(flat=True)
+        lp = [float(fit._log_prior(p) + fit._log_likelihood(p)) for p in chain]
+        np.testing.assert_allclose(fit.sampler.get_log_prob(flat=True), lp)
+
+    def test_nautilus_getzprior_small_batch(self, simple_fitter):
+        """Vectorized nautilus runs with getzprior and n_batch < ncores."""
+        simple_fitter.run(
+            method="nautilus",
+            nlive=50,
+            n_like_max=500,
+            n_batch=1,
+            ncores=2,
+            vectorize=True,
+            getzprior=True,
+            verbose=False,
+        )
+        assert np.isfinite(simple_fitter.logz_prior)
+
+    def test_pocomc_checkpoint_ncores(self, simple_fitter, tmp_path):
+        """Vectorized pocomc with ncores saves and resumes its state."""
+        kwargs = dict(
+            method="pocomc",
+            nlive=50,
+            n_total=100,
+            n_evidence=100,
+            save_every=1,
+            progress=False,
+            ncores=2,
+            vectorize=True,
+            checkpoint=str(tmp_path / "p"),
+        )
+        simple_fitter.run(**kwargs)
+        assert _latest_state(str(tmp_path / "p_pocomc_dump")) is not None
+        simple_fitter.run(**kwargs)
+
+    @pytest.mark.parametrize("method", ["nautilus", "pocomc", "emcee"])
+    def test_pool_object_raises(self, simple_fitter, method):
+        """vectorize=True with a pool object raises."""
+        pool = MultiPool(1, simple_fitter._log_likelihood)
+        try:
+            with pytest.raises(ValueError, match="not with a pool object"):
+                simple_fitter.run(method=method, pool=pool, vectorize=True)
+        finally:
+            pool.close()
 
 
 @pytest.mark.slow

@@ -38,7 +38,8 @@ class PoolFunctionTag:
     """
 
     def __call__(self, theta):  # noqa: D102
-        return float(_POOL_FUNC(theta))
+        out = np.asarray(_POOL_FUNC(theta))
+        return float(out) if out.ndim == 0 else out
 
     def __reduce__(self):  # noqa: D105
         return (PoolFunctionTag, ())

@@ -6,7 +6,7 @@ import inspect
 
 import time
 
-from .utils import check_resume, get_imp_weights, warn_unused
+from .utils import get_batch_size, check_resume, get_imp_weights, warn_unused
 
 from ...pool.mpi import FunctionTag, MPIPool
 from ...pool.mpi import MPI_RANK, MPI_SIZE
@@ -57,6 +57,11 @@ def run_nautilus(
         - flive/f_live : float, stopping criterion (default: 0.01)
         - discard_exploration : bool, discard exploration phase
             samples (default: True)
+        - vectorize : bool, evaluate each batch of points at once, in
+            vmapped chunks of batch_size points; with ncores or MPI,
+            each worker evaluates its share (default: False)
+        - batch_size : int, points per vmapped chunk (default: each
+            worker's share of n_batch)
 
     Attributes Set
     --------------
@@ -112,6 +117,12 @@ def run_nautilus(
         ncores = pool
         pool = None
 
+    vectorize = kwargs.pop("vectorize", kwargs.pop("vectorized", False))
+    if vectorize:
+        n_batch = kwargs.get("n_batch") or 100
+        self.batch_size = get_batch_size(pool, ncores, n_batch, kwargs)
+        log_likelihood = self._log_likelihood_batch
+
     sampler_kwargs = {}
     for key in inspect.signature(nautilus.Sampler).parameters.keys():
         if key not in [
@@ -153,13 +164,14 @@ def run_nautilus(
         log_likelihood = pool.likelihood
 
     self.sampler = nautilus.Sampler(
-        prior=prior_transform,
+        prior=self._prior_transform_batch if vectorize else prior_transform,
         likelihood=log_likelihood,
         n_dim=ndims,
         n_live=nlive,
         filepath=checkpoint,
         resume=resume,
         pool=pool,
+        vectorized=vectorize,
         **sampler_kwargs,
     )
 
