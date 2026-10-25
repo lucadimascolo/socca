@@ -38,7 +38,18 @@ def run_optimizer(self, pinits, **kwargs):
         - target : str, ``'mle'`` (default) or ``'map'``. Whether to
             maximize the likelihood alone (MLE) or the full posterior
             log-likelihood + log-prior (MAP).
-        - tol : float, tolerance for termination
+        - init_step : float, largest first step in the unit hypercube
+            (default: 0.05). L-BFGS-B's first step is minus the gradient,
+            which for a log-likelihood usually jumps to the prior bounds,
+            so a first pass runs on the objective rescaled to keep that
+            step below init_step; the result is then refined with the
+            unscaled objective.
+        - nstarts : int, number of starting points (default: 1). Extra
+            starts are drawn uniformly in the unit hypercube, and the
+            best finite result is kept.
+        - seed : int, random seed for the extra starts (default: 0)
+        - tol : float, tolerance for termination (default: ftol=1e-15
+            and gtol=1e-8 in options)
         - debug_nans : bool, raise on NaNs during the optimisation
             (default: False)
         - options : dict, solver-specific options passed to
@@ -88,6 +99,9 @@ def run_optimizer(self, pinits, **kwargs):
             )
 
     debug_nans = kwargs.pop("debug_nans", False)
+    init_step = kwargs.pop("init_step", 0.05)
+    nstarts = kwargs.pop("nstarts", 1)
+    seed = kwargs.pop("seed", 0)
 
     target = kwargs.pop("target", "mle")
     if target not in ("mle", "map"):
@@ -99,6 +113,10 @@ def run_optimizer(self, pinits, **kwargs):
             if key in kwargs:
                 opt_kwargs[key] = kwargs.pop(key)
     warn_unused(kwargs, "optimizer")
+    # the default ftol is relative to |logL|, which grows with the pixels
+    if "tol" not in opt_kwargs:
+        options = {"ftol": 1e-15, "gtol": 1e-8}
+        opt_kwargs["options"] = options | opt_kwargs.get("options", {})
 
     def _opt_prior(pp):
         return jp.array(self._prior_transform(pp))
@@ -138,13 +156,36 @@ def run_optimizer(self, pinits, **kwargs):
     eps = 1e-6
     bounds = [(eps, 1.00 - eps) for _ in self.mod.paridx]
 
-    with jax.debug_nans(bool(debug_nans or jax.config.jax_debug_nans)):
-        self.results = scipy.optimize.minimize(
-            fun=opt_func_jac,
-            x0=pinits,
+    def lbfgsb(fun, x0, **kwargs):
+        return scipy.optimize.minimize(
+            fun=fun,
+            x0=x0,
             jac=True,
             bounds=bounds,
             method="L-BFGS-B",
-            **opt_kwargs,
+            **kwargs,
         )
+
+    def minimize(x0):
+        gmax = float(jp.max(jp.abs(opt_func_jac(x0)[1])))
+        scale = init_step / gmax if gmax > 0 else 1.00
+
+        def scaled(pp):
+            val, grad = opt_func_jac(pp)
+            return val * scale, grad * scale
+
+        first = lbfgsb(scaled, x0, options={"gtol": 1.00e-05 * scale})
+        res = lbfgsb(opt_func_jac, first.x, **opt_kwargs)
+        res.nit += first.nit
+        res.nfev += first.nfev
+        return res
+
+    rng = np.random.default_rng(seed)
+    starts = [np.asarray(pinits)] + [
+        rng.uniform(eps, 1.00 - eps, len(self.mod.paridx))
+        for _ in range(nstarts - 1)
+    ]
+    with jax.debug_nans(bool(debug_nans or jax.config.jax_debug_nans)):
+        runs = [minimize(x0) for x0 in starts]
+    self.results = min(runs, key=lambda r: (not np.isfinite(r.fun), r.fun))
     self.results.parameters = np.array(self._prior_transform(self.results.x))

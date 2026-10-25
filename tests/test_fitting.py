@@ -602,6 +602,65 @@ class TestNumpyroDevices:
         assert out.stdout.split()[-1] == "2", out.stderr
 
 
+class TestOptimizerStarts:
+    """Tests for the optimizer's first step and multiple starts."""
+
+    @pytest.fixture
+    def fit(self, simple_hdu):
+        """Create a Gaussian fit with a wide size prior."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        xc = simple_hdu.header["CRVAL1"]
+        yc = simple_hdu.header["CRVAL2"]
+        gaussian = models.Gaussian(
+            xc=priors.uniform(xc - 0.01, xc + 0.01),
+            yc=priors.uniform(yc - 0.01, yc + 0.01),
+            rs=priors.uniform(1e-5, 2e-2),
+            Is=priors.uniform(0.0, 20.0),
+        )
+        return fitting.fitter(img=img, mod=models.Model(gaussian))
+
+    def test_first_step_stays_inside(self, fit):
+        """A start whose plain first step reaches the bounds converges."""
+        fit.run(method="optimizer")
+        best = fit.results.fun
+        start = fit._prior_transform(jp.array([0.7, 0.3, 0.6, 0.6]))
+        fit.run(method="optimizer", pinits=np.asarray(start))
+        assert fit.results.fun == pytest.approx(best, abs=1e-3)
+        fit.run(method="optimizer", pinits=np.asarray(start), init_step=1e9)
+        assert fit.results.fun > best + 1.0
+
+    def test_nstarts(self, fit):
+        """Several seeded starts are reproducible and keep the best."""
+        start = fit._prior_transform(jp.array([0.7, 0.3, 0.6, 0.6]))
+        kwargs = dict(pinits=np.asarray(start), init_step=1e9)
+        fit.run(method="optimizer", **kwargs)
+        single = fit.results.fun
+        results = []
+        for _ in range(2):
+            fit.run(method="optimizer", nstarts=4, seed=1, **kwargs)
+            results.append(fit.results.x)
+        assert fit.results.fun <= single
+        np.testing.assert_array_equal(*results)
+
+    def test_nonfinite_ranked_last(self, fit):
+        """A start with a non-finite result is never kept."""
+        import socca.fitting.methods.optimizer as optimizer_mod
+
+        minimize = optimizer_mod.scipy.optimize.minimize
+        calls = []
+
+        def spoiled(*args, **kwargs):
+            res = minimize(*args, **kwargs)
+            calls.append(None)
+            if len(calls) == 2:
+                res.fun = np.nan
+            return res
+
+        with patch.object(optimizer_mod.scipy.optimize, "minimize", spoiled):
+            fit.run(method="optimizer", nstarts=2)
+        assert np.isfinite(fit.results.fun)
+
+
 class TestLogSampledPriors:
     """Tests for priors sampled in another variable (LogPowerLaw)."""
 
@@ -694,7 +753,8 @@ class TestLogSampledPriors:
             optimizer_mod.scipy.optimize, "minimize", wraps=minimize
         ) as spy:
             fit.run(method="optimizer", pinits=[0.004, 9.0])
-        start = fit._prior_transform(jp.asarray(spy.call_args.kwargs["x0"]))
+        start = spy.call_args_list[0].kwargs["x0"]
+        start = fit._prior_transform(jp.asarray(start))
         np.testing.assert_allclose(
             fit._to_model(start), [0.004, 9.0], rtol=1e-10
         )
