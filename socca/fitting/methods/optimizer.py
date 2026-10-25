@@ -39,6 +39,8 @@ def run_optimizer(self, pinits, **kwargs):
             maximize the likelihood alone (MLE) or the full posterior
             log-likelihood + log-prior (MAP).
         - tol : float, tolerance for termination
+        - debug_nans : bool, raise on NaNs during the optimisation
+            (default: False)
         - options : dict, solver-specific options passed to
             scipy.optimize.minimize
 
@@ -86,8 +88,6 @@ def run_optimizer(self, pinits, **kwargs):
             )
 
     debug_nans = kwargs.pop("debug_nans", False)
-    if debug_nans:
-        jax.config.update("jax_debug_nans", True)
 
     target = kwargs.pop("target", "mle")
     if target not in ("mle", "map"):
@@ -138,12 +138,13 @@ def run_optimizer(self, pinits, **kwargs):
     eps = 1e-6
     bounds = [(eps, 1.00 - eps) for _ in self.mod.paridx]
 
-    self.results = scipy.optimize.minimize(
-        fun=opt_func_jac,
-        x0=pinits,
-        jac=True,
-        bounds=bounds,
-        method="L-BFGS-B",
-        **opt_kwargs,
-    )
+    with jax.debug_nans(bool(debug_nans or jax.config.jax_debug_nans)):
+        self.results = scipy.optimize.minimize(
+            fun=opt_func_jac,
+            x0=pinits,
+            jac=True,
+            bounds=bounds,
+            method="L-BFGS-B",
+            **opt_kwargs,
+        )
     self.results.parameters = np.array(self._prior_transform(self.results.x))

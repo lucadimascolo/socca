@@ -667,6 +667,17 @@ class TestLogSampledPriors:
         with pytest.raises(ValueError, match="comp_00_Is=20.0"):
             fit.run(method="optimizer", pinits=[0.004, 20.0])
 
+    def test_optimizer_debug_nans_is_scoped(self, setup):
+        """debug_nans=True applies to the optimisation only."""
+        import jax
+
+        img, fit = setup
+        fit.run(method="optimizer", debug_nans=True)
+        assert not jax.config.jax_debug_nans
+        with jax.debug_nans(True):
+            fit.run(method="optimizer")
+            assert jax.config.jax_debug_nans
+
     def test_optimizer_leaves_no_samples(self, setup):
         """After an optimizer run there are no posterior samples."""
         img, fit = setup
