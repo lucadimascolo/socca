@@ -373,9 +373,10 @@ class Profile(Component):
         """
         Return a refactored version of the profile with equivalent parameterization.
 
-        For most profiles, this returns a copy of the profile with the same
-        parameters. Some profiles (e.g., PolyExpoRefact) override this to
-        convert to an alternative parameterization.
+        For most profiles, this returns a copy keeping every parameter,
+        unit and setting; ties to the profile itself point to the copy.
+        Some profiles (e.g., PolyExpoRefact) override this to convert to an
+        alternative parameterization.
 
         Returns
         -------
@@ -394,7 +395,7 @@ class Profile(Component):
         >>> beta_refactored = beta.refactor()
         """
         warnings.warn("Nothing to refactor here.")
-        return self.__class__(**self.__dict__)
+        return self._copy()
 
 
 class CustomProfile(Profile):

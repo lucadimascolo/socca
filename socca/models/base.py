@@ -1,5 +1,6 @@
 """Base component class for model profiles."""
 
+import copy
 import functools
 import inspect
 import keyword
@@ -167,6 +168,22 @@ def _format_rows(rows, indent=""):
     ]
 
 
+def _repoint(value, old, new):
+    """Return value, with function()/boundto() sources on old moved to new."""
+    if not isinstance(value, _Function):
+        return value
+    value = copy.copy(value)
+    value.sources = [
+        (new if comp is old else comp, name) for comp, name in value.sources
+    ]
+    return value
+
+
+def _fixed(value):
+    """Return whether a parameter value is fixed (not a prior or tie)."""
+    return not isinstance(value, (numpyro.distributions.Distribution, _TIED))
+
+
 def _check_name(name):
     """Normalise a component name, checking it can be used in keys."""
     if name is None:
@@ -308,6 +325,25 @@ class Component:
         if self.hyper:
             print("\nHyperparameters\n" + "=" * 15)
             print("\n".join(lines[len(keyout) :]))
+
+    def _copy(self):
+        """
+        Return a copy that keeps every parameter, unit and setting.
+
+        Ties to the component itself point to the copy, and the copy has
+        no id until it is added to a model.
+        """
+        new = copy.copy(self)
+        state = {
+            key: copy.copy(value) if isinstance(value, (dict, list)) else value
+            for key, value in self.__dict__.items()
+        }
+        state = {
+            key: _repoint(value, self, new) for key, value in state.items()
+        }
+        state["id"] = None
+        new.__dict__.update(state)
+        return new
 
     def _resolve(self, attr, _seen=frozenset()):
         """

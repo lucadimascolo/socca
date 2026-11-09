@@ -1800,3 +1800,89 @@ class TestUnitsAndChecks:
         ref = bridge(0.005).getmap(img)
         np.testing.assert_allclose(b.getmap(img), ref)
         np.testing.assert_allclose(models.Model(b).getmap(img), ref)
+
+
+class TestRefactor:
+    """Refactoring keeps the profile and the model unchanged."""
+
+    @pytest.fixture
+    def img(self, simple_hdu):
+        """Create an Image without PSF."""
+        return data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+    @staticmethod
+    def polyexp(**kwargs):
+        """Create a truncated PolyExpoRefact with fixed values."""
+        prof = models.PolyExpoRefact(
+            xc=180.0,
+            yc=45.0,
+            theta=0.5,
+            e=0.4,
+            cbox=0.2,
+            Is=10.0,
+            rs=0.004,
+            rc=0.004,
+            I1=1.0,
+            I2=0.5,
+            I3=0.0,
+            I4=0.0,
+            positive=False,
+            name="disk",
+        )
+        prof.truncation = models.radial.truncation.HyperTangent()
+        prof.rt, prof.wt = 0.008, 0.001
+        for key, value in kwargs.items():
+            setattr(prof, key, value)
+        return prof
+
+    def test_copy_keeps_everything(self, img):
+        """The base refactor keeps every parameter, unit and self-tie."""
+        b = models.Beta(
+            xc=180.0, yc=45.0, rc=14.4, beta=0.7, theta=0.5, e=0.4, cbox=0.1
+        )
+        b.set_units(rc="arcsec")
+        b.Ic = priors.function(lambda r: r / 14.4, (b, "rc"))
+        models.Model(b)
+        with pytest.warns(UserWarning, match="Nothing to refactor"):
+            r = b.refactor()
+        assert (r.theta, r.e, r.rc) == (0.5, 0.4, 14.4)
+        assert r._input_units == {"rc": "arcsec"}
+        assert r.id is None
+        assert r.Ic.sources[0][0] is r
+        r.rc = 7.2
+        assert b.rc == 14.4
+        np.testing.assert_allclose(b.refactor().getmap(img), b.getmap(img))
+
+    def test_polyexp_fixed(self, img):
+        """Fixed intensities give fixed coefficients and the same map."""
+        prof = self.polyexp()
+        new = prof.refactor()
+        assert isinstance(new, models.PolyExponential)
+        assert (new.c1, new.c2, new.c3, new.c4) == (0.1, 0.05, 0.0, 0.0)
+        assert (new.cbox, new.positive, new.name) == (0.2, False, "disk")
+        assert isinstance(
+            new.truncation, models.radial.truncation.HyperTangent
+        )
+        np.testing.assert_allclose(new.getmap(img), prof.getmap(img))
+
+    def test_polyexp_priors_and_ties(self, img):
+        """Priors and ties on the intensities give the same model."""
+        prof = self.polyexp(Is=priors.uniform(1.0, 20.0))
+        prof.I1 = priors.uniform(0.0, 5.0)
+        prof.I2 = priors.function(lambda i: 0.5 * i, (prof, "I1"))
+        new = prof.refactor()
+        old_model, new_model = models.Model(prof), models.Model(new)
+        free = [new_model.params[i] for i in new_model.paridx]
+        assert free == [old_model.params[i] for i in old_model.paridx]
+        assert new.I2.sources[0][0] is new
+        pp = np.array([12.0, 2.0])
+        np.testing.assert_allclose(
+            new_model.getmodel(img, pp)[1], old_model.getmodel(img, pp)[1]
+        )
+
+    def test_polyexp_extra_parameters(self):
+        """Parameters added with addparameter are kept."""
+        prof = self.polyexp()
+        prof.addparameter("scale", 0.5, description="A scale")
+        new = prof.refactor()
+        assert new.scale == 0.5 and new.description["scale"] == "A scale"
