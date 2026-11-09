@@ -34,8 +34,12 @@ def uniform(low, high):
     Raises
     ------
     ValueError
-        If low >= high.
+        If a limit is not finite, or low >= high.
     """
+    if not (np.isfinite(low) and np.isfinite(high)):
+        raise ValueError(
+            f"The limits must be finite, not low={low} high={high}."
+        )
     if low >= high:
         message = "The lower limit must be smaller than the upper limit."
         message = message + f"\nInput values > low={low} high={high}"
@@ -518,7 +522,10 @@ class _Function:
     A parameter computed from other parameters, built by function().
 
     sources holds (component, parameter) pairs, passed to func in order.
+    Arguments and result are in declared units, unless native is set.
     """
+
+    native = False
 
     def __init__(self, func, sources):
         self.func = func

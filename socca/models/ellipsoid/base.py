@@ -10,7 +10,7 @@ import jax.numpy as jp
 
 
 from .. import config
-from ..base import Component, _warn_range, _warn_span
+from ..base import Component, _warn_range
 from ..radial import Sersic
 
 
@@ -237,14 +237,6 @@ class Ellipsoid(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Ellipsoids with e > 0 are symmetric under theta -> theta + "
-            "pi, so a wider prior range can make the posterior "
-            "multimodal and harder to sample.",
-        )
         self._theta = value
 
     @property
@@ -253,14 +245,6 @@ class Ellipsoid(Component):
 
     @rot.setter
     def rot(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "rot",
-            jp.pi,
-            "Ellipsoids with e > 0 are symmetric under rot -> rot + pi, "
-            "so a wider prior range can make the posterior multimodal "
-            "and harder to sample.",
-        )
         self._rot = value
 
     def getmap(self, img, convolve=False):

@@ -7,6 +7,7 @@ import jax.numpy as jp
 import numpy as np
 import numpyro.distributions
 
+from ..models.base import _support_bounds
 from ..plotting import Plotter
 
 import inspect
@@ -400,10 +401,12 @@ class fitter:
                         prior, numpyro.distributions.Distribution
                     ):
                         continue
-                    extent = (
-                        prior.support.upper_bound - prior.support.lower_bound
-                    )
-                    if extent >= period:
+                    low, high = _support_bounds(prior)
+                    # only whole periods wrap onto equivalent values
+                    turns = np.round((high - low) / period)
+                    if turns >= 1 and abs(
+                        high - low - turns * period
+                    ) <= 1e-9 * (high - low):
                         auto_periodic.append(pi)
                 if auto_periodic:
                     kwargs["periodic"] = auto_periodic

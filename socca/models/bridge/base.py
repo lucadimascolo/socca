@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jp
 
 
-from ..base import Component, _warn_range, _warn_span
+from ..base import Component, _warn_range
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
@@ -246,14 +246,6 @@ class Bridge(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Bridge profiles with e > 0 are symmetric under "
-            "theta -> theta + pi, so a wider prior range can make the "
-            "posterior multimodal and harder to sample.",
-        )
         self._theta = value
 
     @property
@@ -358,17 +350,16 @@ class Bridge(Component):
         return rgrid, zgrid
 
     def _scale_ties(self):
-        """Tie the sub-profiles' scale radii to rs and e."""
-        setattr(
-            self.parallel,
-            self.parallel._scale_radius,
-            function(lambda rs: rs, (self, "rs")),
-        )
-        setattr(
-            self.radial,
-            self.radial._scale_radius,
-            function(lambda rs, e: rs * (1.00 - e), (self, "rs"), (self, "e")),
-        )
+        """Tie the sub-profiles' scale radii to rs and e, in native units."""
+        ties = {
+            self.parallel: function(lambda rs: rs, (self, "rs")),
+            self.radial: function(
+                lambda rs, e: rs * (1.00 - e), (self, "rs"), (self, "e")
+            ),
+        }
+        for sub, tie in ties.items():
+            tie.native = True
+            setattr(sub, sub._scale_radius, tie)
 
     @staticmethod
     def _internal(value, pars, comp_prefix):

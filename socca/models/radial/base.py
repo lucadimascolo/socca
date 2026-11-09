@@ -7,12 +7,9 @@ import warnings
 
 import jax
 import jax.numpy as jp
-import numpyro.distributions
 
 from .. import config
-from ..base import Component
-from ..base import _warn_span
-from ...priors import _TIED
+from ..base import Component, _warn_range
 from .truncation import Truncation, HyperTangent
 
 
@@ -134,14 +131,6 @@ class Profile(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Profiles with e > 0 are symmetric under theta -> theta + pi, "
-            "so a wider prior range can make the posterior multimodal and "
-            "harder to sample.",
-        )
         self._theta = value
 
     @property
@@ -150,27 +139,15 @@ class Profile(Component):
 
     @e.setter
     def e(self, value):  # noqa: D102
-        if value is None or isinstance(value, _TIED):
-            self._e = value
-            return
-
-        wsuffix = "Ellipticity must be in the range [0, 1)."
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.upper_bound > 1:
-                wstring = "The ellipticity prior support includes values"
-        elif value >= 1:
-            wstring = "The ellipticity parameter is"
-        if wstring is not None:
-            raise ValueError(f"{wstring} greater than 1. {wsuffix}")
-
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.lower_bound < 0:
-                wstring = "The ellipticity prior support includes values"
-        elif value < 0:
-            wstring = "The ellipticity parameter is"
-        if wstring is not None:
-            raise ValueError(f"{wstring} lower than 0. {wsuffix}")
+        _warn_range(
+            value,
+            "e",
+            lower=0,
+            upper=1,
+            upper_strict=True,
+            note="Ellipticity must be in the range [0, 1).",
+            error=True,
+        )
         self._e = value
 
     @abstractmethod

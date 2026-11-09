@@ -22,14 +22,19 @@ def _warn_range(
     lower_strict=False,
     upper_strict=False,
     note="",
+    error=False,
 ):
     """
     Warn if a fixed value, or a prior's support, falls outside [lower, upper].
+
+    With error=True, raise ValueError instead.
 
     lower_strict/upper_strict make the corresponding bound itself invalid
     too (e.g. lower=0, lower_strict=True rejects exactly 0, for parameters
     like scale radii that must be strictly positive; lower=0 alone allows
     0, for parameters like ellipticities that are valid down to 0).
+    They apply to fixed values only: a prior's endpoints have zero
+    probability.
 
     Tied values (lambdas, function() or boundto()) and None (an unset
     parameter, e.g. before a fixed value or prior has been assigned) are
@@ -41,65 +46,63 @@ def _warn_range(
         return
     if isinstance(value, numpyro.distributions.Distribution):
         kind = f"The {name} prior support includes values"
-        vlo, vhi = value.support.lower_bound, value.support.upper_bound
+        vlo, vhi = _support_bounds(value)
+        lower_strict = upper_strict = False
     else:
         kind = f"The {name} parameter is"
         vlo = vhi = value
-    if upper is not None:
-        bad = vhi >= upper if upper_strict else vhi > upper
-        if bad:
-            suffix = "or equal to " if upper_strict else ""
-            warnings.warn(
-                f"{kind} greater than {suffix}{upper}. {note}",
-                UserWarning,
-                stacklevel=3,
-            )
-    if lower is not None:
-        bad = vlo <= lower if lower_strict else vlo < lower
-        if bad:
-            suffix = "or equal to " if lower_strict else ""
-            warnings.warn(
-                f"{kind} less than {suffix}{lower}. {note}",
-                UserWarning,
-                stacklevel=3,
-            )
+    messages = []
+    if upper is not None and (vhi >= upper if upper_strict else vhi > upper):
+        suffix = "or equal to " if upper_strict else ""
+        messages.append(f"{kind} greater than {suffix}{upper}. {note}")
+    if lower is not None and (vlo <= lower if lower_strict else vlo < lower):
+        suffix = "or equal to " if lower_strict else ""
+        messages.append(f"{kind} less than {suffix}{lower}. {note}")
+    for message in messages:
+        if error:
+            raise ValueError(message.strip())
+        warnings.warn(message.strip(), UserWarning, stacklevel=3)
 
 
-def _warn_span(value, name, span, note=""):
+def _support_bounds(prior):
+    """Return a prior's support as (low, high), infinite where unbounded."""
+    support = prior.support
+    return (
+        float(getattr(support, "lower_bound", -np.inf)),
+        float(getattr(support, "upper_bound", np.inf)),
+    )
+
+
+def _warn_span(value, name, period, unit, stacklevel):
     """
-    Warn about a prior distribution whose support is span or wider.
+    Warn about a prior on a periodic parameter spanning its period.
 
-    Two independent conditions are checked. A prior wider than `span`
-    triggers `note` -- typically a caution that this needlessly
-    duplicates the same physical solution at two points in the prior
-    (e.g. a position angle prior wider than its symmetry period). A
-    prior that is at least `span` wide -- including exactly `span`,
-    the normal way to mark a periodic parameter's full range -- also
-    triggers a second, separate warning explaining that it will
-    automatically be sampled as periodic (see `Component.periodic`
-    and `fitter.run`'s `periodic` argument).
+    A prior wider than the period repeats the same solutions. A prior
+    at least one period wide is sampled as periodic by nautilus, dynesty
+    and pocomc (see fitter.run's periodic argument).
     """
-    if isinstance(value, numpyro.distributions.Distribution):
-        extent = value.support.upper_bound - value.support.lower_bound
-        if extent > span:
-            warnings.warn(
-                f"The {name} prior support spans more than "
-                f"{np.degrees(span):.0f} deg. {note}",
-                UserWarning,
-                stacklevel=3,
-            )
-        if extent >= span:
-            warnings.warn(
-                f"The {name} prior spans a full "
-                f"{np.degrees(span):.0f}-degree period, so it will "
-                "automatically be treated as periodic if sampled with "
-                "the nautilus, dynesty, or pocomc backends. Pass "
-                "periodic=[...] to run() with this parameter's name to "
-                "choose a different set, or periodic=[] to disable "
-                "this entirely.",
-                UserWarning,
-                stacklevel=3,
-            )
+    if not isinstance(value, numpyro.distributions.Distribution):
+        return
+    low, high = _support_bounds(value)
+    extent = high - low
+    text = f"{period:.6g} {unit}".strip()
+    if extent > period * (1 + 1e-9):
+        warnings.warn(
+            f"The {name} prior spans more than its period ({text}), so "
+            "it repeats the same solutions, which can make the posterior "
+            "multimodal and harder to sample.",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
+    if extent >= period * (1 - 1e-9):
+        warnings.warn(
+            f"The {name} prior spans a full period ({text}), so it will "
+            "be treated as periodic by the nautilus, dynesty and pocomc "
+            "backends. Pass periodic=[...] to run() to choose a different "
+            "set, or periodic=[] to disable this.",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
 
 
 def _source_label(comp, name):
@@ -131,8 +134,7 @@ def _format_value(value, label=_source_label):
     if isinstance(value, numpyro.distributions.Distribution):
         text = type(value).__name__
         try:
-            low = float(getattr(value.support, "lower_bound", -np.inf))
-            high = float(getattr(value.support, "upper_bound", np.inf))
+            low, high = _support_bounds(value)
         except (NotImplementedError, TypeError):
             return text
         if np.isinf(low) and np.isinf(high):
@@ -314,7 +316,9 @@ class Component:
         Used by standalone getmap() calls, where there is no model
         parameter dict: function() and boundto() follow their source
         objects, and a lambda's arguments must name parameters of this
-        component.
+        component. Values are in declared units (see set_units):
+        functions take and return declared units, and boundto copies the
+        physical value.
         """
         obj = self
         for part in attr.split(".")[:-1]:
@@ -328,10 +332,22 @@ class Component:
             raise ValueError(f"Circular tie involving {attr}.")
         _seen = _seen | {tag}
 
-        if isinstance(value, _Function):
-            return value(
-                *[comp._resolve(name, _seen) for comp, name in value.sources]
+        if isinstance(value, _BoundTo):
+            comp, name = value.sources[0]
+            return (
+                comp._resolve(name, _seen)
+                * comp._factor(name)
+                / self._factor(attr)
             )
+        if isinstance(value, _Function):
+            args = [comp._resolve(name, _seen) for comp, name in value.sources]
+            if value.native:
+                args = [
+                    arg * comp._factor(name)
+                    for arg, (comp, name) in zip(args, value.sources)
+                ]
+                return value(*args) / self._factor(attr)
+            return value(*args)
         return value(
             *[
                 self._resolve(self._tiearg(name), _seen)
@@ -378,6 +394,10 @@ class Component:
                     f"keyword {key} is set to None. "
                     f"Please provide a valid value."
                 )
+        for out, key in keys.items():
+            factor = self._factor(key)
+            if factor != 1.0:
+                kwarg[out] = kwarg[out] * factor
         return kwarg
 
     def parlist(self):
@@ -402,6 +422,23 @@ class Component:
         ['xc', 'yc', 'theta', 'e', 'cbox', 'rc', 'Ic', 'beta']
         """
         return list(self.units.keys())
+
+    def _input_unit(self, key):
+        """Return the declared unit of a (dotted) parameter, else native."""
+        if key in self._input_units:
+            return self._input_units[key]
+        space, _, local = key.partition(".")
+        if local and space in getattr(self, "_namespaces", {}):
+            return getattr(self, space)._input_unit(local)
+        return self.units.get(key, "")
+
+    def _factor(self, key):
+        """Return the factor from a parameter's declared to native unit."""
+        native = self.units.get(key)
+        unit = self._input_unit(key)
+        if native is None or unit == native:
+            return 1.0
+        return _cfactor(unit, native)
 
     def set_units(self, **kwargs):
         """Declare the input units for one or more parameters.
@@ -440,6 +477,10 @@ class Component:
                 raise ValueError(
                     f"Unknown parameter '{name}' on {self.__class__.__name__}."
                 )
+            space, _, local = name.partition(".")
+            if local and space in getattr(self, "_namespaces", {}):
+                getattr(self, space).set_units(**{local: unit_str})
+                continue
             native = self.units[name]
             if native in _NON_CONVERTIBLE:
                 kind = (

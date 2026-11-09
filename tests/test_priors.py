@@ -26,6 +26,12 @@ class TestUniform:
         with pytest.raises(ValueError, match="lower limit must be smaller"):
             priors.uniform(low=0.5, high=0.5)
 
+    @pytest.mark.parametrize("low, high", [(0.0, np.inf), (-np.inf, 1.0)])
+    def test_infinite_bounds_raise(self, low, high):
+        """Infinite limits, whose samples would be inf or nan, raise."""
+        with pytest.raises(ValueError, match="must be finite"):
+            priors.uniform(low=low, high=high)
+
     def test_icdf_at_boundaries(self):
         """Test inverse CDF at 0 and 1 returns bounds."""
         low, high = 2.0, 5.0

@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import functools
 import inspect
 import types
 import warnings
@@ -9,11 +10,16 @@ import numpy as np
 
 import numpyro.distributions
 
-from socca.units import conversion_factor as _cfactor
 
-from ..priors import _TIED, _Function
+from ..priors import _TIED, _BoundTo, _Function, LogPowerLaw
 from . import config
-from .base import Component, _check_name, _format_rows, _format_value
+from .base import (
+    Component,
+    _check_name,
+    _format_rows,
+    _format_value,
+    _warn_span,
+)
 from .misc import Point, Background
 from .disk import Disk
 from .ellipsoid import Ellipsoid
@@ -165,6 +171,27 @@ def zoo():
 # ========================================================
 # General model structure
 # --------------------------------------------------------
+def _period(prof, name):
+    """Return the native period of a (possibly dotted) parameter, or None."""
+    if name in prof.periodic:
+        return prof.periodic[name]
+    space, _, local = name.partition(".")
+    sub = getattr(prof, "_namespaces", {}).get(space)
+    if local and sub is not None:
+        return sub.periodic.get(local)
+    return None
+
+
+def _warn_lambda(key, stacklevel):
+    """Warn that a lambda tie is deprecated."""
+    warnings.warn(
+        f"Tying {key} with a lambda is deprecated and will be removed: "
+        "use socca.priors.function() instead.",
+        FutureWarning,
+        stacklevel=stacklevel,
+    )
+
+
 class Model:
     """
     Composite model container for combining multiple profile components.
@@ -306,10 +333,10 @@ class Model:
                 f"this {type(prof).__name__} another name."
             )
 
-        self.type.append(prof.__class__.__name__)
-        self.positive.append(prof.positive if positive is None else positive)
+        entries, notes = [], []
         for p in prof.parlist():
-            par = eval(f"prof.{p}")
+            par = functools.reduce(getattr, p.split("."), prof)
+            key = f"{prefix}_{p}"
 
             if par is None:
                 raise ValueError(
@@ -317,13 +344,20 @@ class Model:
                     f"to None. Please provide a valid value or prior."
                 )
 
+            unit = prof._input_unit(p)
+            factor = prof._factor(p)
+            period = _period(prof, p)
+            if period is not None:
+                period = period / factor
+                if isinstance(par, LogPowerLaw):
+                    raise ValueError(
+                        f"{key} is periodic and cannot have a log-sampled "
+                        "prior."
+                    )
+                notes.append((_warn_span, (par, key, period, unit)))
+
             if isinstance(par, types.FunctionType):
-                warnings.warn(
-                    f"Tying {prefix}_{p} with a lambda is deprecated and "
-                    "will be removed: use socca.priors.function() instead.",
-                    FutureWarning,
-                    stacklevel=stacklevel,
-                )
+                notes.append((_warn_lambda, (key,)))
                 _glb = {
                     name: par.__globals__[name]
                     for name in par.__code__.co_names
@@ -338,26 +372,25 @@ class Model:
                     par.__defaults__,
                     par.__closure__,
                 )
+            entries.append((key, par, unit, factor, period))
 
-            self.params.append(f"{prefix}_{p}")
+        for warn, args in notes:
+            warn(*args, stacklevel=stacklevel + 1)
+
+        self.type.append(prof.__class__.__name__)
+        self.positive.append(prof.positive if positive is None else positive)
+        for key, par, unit, factor, period in entries:
+            self.params.append(key)
             self._owner.append(self.ncomp)
-            self.priors.update({f"{prefix}_{p}": par})
+            self.priors[key] = par
             if isinstance(par, numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params) - 1)
-
-            if isinstance(par, _TIED):
-                self.tied.append(True)
-            else:
-                self.tied.append(False)
-
-            key = f"{prefix}_{p}"
-            native_unit = prof.units[p]
-            input_unit = prof._input_units.get(p, native_unit)
-            if input_unit != native_unit:
-                self.conversions[key] = _cfactor(input_unit, native_unit)
-            self.units[key] = input_unit
-            if p in prof.periodic:
-                self.periodic[key] = prof.periodic[p]
+            self.tied.append(isinstance(par, _TIED))
+            self.units[key] = unit
+            if factor != 1.0:
+                self.conversions[key] = factor
+            if period is not None:
+                self.periodic[key] = period
 
         self.components.append(prof)
         self._prefix.append(prefix)
@@ -555,7 +588,13 @@ class Model:
         return args
 
     def _resolve_ties(self, pars):
-        """Evaluate tied parameters in dependency order, in place."""
+        """
+        Evaluate tied parameters in dependency order, in place.
+
+        pars holds native values. Functions take and return declared
+        units (see Component.set_units); boundto copies the value.
+        """
+        scale = self.conversions
         deps = {
             key: self._tieargs(key)
             for key, tied in zip(self.params, self.tied)
@@ -573,7 +612,12 @@ class Model:
             for dep in deps[key]:
                 if dep in deps:
                     resolve(dep, chain + [key])
-            pars[key] = self.priors[key](*[pars[dep] for dep in deps[key]])
+            tie = self.priors[key]
+            if isinstance(tie, _BoundTo):
+                pars[key] = pars[deps[key][0]]
+            else:
+                args = [pars[dep] / scale.get(dep, 1.0) for dep in deps[key]]
+                pars[key] = tie(*args) * scale.get(key, 1.0)
             done.add(key)
 
         for key in deps:

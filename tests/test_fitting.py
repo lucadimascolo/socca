@@ -443,6 +443,36 @@ class TestPeriodicAutoDetection:
         assert not any("periodic" in m.lower() for m in msgs)
         assert mock_cls.call_args.kwargs["periodic"] == [theta_idx]
 
+    @pytest.mark.parametrize("turns, wraps", [(2.0, True), (1.5, False)])
+    def test_auto_periodic_needs_whole_periods(self, simple_hdu, turns, wraps):
+        """Only priors spanning whole periods wrap onto equivalent values."""
+        import socca.fitting.methods.nautilus as nautilus_mod
+
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        gaussian = models.Gaussian(
+            xc=simple_hdu.header["CRVAL1"],
+            yc=simple_hdu.header["CRVAL2"],
+            rs=0.005,
+            Is=priors.uniform(0.0, 20.0),
+            theta=priors.uniform(0.0, turns * np.pi),
+        )
+        fit = fitting.fitter(img=img, mod=models.Model(gaussian))
+        n_free = len(fit.labels)
+        with patch.object(
+            nautilus_mod.nautilus, "Sampler", autospec=True
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.posterior.return_value = (
+                np.zeros((5, n_free)),
+                np.zeros(5),
+                None,
+            )
+            inst.log_z = -1.0
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                fit.run(method="nautilus", n_live=10)
+        assert ("periodic" in mock_cls.call_args.kwargs) == wraps
+
     def test_explicit_periodic_overrides_auto_detection(self, periodic_fitter):
         """Passing periodic= explicitly suppresses auto-detection and is forwarded as-is."""
         import socca.fitting.methods.nautilus as nautilus_mod

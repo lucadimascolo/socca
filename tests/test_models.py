@@ -215,14 +215,19 @@ class TestProfile:
     def test_e_still_raises_for_fixed_value_above_one(self):
         """Test that a fixed e >= 1 still raises ValueError."""
         beta = models.Beta()
-        with pytest.raises(ValueError, match="greater than 1"):
+        with pytest.raises(ValueError, match="greater than or equal to 1"):
             beta.e = 1.5
 
     def test_e_still_raises_for_fixed_value_below_zero(self):
         """Test that a fixed e < 0 still raises ValueError."""
         beta = models.Beta()
-        with pytest.raises(ValueError, match="lower than 0"):
+        with pytest.raises(ValueError, match="less than 0"):
             beta.e = -0.1
+
+    def test_e_prior_may_reach_one(self, recwarn):
+        """A prior with support up to e = 1 is accepted."""
+        models.Beta().e = priors.uniform(0.0, 1.0)
+        assert len(recwarn) == 0
 
     def test_e_still_raises_for_prior_out_of_range(self):
         """Test that a prior with out-of-range support still raises."""
@@ -230,26 +235,45 @@ class TestProfile:
         with pytest.raises(ValueError, match="greater than 1"):
             beta.e = priors.uniform(0.0, 1.5)
 
+    @staticmethod
+    def _beta(theta):
+        """Create a fixed Beta with the given theta."""
+        return models.Beta(
+            xc=0.0, yc=0.0, rc=1e-3, Ic=1.0, beta=0.6, theta=theta
+        )
+
     def test_theta_narrow_prior_no_warning(self, recwarn):
-        """Test that a theta prior narrower than its period does not warn."""
-        beta = models.Beta()
-        beta.theta = priors.uniform(-np.pi / 4, np.pi / 4)
+        """A theta prior narrower than its period does not warn."""
+        models.Model(self._beta(priors.uniform(-np.pi / 4, np.pi / 4)))
         assert len(recwarn) == 0
 
     def test_theta_exact_period_warns_periodic(self, recwarn):
-        """A theta prior exactly spanning its period warns that it will be sampled as periodic, at set time (not just at fit.run())."""
-        beta = models.Beta()
-        beta.theta = priors.uniform(0.00, np.pi)
+        """A theta prior spanning its period warns when added to a model."""
+        beta = self._beta(priors.uniform(0.00, np.pi))
+        assert len(recwarn) == 0
+        models.Model(beta)
         assert len(recwarn) == 1
         assert "periodic" in str(recwarn[0].message)
+        assert recwarn[0].filename == __file__
 
     def test_theta_wider_than_period_warns_twice(self, recwarn):
-        """A theta prior wider than its period warns about both avoidable multimodality and periodic sampling."""
-        beta = models.Beta()
-        beta.theta = priors.uniform(-np.pi, np.pi)
+        """A wider theta prior warns about multimodality and periodicity."""
+        models.Model(self._beta(priors.uniform(-np.pi, np.pi)))
         messages = [str(w.message) for w in recwarn]
         assert any("multimodal" in m for m in messages)
         assert any("periodic" in m for m in messages)
+
+    def test_theta_period_in_declared_units(self, recwarn):
+        """Periods follow declared units: [0, 90] deg is not periodic."""
+        beta = self._beta(priors.uniform(0.0, 90.0))
+        beta.set_units(theta="deg")
+        mod = models.Model(beta)
+        assert len(recwarn) == 0
+        assert mod.periodic["comp_00_theta"] == pytest.approx(180.0)
+        beta = self._beta(priors.uniform(0.0, 180.0))
+        beta.set_units(theta="deg")
+        with pytest.warns(UserWarning, match="full period"):
+            models.Model(beta)
 
 
 class TestBeta:
@@ -774,36 +798,45 @@ class TestEllipsoid:
         ell.eratio = 0.4
         assert len(recwarn) == 0
 
+    @staticmethod
+    def _ellipsoid(**kwargs):
+        """Create a fixed Ellipsoid."""
+        ell = models.Ellipsoid(radial=models.Sersic(re=1e-3, Ie=1.0))
+        ell.xc, ell.yc = 0.0, 0.0
+        for key, value in kwargs.items():
+            setattr(ell, key, value)
+        return ell
+
     def test_theta_wide_prior_warns(self):
-        """Test that a theta prior spanning more than 180deg warns."""
-        ell = models.Ellipsoid()
-        with pytest.warns(UserWarning, match="180"):
-            ell.theta = priors.uniform(-np.pi, np.pi)
+        """A theta prior wider than its period warns when added."""
+        ell = self._ellipsoid(theta=priors.uniform(-np.pi, np.pi))
+        with pytest.warns(UserWarning, match="more than its period"):
+            models.Model(ell)
 
     def test_theta_narrow_prior_no_warning(self, recwarn):
-        """Test that a theta prior spanning less than 180deg does not warn."""
-        ell = models.Ellipsoid()
-        ell.theta = priors.uniform(-np.pi / 4, np.pi / 4)
+        """A theta prior narrower than its period does not warn when added."""
+        models.Model(self._ellipsoid(theta=priors.uniform(-0.7, 0.7)))
         assert len(recwarn) == 0
 
     def test_theta_exact_period_warns_periodic(self, recwarn):
-        """A theta prior exactly spanning 180deg (the normal way to mark it periodic) warns about automatic periodic sampling."""
-        ell = models.Ellipsoid()
-        ell.theta = priors.uniform(0.00, np.pi)
+        """A theta prior spanning its period warns about periodic sampling."""
+        models.Model(self._ellipsoid(theta=priors.uniform(0.00, np.pi)))
         assert len(recwarn) == 1
         assert "periodic" in str(recwarn[0].message)
 
     def test_rot_wide_prior_warns(self):
-        """Test that a rot prior spanning more than 180deg warns."""
-        ell = models.Ellipsoid()
-        with pytest.warns(UserWarning, match="180"):
-            ell.rot = priors.uniform(-np.pi, np.pi)
+        """A rot prior wider than its period warns when added."""
+        ell = self._ellipsoid(rot=priors.uniform(-np.pi, np.pi))
+        with pytest.warns(UserWarning, match="more than its period"):
+            models.Model(ell)
 
-    def test_tied_e_does_not_warn_or_crash(self):
-        """Test that tying e via boundto() doesn't trigger range validation."""
-        disk = models.Disk()
-        ell = models.Ellipsoid()
-        ell.e = priors.boundto(disk, "inc")
+    def test_tied_e_does_not_warn_or_crash(self, recwarn):
+        """Tying e via boundto() skips range validation and resolves."""
+        src = self._ellipsoid(e=0.4)
+        ell = self._ellipsoid()
+        ell.e = priors.boundto(src, "e")
+        assert ell._resolve("e") == 0.4
+        assert len(recwarn) == 0
 
     def test_profile_major_axis_surface(self):
         """Test that the profile equals Ie on the major (x) axis surface."""
@@ -1627,3 +1660,149 @@ class TestListing:
             _format_value(s.xc, mod._source_label)
             == "= Point.xc (not in model)"
         )
+
+
+class TestUnitsAndChecks:
+    """Declared units, periods and parameter checks."""
+
+    @pytest.fixture
+    def img(self, simple_hdu):
+        """Create an Image without PSF."""
+        return data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+    @staticmethod
+    def sersic(**kwargs):
+        """Create a fixed Sersic profile."""
+        pars = dict(xc=180.0, yc=45.0, re=0.004, Ie=1.0, ns=1.0)
+        pars.update(kwargs)
+        return models.Sersic(**pars)
+
+    @staticmethod
+    def disk(**kwargs):
+        """Create a fixed Disk."""
+        radial = models.Exponential(xc=180.0, yc=45.0, rs=0.004, Is=1.0)
+        for key, value in kwargs.items():
+            setattr(radial, key, value)
+        vertical = models.disk.vertical.HyperSecantHeight(zs=1e-3, inc=0.5)
+        return models.Disk(radial=radial, vertical=vertical)
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda: models.Sersic(ns=numpyro.distributions.Normal(1.0, 0.5)),
+            lambda: models.Sersic(e=numpyro.distributions.HalfNormal(0.3)),
+        ],
+    )
+    def test_unbounded_priors_raise_cleanly(self, make):
+        """Unbounded priors on bounded parameters raise ValueError."""
+        with pytest.raises(ValueError, match="prior support includes"):
+            make()
+
+    def test_gnfw_unbounded_prior_warns(self):
+        """Unbounded priors on gNFW slopes warn instead of crashing."""
+        with pytest.warns(UserWarning, match="alpha prior support"):
+            models.gNFW(alpha=numpyro.distributions.Normal(1.0, 0.2))
+
+    def test_tied_setters(self):
+        """Tied values are not range-checked."""
+        a = self.sersic()
+        b = self.sersic()
+        b.ns = priors.boundto(a, "ns")
+        b.e = priors.function(lambda x: x, (a, "e"))
+        assert isinstance(b.ns, priors._BoundTo)
+        assert isinstance(b.e, priors._Function)
+
+    def test_disk_theta_periodic(self):
+        """A Disk's radial.theta is periodic."""
+        mod = models.Model(self.disk(theta=0.0))
+        assert mod.periodic["comp_00_radial.theta"] == pytest.approx(np.pi)
+
+    @pytest.mark.parametrize("when", ["before", "after"])
+    def test_sub_profile_units(self, img, when):
+        """Units set on a sub-profile apply, before or after wrapping."""
+        if when == "before":
+            radial = models.Exponential(xc=180.0, yc=45.0, rs=14.4, Is=1.0)
+            radial.set_units(rs="arcsec")
+            vertical = models.disk.vertical.HyperSecantHeight(zs=1e-3, inc=0.5)
+            d = models.Disk(radial=radial, vertical=vertical)
+        else:
+            d = self.disk(rs=14.4)
+            d.radial.set_units(rs="arcsec")
+        mod = models.Model(d)
+        assert mod.units["comp_00_radial.rs"] == "arcsec"
+        ref = models.Model(self.disk()).getmap(img)
+        np.testing.assert_allclose(mod.getmap(img), ref)
+        np.testing.assert_allclose(d.getmap(img), self.disk().getmap(img))
+
+    def test_wrapper_set_units_forwards(self):
+        """set_units on a wrapper's dotted name reaches the sub-profile."""
+        d = self.disk(rs=14.4)
+        d.set_units(**{"radial.rs": "arcsec"})
+        assert d.radial._input_units == {"rs": "arcsec"}
+
+    def test_addcomponent_is_atomic(self):
+        """A rejected component leaves the model unchanged."""
+        mod = models.Model(self.sersic())
+        before = (list(mod.params), list(mod.type), list(mod.positive))
+        with pytest.raises(ValueError, match="set to None"):
+            mod.addcomponent(models.Sersic(xc=0.0, yc=0.0))
+        assert (mod.params, mod.type, mod.positive) == tuple(
+            list(x) for x in before
+        )
+        assert mod.ncomp == 1
+
+    def test_standalone_units(self, img):
+        """Standalone getmap applies declared units."""
+        s = self.sersic(re=14.4)
+        s.set_units(re="arcsec")
+        np.testing.assert_allclose(s.getmap(img), self.sersic().getmap(img))
+
+    def test_function_in_declared_units(self, img):
+        """Functions take and return values in declared units."""
+        a = self.sersic(re=2.0)
+        a.set_units(re="arcsec")
+        b = self.sersic()
+        b.set_units(re="arcsec")
+        b.re = priors.function(lambda r: r + 12.4, (a, "re"))
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        ref = models.Model(self.sersic(re=2.0 / 3600))
+        ref.addcomponent(self.sersic(re=14.4 / 3600))
+        np.testing.assert_allclose(mod.getmap(img), ref.getmap(img))
+        np.testing.assert_allclose(
+            b.getmap(img), self.sersic(re=14.4 / 3600).getmap(img)
+        )
+
+    def test_boundto_across_units(self, img):
+        """A binding copies the physical value between declared units."""
+        a = self.sersic(re=0.24)
+        a.set_units(re="arcmin")
+        b = self.sersic()
+        b.set_units(re="arcsec")
+        b.re = priors.boundto(a, "re")
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        ref = models.Model(self.sersic())
+        ref.addcomponent(self.sersic())
+        np.testing.assert_allclose(mod.getmap(img), ref.getmap(img))
+        np.testing.assert_allclose(b.getmap(img), self.sersic().getmap(img))
+
+    def test_bridge_units(self, img):
+        """Bridge internal ties stay correct with rs in declared units."""
+
+        def bridge(rs):
+            return models.SimpleBridge(
+                xc=180.0, yc=45.0, rs=rs, Is=1.0, e=0.5, theta=0.0
+            )
+
+        b = bridge(18.0)
+        b.set_units(rs="arcsec")
+        ref = bridge(0.005).getmap(img)
+        np.testing.assert_allclose(b.getmap(img), ref)
+        np.testing.assert_allclose(models.Model(b).getmap(img), ref)
+
+    def test_log_prior_on_periodic(self):
+        """Log-sampled priors on periodic parameters raise."""
+        s = self.sersic(theta=priors.logpowerlaw(-1.0, 0.1, 3.0))
+        with pytest.raises(ValueError, match="log-sampled"):
+            models.Model(s)
