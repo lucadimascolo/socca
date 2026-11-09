@@ -1800,9 +1800,3 @@ class TestUnitsAndChecks:
         ref = bridge(0.005).getmap(img)
         np.testing.assert_allclose(b.getmap(img), ref)
         np.testing.assert_allclose(models.Model(b).getmap(img), ref)
-
-    def test_log_prior_on_periodic(self):
-        """Log-sampled priors on periodic parameters raise."""
-        s = self.sersic(theta=priors.logpowerlaw(-1.0, 0.1, 3.0))
-        with pytest.raises(ValueError, match="log-sampled"):
-            models.Model(s)

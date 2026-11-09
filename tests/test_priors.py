@@ -1,5 +1,6 @@
 """Tests for socca.priors module."""
 
+import jax
 import jax.numpy as jp
 import numpy as np
 import pytest
@@ -370,3 +371,99 @@ class TestPocomcPrior:
         samples = prior.rvs(size=100)
         assert np.all(samples >= low)
         assert np.all(samples <= high)
+
+
+class TestPowerLaw:
+    """Tests for the power-law prior."""
+
+    CASES = [
+        (-1.0, 1e-4, 1e-2),
+        (-1.0 - 1e-9, 1e-4, 1e-2),
+        (0.0, 1.0, 2.0),
+        (2.0, 1.0, 1.0001),
+        (-2.5, 1e-6, 1e3),
+        (50.0, 1.0, 10.0),
+        (-300.0, 1.0, 10.0),
+    ]
+
+    @staticmethod
+    def reference_icdf(alpha, low, high, u):
+        """Textbook inverse CDF, fine away from extreme slopes."""
+        beta = alpha + 1.0
+        if beta == 0:
+            return low * (high / low) ** u
+        return (low**beta + u * (high**beta - low**beta)) ** (1.0 / beta)
+
+    @pytest.mark.parametrize("alpha, low, high", CASES)
+    def test_endpoints_and_roundtrip(self, alpha, low, high):
+        """The inverse CDF spans [low, high] and inverts the CDF."""
+        dist = priors.powerlaw(alpha, low, high)
+        u = jp.array([0.0, 1e-12, 0.1, 0.5, 0.9, 1 - 1e-12, 1.0])
+        x = dist.icdf(u)
+        assert bool(jp.all(jp.isfinite(x)))
+        assert float(x[0]) == pytest.approx(low, rel=1e-12)
+        assert float(x[-1]) == pytest.approx(high, rel=1e-12)
+        np.testing.assert_allclose(dist.cdf(x[2:5]), u[2:5], atol=1e-10)
+
+    @pytest.mark.parametrize("alpha", [-2.5, -1.0, 0.0, 1.0, 3.0])
+    def test_matches_textbook(self, alpha):
+        """The inverse CDF matches the textbook formula."""
+        dist = priors.powerlaw(alpha, 1e-3, 1e-1)
+        u = np.linspace(0.0, 1.0, 11)
+        np.testing.assert_allclose(
+            dist.icdf(jp.asarray(u)),
+            self.reference_icdf(alpha, 1e-3, 1e-1, u),
+            rtol=1e-12,
+        )
+
+    @pytest.mark.parametrize("alpha, low, high", CASES)
+    def test_normalised(self, alpha, low, high):
+        """The density integrates to one."""
+        dist = priors.powerlaw(alpha, low, high)
+        logx = np.linspace(np.log(low), np.log(high), 200001)
+        x = np.clip(np.exp(logx), low, high)
+        density = np.exp(np.asarray(dist.log_prob(jp.asarray(x)))) * x
+        total = float(jp.trapezoid(density, logx))
+        assert total == pytest.approx(1.0, rel=1e-5)
+
+    def test_support(self):
+        """The support is [low, high] and log_prob is -inf outside."""
+        dist = priors.powerlaw(-1.0, 1e-4, 1e-2)
+        assert float(dist.support.lower_bound) == 1e-4
+        assert float(dist.support.upper_bound) == 1e-2
+        assert float(dist.log_prob(2e-2)) == -np.inf
+        assert float(dist.log_prob(5e-5)) == -np.inf
+
+    def test_sampling(self):
+        """Samples follow the distribution."""
+        dist = priors.powerlaw(-2.5, 1e-6, 1e3)
+        x = dist.sample(jax.random.PRNGKey(0), (200000,))
+        assert float(jp.median(x)) == pytest.approx(
+            float(dist.icdf(0.5)), rel=0.02
+        )
+
+    @pytest.mark.parametrize(
+        "alpha, low, high",
+        [(0.0, 0.0, 1.0), (0.0, 2.0, 1.0), (0.0, 1.0, np.inf), (np.nan, 1, 2)],
+    )
+    def test_invalid(self, alpha, low, high):
+        """Invalid indices or bounds raise."""
+        with pytest.raises(ValueError):
+            priors.powerlaw(alpha, low, high)
+
+    def test_logpowerlaw_removed(self):
+        """The log-sampled power law is gone."""
+        assert not hasattr(priors, "logpowerlaw")
+        assert not hasattr(priors, "LogPowerLaw")
+
+
+class TestPowerLawPytree:
+    """PowerLaw priors through jax transformations."""
+
+    def test_support_after_unflattening(self):
+        """An unflattened copy, which skips __init__, keeps its support."""
+        prior = priors.powerlaw(-2.0, 1.0, 10.0)
+        copy = jax.tree_util.tree_map(lambda x: x, prior)
+        assert float(copy.support.lower_bound) == 1.0
+        assert float(copy.support.upper_bound) == 10.0
+        assert np.isfinite(float(copy.log_prob(3.0)))

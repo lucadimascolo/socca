@@ -11,7 +11,7 @@ import numpy as np
 import numpyro.distributions
 
 
-from ..priors import _TIED, _BoundTo, _Function, LogPowerLaw
+from ..priors import _TIED, _BoundTo, _Function
 from . import config
 from .base import (
     Component,
@@ -349,11 +349,6 @@ class Model:
             period = _period(prof, p)
             if period is not None:
                 period = period / factor
-                if isinstance(par, LogPowerLaw):
-                    raise ValueError(
-                        f"{key} is periodic and cannot have a log-sampled "
-                        "prior."
-                    )
                 notes.append((_warn_span, (par, key, period, unit)))
 
             if isinstance(par, types.FunctionType):
