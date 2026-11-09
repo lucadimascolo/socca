@@ -538,8 +538,11 @@ class TestMPIRun:
             dict(self._mpiexec(tmp_path, "nautilus", str(tmp_path / m), m))
             for m in ["plain", "vectorize"]
         ]
+        assert results[0].keys() == {0, 1}
         assert results[0] == results[1]
         assert len(set(results[0].values())) == 1
+        # The run must succeed: logz is a finite number, not an error name.
+        assert np.isfinite(float(results[0][0]))
 
     def test_emcee_bad_checkpoint(self, tmp_path):
         """A checkpoint that cannot be created stops the workers too."""
