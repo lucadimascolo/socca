@@ -11,15 +11,13 @@ import warnings
 
 import jax
 import jax.numpy as jp
-import numpyro.distributions
 
-import numpy as np
 
 from ..base import Component, _warn_range, _warn_span
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
-from ...priors import _TIED, _Function, function
+from ...priors import _Function, function
 
 
 class Bridge(Component):
@@ -454,78 +452,6 @@ class Bridge(Component):
         rgrid, zgrid = self.getgrid(img.grid, xc, yc, theta)
         mgrid = self.profile(rgrid, zgrid, **kwarg)
         return jp.mean(mgrid, axis=0)
-
-    def parameters(self):
-        """
-        Print a summary of all model parameters.
-
-        Displays model parameters organized by category (base, radial,
-        parallel) along with their units, current values, and descriptions.
-        Hyperparameters are shown in a separate section.
-        """
-        keyout = [key for key in self.units.keys() if key not in self.hyper]
-
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array(
-                    [
-                        len(f"{key} [{self.units[key]}]")
-                        for key in keyout + self.hyper
-                    ]
-                )
-            )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
-                if key.startswith("radial."):
-                    kvalue = getattr(self.radial, key.replace("radial.", ""))
-                elif key.startswith("parallel."):
-                    kvalue = getattr(
-                        self.parallel, key.replace("parallel.", "")
-                    )
-                else:
-                    kvalue = getattr(self, key)
-
-                if kvalue is None:
-                    kvalue = None
-                elif isinstance(kvalue, numpyro.distributions.Distribution):
-                    kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                elif isinstance(kvalue, _TIED):
-                    kvalue = "Tied parameter"
-                else:
-                    kvalue = f"{kvalue:.4E}"
-
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{kvalue}".ljust(10)
-                    + f" | {self.description[key]}"
-                )
-
-            if len(self.hyper) > 0:
-                print("\nHyperparameters")
-                print("=" * 15)
-                for key in self.hyper:
-                    keylen = maxlen - len(f" [{self.units[key]}]")
-                    if key.startswith("radial."):
-                        kvalue = getattr(
-                            self.radial, key.replace("radial.", "")
-                        )
-                    elif key.startswith("parallel."):
-                        kvalue = getattr(
-                            self.parallel, key.replace("parallel.", "")
-                        )
-                    else:
-                        kvalue = getattr(self, key)
-                    kvalue = None if kvalue is None else f"{kvalue:.4E}"
-                    print(
-                        f"{key:<{keylen}} [{self.units[key]}] : "
-                        + f"{kvalue}".ljust(10)
-                        + f" | {self.description[key]}"
-                    )
-        else:
-            print("No parameters defined.")
 
     def parlist(self):
         """

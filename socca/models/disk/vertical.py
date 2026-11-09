@@ -69,7 +69,7 @@ class Height(Component):
 
         self.description.update(
             dict(
-                losdepth="Half line-of-sigt extent for integration",
+                losdepth="Half line-of-sight extent for integration",
                 losbins="Number of points for line-of-sight integration",
                 inc="Inclination angle (0=face-on)",
             )

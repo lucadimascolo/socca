@@ -13,7 +13,7 @@ from socca.units import conversion_factor as _cfactor
 
 from ..priors import _TIED, _Function
 from . import config
-from .base import Component, _check_name
+from .base import Component, _check_name, _format_rows, _format_value
 from .misc import Point, Background
 from .disk import Disk
 from .ellipsoid import Ellipsoid
@@ -233,6 +233,7 @@ class Model:
         self.periodic = {}
         self.conversions = {}
         self._prefix = []
+        self._owner = []
 
         if prof is not None:
             self._addcomponent(prof, positive, stacklevel=3)
@@ -339,6 +340,7 @@ class Model:
                 )
 
             self.params.append(f"{prefix}_{p}")
+            self._owner.append(self.ncomp)
             self.priors.update({f"{prefix}_{p}": par})
             if isinstance(par, numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params) - 1)
@@ -364,81 +366,78 @@ class Model:
 
     def parameters(self, freeonly=False):
         """
-        Print a formatted table of model parameters with their values and units.
+        Print the model parameters, grouped by component.
 
-        This method displays all model parameters, showing fixed values, prior
-        distributions, or tied parameter relationships in a human-readable format.
+        Each component is listed under a ``Type (id)`` line. The model key
+        of a parameter, used in ``fit.labels``, is the id followed by
+        ``_`` and the parameter name (e.g. ``comp_00_xc``,
+        ``core_radial.xc``).
 
         Parameters
         ----------
         freeonly : bool, optional
-            If True, only display parameters with prior distributions (free
-            parameters to be fitted). If False (default), display all parameters
-            including fixed values and tied parameters.
-
-        Notes
-        -----
-        Parameter values are displayed as:
-
-        - Fixed values: shown in scientific notation (e.g., 1.5000E-02)
-        - Prior distributions: shown as "Distribution: DistributionName"
-        - Tied parameters: shown as "Tied parameter"
-
-        The output format is:
-        parameter_name [units] : value
+            If True, only list parameters with prior distributions.
+            Default is False.
 
         Examples
         --------
-        >>> from socca.models import Model, Beta
-        >>> import numpyro.distributions as dist
-        >>> model = Model(Beta(xc=dist.Uniform(180, 181), yc=45.2, rc=0.01))
+        >>> model = Model(Beta(xc=priors.uniform(180, 181), yc=45.2))
         >>> model.parameters()
-        Model parameters
-        ================
-        comp_00_xc   [deg]   : Distribution: Uniform
-        comp_00_yc   [deg]   : 4.5200E+01
-        comp_00_rc   [deg]   : 1.0000E-02
+        <BLANKLINE>
+        Beta (comp_00)
+        ==============
+        xc [deg] : Uniform [180, 181] | Right ascension of centroid
+        yc [deg] : 4.5200E+01         | Declination of centroid
         ...
-        >>> model.parameters(freeonly=True)
-        Model parameters
-        ================
-        comp_00_xc   [deg]   : Distribution: Uniform
         """
-        keyout = []
-        for key in self.params:
-            if freeonly:
-                if isinstance(
-                    self.priors[key], numpyro.distributions.Distribution
-                ):
-                    keyout.append(key)
-            else:
-                keyout.append(key)
-
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array([len(f"{key} [{self.units[key]}]") for key in keyout])
-            )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
+        blocks = []
+        for nc, prefix in enumerate(self._prefix):
+            comp = self.components[nc]
+            rows = []
+            for key, owner in zip(self.params, self._owner):
                 par = self.priors[key]
-                if par is None:
-                    keyval = None
-                elif isinstance(par, numpyro.distributions.Distribution):
-                    keyval = f"Distribution: {par.__class__.__name__}"
-                elif isinstance(par, _TIED):
-                    keyval = "Tied parameter"
-                else:
-                    keyval = f"{par:.4E}"
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{keyval}".ljust(10)
+                if owner != nc or (
+                    freeonly
+                    and not isinstance(par, numpyro.distributions.Distribution)
+                ):
+                    continue
+                name = key[len(prefix) + 1 :]
+                rows.append(
+                    (
+                        name,
+                        self.units[key],
+                        _format_value(par, self._source_label),
+                        comp.description.get(name, ""),
+                    )
                 )
+            if rows:
+                blocks.append((f"{self.type[nc]} ({prefix})", rows))
 
-        else:
-            print("No parameters defined.")
+        if not blocks:
+            print("No free parameters." if freeonly else "No parameters.")
+            return
+        lines = _format_rows([row for _, rows in blocks for row in rows])
+        for title, rows in blocks:
+            print(f"\n{title}\n" + "=" * len(title))
+            print("\n".join(lines[: len(rows)]))
+            lines = lines[len(rows) :]
+
+    def __repr__(self):
+        """List the model components with their ids."""
+        lines = [
+            f"{ctype} ({prefix})"
+            for ctype, prefix in zip(self.type, self._prefix)
+        ]
+        return "\n".join(["Model"] + ["  " + line for line in lines])
+
+    def _source_label(self, comp, name):
+        """Label of a tie source: the component id and parameter name."""
+        try:
+            key = self._keyof(comp, name)
+        except ValueError:
+            return f"{type(comp).__name__}.{name} (not in model)"
+        prefix = self._prefix[self._owner[self.params.index(key)]]
+        return f"{prefix}.{key[len(prefix) + 1 :]}"
 
     # Get the model map with fixed parameters
     # --------------------------------------------------------

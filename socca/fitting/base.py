@@ -842,8 +842,8 @@ class fitter:
 
         The output format is::
 
-            comp_00
-            -------
+            Type (id)
+            ---------
             param : best-fit [+upper/-lower]
 
         where upper = 84th percentile - median and lower = median - 16th
@@ -866,14 +866,12 @@ class fitter:
         # Group parameters by component
         components = {}
         for pi, label in enumerate(self.labels):
-            parts = label.rsplit("_", 1)
-            if len(parts) == 2:
-                comp, param = "_".join(label.split("_")[:-1]), parts[-1]
-            else:
-                comp, param = "model", label
-            if comp not in components:
-                components[comp] = []
-            components[comp].append((pi, param))
+            owner = self.mod._owner[self.mod.params.index(label)]
+            prefix = self.mod._prefix[owner]
+            title = f"{self.mod.type[owner]} ({prefix})"
+            components.setdefault(title, []).append(
+                (pi, label[len(prefix) + 1 :])
+            )
 
         # Print grouped by component
         for comp, params in components.items():

@@ -1,5 +1,6 @@
 """Base component class for model profiles."""
 
+import functools
 import inspect
 import keyword
 import re
@@ -9,7 +10,7 @@ import numpy as np
 import numpyro.distributions
 
 from . import config
-from ..priors import _TIED, _Function
+from ..priors import _TIED, _BoundTo, _Function
 from socca.units import _NON_CONVERTIBLE, conversion_factor as _cfactor
 
 
@@ -99,6 +100,69 @@ def _warn_span(value, name, span, note=""):
                 UserWarning,
                 stacklevel=3,
             )
+
+
+def _source_label(comp, name):
+    """Label of a tie source outside a model: id (or type) and name."""
+    return f"{comp.id or type(comp).__name__}.{name}"
+
+
+def _format_bound(value):
+    """Short text for a prior bound."""
+    value = float(value)
+    return (
+        "inf"
+        if value == np.inf
+        else "-inf"
+        if value == -np.inf
+        else (f"{value:.4g}")
+    )
+
+
+def _format_value(value, label=_source_label):
+    """
+    Short text for a parameter value, prior or tie.
+
+    label(comp, name) names the source parameters of function() and
+    boundto() ties.
+    """
+    if value is None:
+        return "None"
+    if isinstance(value, numpyro.distributions.Distribution):
+        text = type(value).__name__
+        try:
+            low = float(getattr(value.support, "lower_bound", -np.inf))
+            high = float(getattr(value.support, "upper_bound", np.inf))
+        except (NotImplementedError, TypeError):
+            return text
+        if np.isinf(low) and np.isinf(high):
+            return text
+        left = "(" if np.isinf(low) else "["
+        right = ")" if np.isinf(high) else "]"
+        return (
+            f"{text} {left}{_format_bound(low)}, {_format_bound(high)}{right}"
+        )
+    if isinstance(value, _BoundTo):
+        return "= " + label(*value.sources[0])
+    if isinstance(value, _Function):
+        return "function of " + ", ".join(label(*s) for s in value.sources)
+    if isinstance(value, _TIED):
+        return "lambda of " + ", ".join(inspect.signature(value).parameters)
+    try:
+        return f"{float(value):.4E}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _format_rows(rows, indent=""):
+    """Lines for (name, unit, value, description) rows in aligned columns."""
+    width = max(len(f"{name} [{unit}]") for name, unit, _, _ in rows)
+    vwidth = max(len(value) for _, _, value, _ in rows)
+    return [
+        f"{indent}{name:<{width - len(unit) - 3}} [{unit}] : "
+        f"{value:<{vwidth}} | {desc}".rstrip(" |")
+        for name, unit, value, desc in rows
+    ]
 
 
 def _check_name(name):
@@ -199,93 +263,49 @@ class Component:
     #   --------------------------------------------------------
     def parameters(self):
         """
-        Print a formatted table of component parameters and hyperparameters.
+        Print the component's parameters and hyperparameters.
 
-        Displays all parameters (excluding reserved keys) with their values,
-        units, and descriptions in a human-readable format. Separates regular
-        parameters from hyperparameters.
-
-        Notes
-        -----
-        Output format:
-
-        Model parameters
-        ================
-        parameter_name [units] : value | description
-
-        Hyperparameters
-        ===============
-        hyperparam_name [units] : value | description
-
-        - Parameters are model quantities to be fitted or fixed
-        - Hyperparameters control computation but are not fitted
-        - Values are shown in scientific notation (e.g., 1.5000E-02)
-        - None values are displayed as "None"
+        Each line shows the parameter name, its units, its value (a fixed
+        value, a prior with its range, or what a tie depends on) and its
+        description. The title gives the component type and, once it is
+        in a model, its id.
 
         Examples
         --------
         >>> from socca.models import Beta
         >>> beta = Beta(xc=180.5, yc=45.2, rc=0.01, Ic=100, beta=0.5)
         >>> beta.parameters()
-        Model parameters
-        ================
-        xc    [deg]    : 1.8050E+02 | Right ascension of centroid
-        yc    [deg]    : 4.5200E+01 | Declination of centroid
-        rc    [deg]    : 1.0000E-02 | Core radius
-        Ic    [image]  : 1.0000E+02 | Central surface brightness
-        beta  []       : 5.0000E-01 | Slope parameter
-        theta [rad]    : 0.0000E+00 | Position angle (east from north)
-        e     []       : 0.0000E+00 | Projected axis ratio
-        cbox  []       : 0.0000E+00 | Projected boxiness
+        <BLANKLINE>
+        Beta
+        ====
+        xc    [deg] : 1.8050E+02 | Right ascension of centroid
+        ...
         """
-        keyout = [key for key in self.units.keys() if key not in self.hyper]
-
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array(
-                    [
-                        len(f"{key} [{self.units[key]}]")
-                        for key in keyout + self.hyper
-                    ]
-                )
-            )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
-                keypar = getattr(self, key)
-
-                if keypar is None:
-                    keyval = None
-                elif isinstance(keypar, numpyro.distributions.Distribution):
-                    keyval = f"Distribution: {keypar.__class__.__name__}"
-                elif isinstance(keypar, _TIED):
-                    keyval = "Tied keyparameter"
-                else:
-                    keyval = f"{keypar:.4E}"
-
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{keyval}".ljust(10)
-                    + f" | {self.description[key]}"
-                )
-
-            if len(self.hyper) > 0:
-                print("\nHyperparameters")
-                print("=" * 15)
-                for key in self.hyper:
-                    keylen = maxlen - len(f" [{self.units[key]}]")
-                    kvalue = getattr(self, key)
-                    kvalue = None if kvalue is None else f"{kvalue:.4E}"
-                    print(
-                        f"{key:<{keylen}} [{self.units[key]}] : "
-                        + f"{kvalue}".ljust(10)
-                        + f" | {self.description[key]}"
-                    )
-
-        else:
+        keyout = [key for key in self.units if key not in self.hyper]
+        if not keyout:
             print("No parameters defined.")
+            return
+        lines = _format_rows(
+            [
+                (
+                    key,
+                    self.units[key],
+                    _format_value(
+                        functools.reduce(getattr, key.split("."), self)
+                    ),
+                    self.description.get(key, ""),
+                )
+                for key in keyout + self.hyper
+            ]
+        )
+        title = type(self).__name__
+        if self.id is not None:
+            title += f" ({self.id})"
+        print(f"\n{title}\n" + "=" * len(title))
+        print("\n".join(lines[: len(keyout)]))
+        if self.hyper:
+            print("\nHyperparameters\n" + "=" * 15)
+            print("\n".join(lines[len(keyout) :]))
 
     def _resolve(self, attr, _seen=frozenset()):
         """

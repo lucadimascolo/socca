@@ -1033,3 +1033,21 @@ class TestEmceeSpecific:
         assert isinstance(multi_param_fitter.sampler, emcee.EnsembleSampler)
         assert multi_param_fitter.sampler.iteration == 100
         assert multi_param_fitter.sampler.nwalkers == 10
+
+
+def test_parameters_grouped_by_id(simple_hdu, capsys):
+    """fit.parameters groups by component id, even with underscores."""
+    import types
+
+    img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+    comp = models.Gaussian(
+        name="my_core", xc=180.0, yc=45.0, rs=0.005, Is=priors.uniform(0, 1)
+    )
+    comp.addparameter("rs_scale", priors.uniform(0.0, 1.0))
+    fit = fitting.fitter(img, models.Model(comp))
+    fit.method = "optimizer"
+    fit.results = types.SimpleNamespace(parameters=np.array([0.5, 0.25]))
+    fit.parameters()
+    out = capsys.readouterr().out
+    assert "Gaussian (my_core)" in out
+    assert "rs_scale" in out

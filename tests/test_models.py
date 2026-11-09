@@ -2,6 +2,7 @@
 
 import jax.numpy as jp
 import numpy as np
+import numpyro.distributions
 import pytest
 from astropy.io import fits
 
@@ -1537,3 +1538,92 @@ class TestIds:
         ref = models.Model(self.beta(rc=0.004))
         ref.addcomponent(self.beta(rc=0.004))
         np.testing.assert_allclose(mod.getmap(img), ref.getmap(img), rtol=1e-6)
+
+
+class TestListing:
+    """Parameter listings grouped by component."""
+
+    @staticmethod
+    def model():
+        """Create a model with fixed, free and tied parameters."""
+        p = models.Point(xc=20.0, yc=-10.0, Ic=priors.uniform(0.0, 20.0))
+        s = models.Sersic(name="core", re=1e-4, Ie=1.0, ns=1.0)
+        s.xc = priors.boundto(p, "xc")
+        s.yc = priors.function(lambda y, i: y + i, (p, "yc"), (p, "Ic"))
+        s.addparameter("re_scale", 0.5, description="Scale of re")
+        mod = models.Model(p)
+        mod.addcomponent(s)
+        return mod, p, s
+
+    def test_model_blocks(self, capsys):
+        """Each component is listed under its type and id."""
+        mod, _, _ = self.model()
+        mod.parameters()
+        out = capsys.readouterr().out
+        assert "Point (comp_00)" in out
+        assert "Sersic (core)" in out
+        assert "re_scale" in out and "Scale of re" in out
+        assert "Uniform [0, 20]" in out
+        assert "= comp_00.xc" in out
+        assert "function of comp_00.yc, comp_00.Ic" in out
+
+    def test_freeonly(self, capsys):
+        """Only components with free parameters are listed with freeonly."""
+        mod, _, _ = self.model()
+        mod.parameters(freeonly=True)
+        out = capsys.readouterr().out
+        assert "Point (comp_00)" in out and "Sersic" not in out
+
+    def test_repr(self):
+        """The repr lists the components with their ids."""
+        mod, _, _ = self.model()
+        assert repr(mod).splitlines() == [
+            "Model",
+            "  Point (comp_00)",
+            "  Sersic (core)",
+        ]
+
+    def test_component_title(self, capsys):
+        """A component's title shows its id once it is in a model."""
+        s = models.Sersic(xc=0.0, yc=0.0, re=1e-4, Ie=1.0)
+        s.parameters()
+        assert "\nSersic\n======\n" in capsys.readouterr().out
+        models.Model(s)
+        s.parameters()
+        assert "\nSersic (comp_00)\n" in capsys.readouterr().out
+
+    def test_wrapper_listing(self, capsys):
+        """Disk lists its namespaced parameters and hyperparameters."""
+        models.Disk().parameters()
+        out = capsys.readouterr().out
+        assert "radial.re" in out and "vertical.inc" in out
+        assert "Hyperparameters" in out and "vertical.losbins" in out
+
+    @pytest.mark.parametrize(
+        "value, text",
+        [
+            (None, "None"),
+            (np.float32(2.5), "2.5000E+00"),
+            (priors.loguniform(1e-5, 1e-3), "LogUniform [1e-05, 0.001]"),
+            (numpyro.distributions.HalfNormal(1.0), "HalfNormal [0, inf)"),
+            (numpyro.distributions.Normal(0.0, 1.0), "Normal"),
+            (lambda comp_00_rc: comp_00_rc, "lambda of comp_00_rc"),
+        ],
+    )
+    def test_format_value(self, value, text):
+        """Values, priors and lambdas are shown compactly."""
+        from socca.models.base import _format_value
+
+        assert _format_value(value) == text
+
+    def test_source_outside_model(self):
+        """Tie sources outside the model are marked."""
+        mod, _, s = self.model()
+        other = models.Point()
+        s.xc = priors.boundto(other, "xc")
+        from socca.models.base import _format_value
+
+        assert (
+            _format_value(s.xc, mod._source_label)
+            == "= Point.xc (not in model)"
+        )
