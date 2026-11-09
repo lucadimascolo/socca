@@ -4,7 +4,6 @@ from functools import partial
 
 import jax
 import jax.numpy as jp
-import numpyro.distributions
 
 from .. import config
 from ..base import Component, _warn_range
@@ -312,18 +311,6 @@ class Background(Component):
                 "Ignoring `convolve` argument."
             )
 
-        klist = list(self.units.keys())
-        kwarg = {key: getattr(self, key) for key in klist}
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
+        kwarg = self._getpars(list(self.units.keys()))
 
         return self._evaluate(img, **kwarg)

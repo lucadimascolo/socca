@@ -1,5 +1,8 @@
 """Prior distributions for Bayesian inference."""
 
+import inspect
+import types
+
 import jax
 import jax.numpy as jp
 import numpy as np
@@ -480,112 +483,156 @@ def powerlaw(alpha, low, high):
     return PowerLaw(alpha, low=low, high=high)
 
 
-# Parameter bound to another component's parameter
+# Tied parameters
 # --------------------------------------------------------
-class _BoundTo:
+def _identity(value):
+    return value
+
+
+def _source(comp, var):
+    """Return (component, parameter name) for a tie source, checking it."""
+    units = getattr(comp, "units", None)
+    if not isinstance(units, dict):
+        raise TypeError(
+            f"Expected a model component, got {type(comp).__name__}."
+        )
+    if var in units:
+        return comp, var
+    found = [
+        f"{name}.{var}"
+        for name in getattr(comp, "_namespaces", {})
+        if f"{name}.{var}" in units
+    ]
+    if len(found) > 1:
+        raise ValueError(
+            f"'{var}' is ambiguous for {type(comp).__name__}: use one of "
+            f"{', '.join(repr(f) for f in found)}."
+        )
+    if not found:
+        raise ValueError(f"{type(comp).__name__} has no parameter '{var}'.")
+    return comp, found[0]
+
+
+class _Function:
     """
-    Internal marker tying one component's parameter to another's.
+    A parameter computed from other parameters, built by function().
 
-    Not part of the public API -- construct these via boundto(), never
-    directly. Namespaced parameter keys (e.g. "comp_00_radial.xc") contain a
-    literal dot and can't be used as a Python identifier, so a lambda can't
-    represent the binding; this class carries the resolved key instead.
+    sources holds (component, parameter) pairs, passed to func in order.
     """
 
-    def __init__(self, key, comp, attr):
-        self.key = key
-        self._comp = comp
-        self._attr = attr
+    def __init__(self, func, sources):
+        self.func = func
+        self.sources = sources
 
-    def __call__(self, value):
-        """Return the bound value unchanged, matching the lambda it replaces."""
-        return value
-
-    def resolve(self):
-        """
-        Return the current value of the referenced parameter directly.
-
-        Model.getmap()/getmodel() resolve ties by looking `key` up in
-        their flattened parameter dict. A single component's own
-        getmap(), called outside of a Model, has no such dict -- this
-        walks the referenced component/attribute directly instead.
-        Resolves recursively if the referenced value is itself tied.
-        """
-        value = self._comp
-        for part in self._attr.split("."):
-            value = getattr(value, part)
-        if isinstance(value, _BoundTo):
-            value = value.resolve()
-        return value
+    def __call__(self, *args):
+        return self.func(*args)
 
 
-def boundto(comp, var):
+class _BoundTo(_Function):
+    """A parameter equal to another parameter, built by boundto()."""
+
+    def __init__(self, comp, var):
+        super().__init__(_identity, [_source(comp, var)])
+
+
+_TIED = (types.FunctionType, _Function)
+
+
+def function(func, *sources):
     """
-    Bind a parameter to another component's parameter.
-
-    Creates a functional relationship where one component's parameter is
-    constrained to equal another component's parameter. Useful for tying
-    parameters together across multiple model components.
+    Compute a parameter from other parameters.
 
     Parameters
     ----------
-    comp : Component or str
-        Component object or string representation of component whose
-        parameter should be referenced. If string, it is evaluated.
-    var : str
-        Name of the parameter variable to bind to.
+    func : callable
+        Function of the source parameters, taking them positionally in
+        the order given.
+    *sources : tuple of (Component, str)
+        The parameters passed to func, as (component, name) pairs. The
+        component can be the one being set, any other component, or a
+        Disk sub-profile (e.g. ``(disk.radial, "rs")``). On Disk,
+        Ellipsoid and Bridge a bare name is looked up in the
+        sub-profiles (``(disk, "rs")`` is ``disk.radial.rs``).
 
     Returns
     -------
     callable
-        An opaque, callable object that takes the bound parameter and
-        returns its value unchanged.
+        An object marking the parameter as tied.
+
+    Raises
+    ------
+    ValueError
+        If a source names no parameter, or a bare name matches more than
+        one sub-profile.
+    TypeError
+        If func cannot take as many arguments as there are sources.
 
     Examples
     --------
-    Bind the x-coordinate of component2 to match component1's x-coordinate:
-    >>> comp2.xc = boundto(comp1, 'xc')
+    >>> comp2.re = function(
+    ...     lambda s, r: s * r, (comp2, "re_scale"), (comp1, "re")
+    ... )
+    """
+    if not callable(func):
+        raise TypeError("func must be callable.")
+    for source in sources:
+        if not (isinstance(source, tuple) and len(source) == 2):
+            raise TypeError(
+                "Each source must be a (component, parameter name) pair."
+            )
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        signature = None
+    if signature is not None:
+        try:
+            signature.bind(*sources)
+        except TypeError:
+            raise TypeError(
+                f"func cannot take {len(sources)} positional argument(s), "
+                "one per source."
+            ) from None
+    return _Function(func, [_source(comp, var) for comp, var in sources])
 
-    Bind the inclination and position angle of an Ellipsoid (e.g. a
-    galactic bar) to that of its host Disk:
-    >>> disk_radial = socca.models.Sersic()
-    >>> disk_radial.theta = np.pi/4
-    >>> disk_vertical = socca.models.disk.vertical.HyperSecantHeight()
-    >>> disk_vertical.inc = np.radians(80)
-    >>>
-    >>> disk = socca.models.Disk(radial=disk_radial, vertical=disk_vertical)
-    >>>
+
+def boundto(comp, var):
+    """
+    Set a parameter equal to another component's parameter.
+
+    Parameters
+    ----------
+    comp : Component
+        Component holding the parameter. On Disk, Ellipsoid and Bridge a
+        bare name is looked up in the sub-profiles, and a sub-profile
+        (e.g. ``disk.radial``) can be passed directly.
+    var : str
+        Name of the parameter.
+
+    Returns
+    -------
+    callable
+        An object marking the parameter as tied.
+
+    Raises
+    ------
+    ValueError
+        If var names no parameter, or matches more than one sub-profile.
+
+    See Also
+    --------
+    function : compute a parameter from other parameters.
+
+    Examples
+    --------
+    >>> comp2.xc = boundto(comp1, "xc")
+
+    Tie a bar's orientation to its host disk:
+
     >>> bar = socca.models.Ellipsoid(radial=socca.models.Sersic())
     >>> bar.theta = socca.priors.boundto(disk, "theta")
-    >>> bar.inc   = socca.priors.boundto(disk, "inc")
-
-    Notes
-    -----
-    Always pass the top-level component, not its sub-components. For components
-    with namespaced sub-components (Disk, Ellipsoid), the correct sub-component
-    is found automatically by searching the component's own exposed parameter
-    names (its units dict) -- not the sub-component's, since a sub-component
-    may have attributes the parent doesn't actually expose as a parameter
-    (e.g. Ellipsoid.radial is a full Sersic profile, but Ellipsoid keeps
-    xc/yc/theta/e on itself rather than delegating to radial).
-
-    Tied parameters resolve correctly both through Model.getmap()/
-    getmodel() and when calling a single component's own getmap()
-    directly (outside of a Model) -- the latter reads the referenced
-    component/attribute directly, since it has no flattened parameter
-    dict to resolve `key` against.
+    >>> bar.inc = socca.priors.boundto(disk, "inc")
     """
-    if isinstance(comp, str):
-        comp = eval(comp)
-
-    namespaces = getattr(comp, "_namespaces", None)
-    if namespaces:
-        for namespace in namespaces:
-            if f"{namespace}.{var}" in comp.units:
-                attr = f"{namespace}.{var}"
-                return _BoundTo(f"{comp.id}_{attr}", comp, attr)
-
-    return _BoundTo(f"{comp.id}_{var}", comp, var)
+    return _BoundTo(comp, var)
 
 
 # pocoMC prior refactor for numpyro

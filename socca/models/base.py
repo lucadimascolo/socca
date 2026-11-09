@@ -1,13 +1,15 @@
 """Base component class for model profiles."""
 
-import types
+import inspect
+import keyword
+import re
 import warnings
 
 import numpy as np
 import numpyro.distributions
 
 from . import config
-from ..priors import _BoundTo
+from ..priors import _TIED, _Function
 from socca.units import _NON_CONVERTIBLE, conversion_factor as _cfactor
 
 
@@ -28,13 +30,13 @@ def _warn_range(
     like scale radii that must be strictly positive; lower=0 alone allows
     0, for parameters like ellipticities that are valid down to 0).
 
-    Tied values (lambdas, functions, or _BoundTo) and None (an unset
+    Tied values (lambdas, function() or boundto()) and None (an unset
     parameter, e.g. before a fixed value or prior has been assigned) are
     skipped.
     """
     if value is None:
         return
-    if isinstance(value, (types.LambdaType, types.FunctionType, _BoundTo)):
+    if isinstance(value, _TIED):
         return
     if isinstance(value, numpyro.distributions.Distribution):
         kind = f"The {name} prior support includes values"
@@ -99,6 +101,30 @@ def _warn_span(value, name, span, note=""):
             )
 
 
+def _check_name(name):
+    """Normalise a component name, checking it can be used in keys."""
+    if name is None:
+        return None
+    if isinstance(name, (int, np.integer)) and not isinstance(name, bool):
+        number = int(name)
+    elif isinstance(name, str) and re.fullmatch(r"comp_[0-9]+", name):
+        number = int(name[5:])
+    elif (
+        isinstance(name, str)
+        and name.isidentifier()
+        and not keyword.iskeyword(name)
+    ):
+        return name
+    else:
+        raise ValueError(
+            f"Invalid component name {name!r}: use a Python identifier "
+            "(e.g. 'core'), a non-negative integer or 'comp_NN'."
+        )
+    if number < 0:
+        raise ValueError(f"Invalid component name {name!r}: negative.")
+    return f"comp_{number:02d}"
+
+
 class Component:
     """
     Base class for all model components.
@@ -109,10 +135,11 @@ class Component:
 
     Attributes
     ----------
-    idcls : int (class variable)
-        Class-level counter for assigning unique IDs to component instances.
-    id : str
-        Unique identifier for this component instance (e.g., 'comp_00', 'comp_01').
+    id : str or None
+        Identifier in the model the component was last added to: its name
+        if given, else ``comp_NN`` from its position. None until added.
+    name : str or None
+        Name given at creation (``name=``), used as the id.
     positive : bool
         Whether to enforce positivity constraint on this component.
     hyper : list of str
@@ -127,11 +154,12 @@ class Component:
         under ``theta -> theta + pi``). Absent keys are not periodic.
     """
 
-    idcls = 0
+    id = None
+    name = None
 
     def __init__(self, **kwargs):
         """
-        Initialize a component with unique ID and parameter tracking structures.
+        Initialize a component with parameter tracking structures.
 
         Parameters
         ----------
@@ -140,15 +168,14 @@ class Component:
 
             positive : bool, optional
                 Override default positivity constraint.
-
-        Notes
-        -----
-        The component ID is automatically assigned and incremented for each
-        new instance. This ensures unique identification when multiple components
-        are combined in a model.
+            name : str or int, optional
+                Identifier used for the component's parameters in a model
+                (e.g. ``"core"`` gives ``core_xc``). An integer ``n`` or
+                ``"comp_n"`` gives ``comp_NN``, as for the component at
+                position ``n``. Default is the position in the model.
         """
-        self.id = f"comp_{Component.idcls:02d}"
-        Component.idcls += 1
+        self.id = None
+        self.name = _check_name(kwargs.get("name"))
 
         self.positive = kwargs.get("positive", config.Component.positive)
         self.hyper = []
@@ -233,9 +260,7 @@ class Component:
                     keyval = None
                 elif isinstance(keypar, numpyro.distributions.Distribution):
                     keyval = f"Distribution: {keypar.__class__.__name__}"
-                elif isinstance(
-                    keypar, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
+                elif isinstance(keypar, _TIED):
                     keyval = "Tied keyparameter"
                 else:
                     keyval = f"{keypar:.4E}"
@@ -261,6 +286,79 @@ class Component:
 
         else:
             print("No parameters defined.")
+
+    def _resolve(self, attr, _seen=frozenset()):
+        """
+        Return the value of a (possibly dotted) parameter, resolving ties.
+
+        Used by standalone getmap() calls, where there is no model
+        parameter dict: function() and boundto() follow their source
+        objects, and a lambda's arguments must name parameters of this
+        component.
+        """
+        obj = self
+        for part in attr.split(".")[:-1]:
+            obj = getattr(obj, part)
+        value = getattr(obj, attr.split(".")[-1])
+        if not isinstance(value, _TIED):
+            return value
+
+        tag = (id(self), attr)
+        if tag in _seen:
+            raise ValueError(f"Circular tie involving {attr}.")
+        _seen = _seen | {tag}
+
+        if isinstance(value, _Function):
+            return value(
+                *[comp._resolve(name, _seen) for comp, name in value.sources]
+            )
+        return value(
+            *[
+                self._resolve(self._tiearg(name), _seen)
+                for name in inspect.signature(value).parameters
+            ]
+        )
+
+    def _tiearg(self, name):
+        """Map a lambda argument name to one of this component's parameters."""
+        if self.id is None:
+            raise ValueError(
+                f"Cannot resolve the lambda argument '{name}': this "
+                f"{type(self).__name__} is not in a model, so it has no id. "
+                "Use socca.priors.function() instead."
+            )
+        local = re.sub(rf"^{re.escape(self.id)}_", "", name)
+        for key in self.units:
+            if local in (key, key.replace(".", "_")) and local != name:
+                return key
+        raise ValueError(
+            f"Tie argument '{name}' is not a parameter of this "
+            f"{type(self).__name__} ({self.id}). Standalone getmap() can "
+            "only resolve ties to the component's own parameters; add the "
+            "components to a Model and use Model.getmap() instead."
+        )
+
+    def _getpars(self, keys):
+        """
+        Resolve parameters and check they are all fixed.
+
+        keys is a list of parameter names, or a dict mapping output
+        keyword names to parameter names.
+        """
+        if not isinstance(keys, dict):
+            keys = {key: key for key in keys}
+        kwarg = {out: self._resolve(key) for out, key in keys.items()}
+        for key, value in kwarg.items():
+            if isinstance(value, numpyro.distributions.Distribution):
+                raise ValueError(
+                    "Priors must be fixed values, not distributions."
+                )
+            if value is None:
+                raise ValueError(
+                    f"keyword {key} is set to None. "
+                    f"Please provide a valid value."
+                )
+        return kwarg
 
     def parlist(self):
         """

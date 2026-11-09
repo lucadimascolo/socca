@@ -2,7 +2,6 @@
 
 from functools import partial
 import inspect
-import types
 
 import warnings
 
@@ -15,7 +14,7 @@ import numpy as np
 from .. import config
 from ..base import Component, _warn_range, _warn_span
 from ..radial import Sersic
-from ...priors import _BoundTo
+from ...priors import _TIED
 
 
 class Ellipsoid(Component):
@@ -158,15 +157,6 @@ class Ellipsoid(Component):
         for param in ["losdepth", "losbins"]:
             if param not in self.hyper:
                 self.hyper.append(param)
-
-        if self.radial.id != self.id:
-            type(self).idcls -= 1
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
 
         self.profile = jax.jit(Ellipsoid._ellipsoid_profile)
 
@@ -323,62 +313,28 @@ class Ellipsoid(Component):
         >>> img = Image('observation.fits')
         >>> ellipsoid_map = ellipsoid.getmap(img, convolve=True)
         """
-        kwarg = {}
-
-        # Profile shape parameters from radial (re, Ie, ns for Sersic)
-        for key in inspect.signature(self.radial.profile).parameters.keys():
-            if key == "r":
-                continue  # skip r
-            val = getattr(self.radial, key)
-            if isinstance(val, _BoundTo):
-                val = val.resolve()
-            elif callable(val):
-                sig = inspect.signature(val)
-                params = list(sig.parameters.keys())
-                if params:
-                    args = [
-                        getattr(self, p.replace(f"{self.id}_", ""))
-                        for p in params
-                    ]
-                    val = val(*args)
-            kwarg[key] = val
-
-        # Ellipsoid's own position, orientation, and 3D geometry
-        for key in [
-            "xc",
-            "yc",
-            "theta",
-            "e",
-            "eratio",
-            "inc",
-            "rot",
-            "losdepth",
-            "losbins",
-        ]:
-            val = getattr(self, key)
-            if isinstance(val, _BoundTo):
-                val = val.resolve()
-            elif callable(val):
-                sig = inspect.signature(val)
-                params = list(sig.parameters.keys())
-                if params:
-                    args = [
-                        getattr(self, p.replace(f"{self.id}_", ""))
-                        for p in params
-                    ]
-                    val = val(*args)
-            kwarg[key] = val
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
+        keys = {
+            key: f"radial.{key}"
+            for key in inspect.signature(self.radial.profile).parameters
+            if key != "r"
+        }
+        keys.update(
+            {
+                key: key
+                for key in [
+                    "xc",
+                    "yc",
+                    "theta",
+                    "e",
+                    "eratio",
+                    "inc",
+                    "rot",
+                    "losdepth",
+                    "losbins",
+                ]
+            }
+        )
+        kwarg = self._getpars(keys)
 
         mgrid = self._evaluate(img, **kwarg)
 
@@ -637,9 +593,7 @@ class Ellipsoid(Component):
                     kvalue = None
                 elif isinstance(kvalue, numpyro.distributions.Distribution):
                     kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
+                elif isinstance(kvalue, _TIED):
                     kvalue = "Tied parameter"
                 else:
                     kvalue = f"{kvalue:.4E}"
@@ -670,7 +624,7 @@ class Ellipsoid(Component):
                         kvalue = f"Distribution: {kvalue.__class__.__name__}"
                     elif isinstance(
                         kvalue,
-                        (types.LambdaType, types.FunctionType, _BoundTo),
+                        _TIED,
                     ):
                         kvalue = "Tied parameter"
                     else:

@@ -172,67 +172,120 @@ class TestSplitNormalClass:
 
 
 class TestBoundto:
-    """Tests for boundto function."""
+    """Tests for boundto."""
 
-    def test_creates_callable(self):
-        """Test that boundto returns a callable."""
+    @staticmethod
+    def beta():
+        """Create a fixed Beta profile."""
+        return models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
 
-        class MockComponent:
-            id = "mock"
+    def test_returns_identity(self):
+        """The binding returns its input unchanged."""
+        bound = priors.boundto(self.beta(), "xc")
+        assert bound(42.0) == 42.0
 
-        comp = MockComponent()
-        result = priors.boundto(comp, "xc")
-        assert callable(result)
-
-    def test_lambda_returns_input(self):
-        """Test that the lambda returns its input unchanged."""
-
-        class MockComponent:
-            id = "comp1"
-
-        comp = MockComponent()
-        bound_fn = priors.boundto(comp, "xc")
-        test_value = 42.0
-        result = bound_fn(test_value)
-        assert result == test_value
-
-    def test_resolve_flat_attribute(self):
-        """Test that resolve() reads a top-level component's current value."""
-        comp = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
-        bound = priors.boundto(comp, "xc")
-        assert bound.resolve() == 180.0
-
-    def test_resolve_reflects_current_value(self):
-        """Test that resolve() re-reads the value rather than caching it."""
-        comp = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
-        bound = priors.boundto(comp, "xc")
+    def test_reads_current_value(self):
+        """The bound value is read when resolved, not when bound."""
+        comp = self.beta()
+        other = self.beta()
+        other.xc = priors.boundto(comp, "xc")
         comp.xc = 200.0
-        assert bound.resolve() == 200.0
+        assert other._resolve("xc") == 200.0
 
-    def test_resolve_namespaced_attribute(self):
-        """Test that resolve() works for namespaced sub-component parameters."""
-        models.Component.idcls = 0
+    def test_namespaced_lookup(self):
+        """A bare name on a Disk is found in its sub-profiles."""
         disk = models.Disk()
-        disk.vertical.inc = 0.9
         bound = priors.boundto(disk, "inc")
-        assert bound.key.endswith("vertical.inc")
-        assert bound.resolve() == 0.9
+        assert bound.sources == [(disk, "vertical.inc")]
 
-    def test_resolve_chained_tie(self):
-        """Test that resolve() follows a chain of ties recursively."""
-        models.Component.idcls = 0
+    def test_sub_profile(self):
+        """A sub-profile can be passed directly."""
+        disk = models.Disk()
+        bound = priors.boundto(disk.radial, "xc")
+        assert bound.sources == [(disk.radial, "xc")]
+
+    def test_bridge_lookup(self):
+        """A bare name on a Bridge is found in its sub-profiles."""
+        bridge = models.SimpleBridge()
+        bound = priors.boundto(bridge, "alpha")
+        assert bound.sources == [(bridge, "radial.alpha")]
+
+    def test_chained_tie(self):
+        """Ties to tied parameters resolve recursively."""
         disk = models.Disk()
         disk.radial.theta = 0.7
         ellipsoid = models.Ellipsoid()
         ellipsoid.theta = priors.boundto(disk, "theta")
-        chained = priors.boundto(ellipsoid, "theta")
-        assert chained.resolve() == 0.7
+        other = models.Ellipsoid()
+        other.theta = priors.boundto(ellipsoid, "theta")
+        assert other._resolve("theta") == 0.7
 
-    def test_key_unchanged_for_model_level_resolution(self):
-        """Test that .key (used by Model.getmap/getmodel) is unaffected."""
-        comp = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
-        bound = priors.boundto(comp, "xc")
-        assert bound.key == f"{comp.id}_xc"
+    def test_ambiguous_name(self):
+        """A name found in two sub-profiles raises."""
+        disk = models.Disk(
+            radial=models.Beta(),
+            vertical=models.disk.vertical.HyperSecantHeight(),
+        )
+        with pytest.raises(ValueError, match="ambiguous"):
+            priors.boundto(disk, "alpha")
+
+    def test_unknown_name(self):
+        """An unknown parameter raises."""
+        with pytest.raises(ValueError, match="no parameter 'foo'"):
+            priors.boundto(self.beta(), "foo")
+
+    @pytest.mark.parametrize("comp", ["comp_00", None, models.Beta])
+    def test_not_a_component(self, comp):
+        """Anything but a component instance raises."""
+        with pytest.raises(TypeError, match="model component"):
+            priors.boundto(comp, "xc")
+
+
+class TestFunction:
+    """Tests for function."""
+
+    @staticmethod
+    def beta():
+        """Create a fixed Beta profile."""
+        return models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
+
+    def test_sources_in_order(self):
+        """Sources are passed to func positionally, in order."""
+        a, b = self.beta(), self.beta()
+        b.rc = 0.03
+        a.Ic = priors.function(lambda x, y: x - y, (b, "rc"), (a, "rc"))
+        assert a._resolve("Ic") == pytest.approx(0.02)
+
+    def test_any_callable(self):
+        """Named functions and partials are accepted."""
+        import functools
+
+        a = self.beta()
+
+        def double(x):
+            return 2 * x
+
+        a.Ic = priors.function(double, (a, "rc"))
+        assert a._resolve("Ic") == pytest.approx(0.02)
+        a.Ic = priors.function(functools.partial(pow, 2.0), (a, "rc"))
+        assert a._resolve("Ic") == pytest.approx(2.0**0.01)
+
+    def test_wrong_argument_count(self):
+        """A func that cannot take one argument per source raises."""
+        a = self.beta()
+        with pytest.raises(TypeError, match="2 positional"):
+            priors.function(lambda x: x, (a, "rc"), (a, "xc"))
+
+    def test_bad_source(self):
+        """A source that is not a (component, name) pair raises."""
+        a = self.beta()
+        with pytest.raises(TypeError, match="pair"):
+            priors.function(lambda x: x, a)
+
+    def test_not_callable(self):
+        """A non-callable func raises."""
+        with pytest.raises(TypeError, match="callable"):
+            priors.function(1.0, (self.beta(), "rc"))
 
 
 class TestPocomcPrior:

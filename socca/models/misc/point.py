@@ -1,7 +1,6 @@
 """Point source model component."""
 
 import jax.numpy as jp
-import numpyro.distributions
 
 from .. import config
 from ..base import Component
@@ -213,18 +212,7 @@ class Point(Component):
         >>> img = Image('observation.fits')
         >>> psf_convolved = point.getmap(img, convolve=True)
         """
-        kwarg = {key: getattr(self, key) for key in ["xc", "yc", "Ic"]}
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
+        kwarg = self._getpars(["xc", "yc", "Ic"])
 
         mgrid = self._evaluate(img, **kwarg)
 

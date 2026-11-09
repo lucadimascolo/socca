@@ -2,7 +2,6 @@
 
 from functools import partial
 import inspect
-import types
 
 import warnings
 
@@ -14,7 +13,7 @@ import numpy as np
 
 from ..base import Component
 from ..radial import Sersic
-from ...priors import _BoundTo
+from ...priors import _TIED
 from .vertical import HyperSecantHeight
 
 
@@ -109,16 +108,6 @@ class Disk(Component):
         self.vertical = vertical
 
         self._namespaces = {"radial": self.radial, "vertical": self.vertical}
-
-        if self.radial.id != self.id:
-            type(self).idcls -= 1
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
-            self.vertical.id = self.id
 
         self._rkw = [
             f"r_{key}"
@@ -240,53 +229,17 @@ class Disk(Component):
         >>> img = Image('observation.fits')
         >>> disk_map = disk.getmap(img, convolve=True)
         """
-        kwarg = {}
-        for key in list(inspect.signature(self.profile).parameters.keys()):
-            if key not in ["r", "z"]:
-                if key.startswith("r_"):
-                    val = getattr(self.radial, key.replace("r_", ""))
-                elif key.startswith("z_"):
-                    val = getattr(self.vertical, key.replace("z_", ""))
-                else:
-                    continue
-
-                # Evaluate tied parameters
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [
-                            getattr(self, p.replace(f"{self.id}_", ""))
-                            for p in params
-                        ]
-                        val = val(*args)
-
-                kwarg[key] = val
-
-        # Add geometric parameters
-        kwarg["xc"] = self.radial.xc
-        kwarg["yc"] = self.radial.yc
-        kwarg["theta"] = self.radial.theta
-        kwarg["inc"] = self.vertical.inc
-        kwarg["losdepth"] = self.vertical.losdepth
-        kwarg["losbins"] = self.vertical.losbins
-
-        for key in ["xc", "yc", "theta", "inc", "losdepth", "losbins"]:
-            if isinstance(kwarg[key], _BoundTo):
-                kwarg[key] = kwarg[key].resolve()
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
+        keys = {k: f"radial.{k[2:]}" for k in self._rkw}
+        keys.update({k: f"vertical.{k[2:]}" for k in self._zkw})
+        keys.update(
+            xc="radial.xc",
+            yc="radial.yc",
+            theta="radial.theta",
+            inc="vertical.inc",
+            losdepth="vertical.losdepth",
+            losbins="vertical.losbins",
+        )
+        kwarg = self._getpars(keys)
 
         mgrid = self._evaluate(img, **kwarg)
 
@@ -539,9 +492,7 @@ class Disk(Component):
                     kvalue = None
                 elif isinstance(kvalue, numpyro.distributions.Distribution):
                     kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
+                elif isinstance(kvalue, _TIED):
                     kvalue = "Tied parameter"
                 else:
                     kvalue = f"{kvalue:.4E}"
@@ -576,7 +527,7 @@ class Disk(Component):
                         kvalue = f"Distribution: {kvalue.__class__.__name__}"
                     elif isinstance(
                         kvalue,
-                        (types.LambdaType, types.FunctionType, _BoundTo),
+                        _TIED,
                     ):
                         kvalue = "Tied parameter"
                     else:

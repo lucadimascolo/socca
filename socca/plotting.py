@@ -189,7 +189,7 @@ class Plotter:
             )
 
         component = self.fit.mod._comp_filter(component)
-        component = [f"comp_{ci:02d}" for ci in component]
+        component = [self.fit.mod._prefix[ci] for ci in component]
 
         # Periodic parameters (e.g. a position angle symmetric under
         # theta -> theta + pi) are recentered on their circular mean here,

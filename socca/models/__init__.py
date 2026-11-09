@@ -11,9 +11,9 @@ import numpyro.distributions
 
 from socca.units import conversion_factor as _cfactor
 
-from ..priors import _BoundTo
+from ..priors import _TIED, _Function
 from . import config
-from .base import Component
+from .base import Component, _check_name
 from .misc import Point, Background
 from .disk import Disk
 from .ellipsoid import Ellipsoid
@@ -232,9 +232,10 @@ class Model:
         self.units = {}
         self.periodic = {}
         self.conversions = {}
+        self._prefix = []
 
         if prof is not None:
-            self.addcomponent(prof, positive)
+            self._addcomponent(prof, positive, stacklevel=3)
 
     # Add a new component to the model
     # --------------------------------------------------------
@@ -259,12 +260,16 @@ class Model:
         ------
         ValueError
             If any parameter in the profile is set to None without a valid
-            value or prior distribution.
+            value or prior distribution, if the component is already in the
+            model, or if its id is already used.
 
         Notes
         -----
-        - Parameters are stored with names like 'comp_00_xc', 'comp_01_rc', etc.
-        - Parameters can be fixed values, prior distributions, or tied (functions).
+        - Parameters are stored as '<id>_<parameter>' (e.g. 'comp_00_xc'),
+          where the id is the component's name, or 'comp_NN' from its
+          position in the model. The component's ``id`` is set to it.
+        - Parameters can be fixed values, prior distributions, or tied
+          (socca.priors.function or boundto).
         - Only parameters with prior distributions are considered free parameters
           during fitting.
         - Tied parameters are evaluated as functions of other parameters.
@@ -280,6 +285,26 @@ class Model:
         >>> print(model.ncomp)
         2
         """
+        self._addcomponent(prof, positive, stacklevel=3)
+
+    def _addcomponent(self, prof, positive, stacklevel):
+        """Add a component; see addcomponent()."""
+        if any(c is prof for c in self.components):
+            raise ValueError(
+                f"This {type(prof).__name__} is already in the model."
+            )
+        prefix = prof.name
+        if prefix is None:
+            n = self.ncomp
+            while f"comp_{n:02d}" in self._prefix:
+                n += 1
+            prefix = f"comp_{n:02d}"
+        if prefix in self._prefix:
+            raise ValueError(
+                f"The id '{prefix}' is already used in this model: give "
+                f"this {type(prof).__name__} another name."
+            )
+
         self.type.append(prof.__class__.__name__)
         self.positive.append(prof.positive if positive is None else positive)
         for p in prof.parlist():
@@ -287,11 +312,17 @@ class Model:
 
             if par is None:
                 raise ValueError(
-                    f"Parameter {p} in component {self.ncomp:02d} is set "
+                    f"Parameter {p} in component {prefix} is set "
                     f"to None. Please provide a valid value or prior."
                 )
 
-            if isinstance(par, (types.LambdaType, types.FunctionType)):
+            if isinstance(par, types.FunctionType):
+                warnings.warn(
+                    f"Tying {prefix}_{p} with a lambda is deprecated and "
+                    "will be removed: use socca.priors.function() instead.",
+                    FutureWarning,
+                    stacklevel=stacklevel,
+                )
                 _glb = {
                     name: par.__globals__[name]
                     for name in par.__code__.co_names
@@ -307,19 +338,17 @@ class Model:
                     par.__closure__,
                 )
 
-            self.params.append(f"comp_{self.ncomp:02d}_{p}")
-            self.priors.update({f"comp_{self.ncomp:02d}_{p}": par})
+            self.params.append(f"{prefix}_{p}")
+            self.priors.update({f"{prefix}_{p}": par})
             if isinstance(par, numpyro.distributions.Distribution):
                 self.paridx.append(len(self.params) - 1)
 
-            if isinstance(
-                par, (types.LambdaType, types.FunctionType, _BoundTo)
-            ):
+            if isinstance(par, _TIED):
                 self.tied.append(True)
             else:
                 self.tied.append(False)
 
-            key = f"comp_{self.ncomp:02d}_{p}"
+            key = f"{prefix}_{p}"
             native_unit = prof.units[p]
             input_unit = prof._input_units.get(p, native_unit)
             if input_unit != native_unit:
@@ -329,6 +358,8 @@ class Model:
                 self.periodic[key] = prof.periodic[p]
 
         self.components.append(prof)
+        self._prefix.append(prefix)
+        prof.id = prefix
         self.ncomp += 1
 
     def parameters(self, freeonly=False):
@@ -397,9 +428,7 @@ class Model:
                     keyval = None
                 elif isinstance(par, numpyro.distributions.Distribution):
                     keyval = f"Distribution: {par.__class__.__name__}"
-                elif isinstance(
-                    par, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
+                elif isinstance(par, _TIED):
                     keyval = "Tied parameter"
                 else:
                     keyval = f"{par:.4E}"
@@ -468,27 +497,15 @@ class Model:
         """
         pars = {}
         for ki, key in enumerate(self.params):
-            if isinstance(self.priors[key], (float, int)):
-                pars[key] = self.priors[key]
-            elif isinstance(
+            if isinstance(
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 raise ValueError(
                     f"Parameter {key} is a distribution. "
                     f"Use getmap() with sampled values instead."
                 )
-
-        for ki, key in enumerate(self.params):
-            if self.tied[ki]:
-                if isinstance(self.priors[key], _BoundTo):
-                    pars[key] = pars[self.priors[key].key]
-                else:
-                    kwarg = list(
-                        inspect.signature(self.priors[key]).parameters.keys()
-                    )
-                    kwarg = {k: pars[k] for k in kwarg}
-                    pars[key] = self.priors[key](**kwarg)
-                    del kwarg
+            elif not self.tied[ki]:
+                pars[key] = self.priors[key]
 
         mraw, msmo, mbkg, _ = self.getmodel(
             img, pars, doresp=False, doexp=False
@@ -507,63 +524,113 @@ class Model:
                 )
             return mraw
 
+    def _keyof(self, comp, attr):
+        """Return the model key of a component object's parameter."""
+        for c, prefix in zip(self.components, self._prefix):
+            if c is comp:
+                return f"{prefix}_{attr}"
+            for name, sub in getattr(c, "_namespaces", {}).items():
+                if sub is comp:
+                    return f"{prefix}_{name}.{attr}"
+        raise ValueError(
+            f"A tie refers to a {type(comp).__name__} that is not in this "
+            "model."
+        )
+
+    def _tieargs(self, key):
+        """Return the model keys a tied parameter depends on."""
+        tie = self.priors[key]
+        if isinstance(tie, _Function):
+            return [self._keyof(comp, name) for comp, name in tie.sources]
+        args = []
+        for name in inspect.signature(tie).parameters:
+            match = [
+                k for k in self.params if name in (k, k.replace(".", "_"))
+            ]
+            if not match:
+                raise KeyError(
+                    f"Tie argument '{name}' of {key} matches no parameter "
+                    "of this model."
+                )
+            args.append(match[0])
+        return args
+
+    def _resolve_ties(self, pars):
+        """Evaluate tied parameters in dependency order, in place."""
+        deps = {
+            key: self._tieargs(key)
+            for key, tied in zip(self.params, self.tied)
+            if tied
+        }
+        done = set()
+
+        def resolve(key, chain):
+            if key in done:
+                return
+            if key in chain:
+                raise ValueError(
+                    "Circular tie: " + " -> ".join(chain + [key]) + "."
+                )
+            for dep in deps[key]:
+                if dep in deps:
+                    resolve(dep, chain + [key])
+            pars[key] = self.priors[key](*[pars[dep] for dep in deps[key]])
+            done.add(key)
+
+        for key in deps:
+            resolve(key, [])
+
     def _comp_filter(self, component=None):
         """
-        Parse component identifiers into a list of integer indices.
-
-        This internal method normalizes various component identifier formats
-        into a consistent list of integer indices for use in model
-        computation and filtering.
+        Parse component selections into a list of model positions.
 
         Parameters
         ----------
-        component : None, str, int, list, or Profile, optional
-            Component identifier(s) to parse. Can be:
-
-            - None: returns all component indices [0, 1, 2, ...]
-            - str: parsed to integer (e.g., 'comp_00' -> [0])
-            - int: returned as single-element list (e.g., 0 -> [0])
-            - list: each element converted individually (can mix types)
-            - Profile object with `id` attribute: converted using the id
+        component : None, int, str, Component, or list of these, optional
+            None selects every component. An int is a position in the
+            model, a str an id (e.g. 'comp_01' or a name), and a
+            component object is found by identity.
 
         Returns
         -------
         list of int
-            List of component indices.
+            Positions of the selected components.
+
+        Raises
+        ------
+        ValueError
+            If a selection matches no component of the model.
 
         Examples
         --------
-        >>> model._comp_filter(None)  # All components
+        >>> model._comp_filter(None)
         [0, 1, 2]
-        >>> model._comp_filter(0)  # Single index
-        [0]
-        >>> model._comp_filter([0, 2])  # Multiple indices
+        >>> model._comp_filter([0, "comp_02"])
         [0, 2]
-        >>> model._comp_filter('comp_01')  # String format
-        [1]
         """
         if component is None:
-            component = [int(ci) for ci in range(self.ncomp)]
-        elif isinstance(component, int):
+            return list(range(self.ncomp))
+        if not isinstance(component, (list, tuple)):
             component = [component]
-        elif isinstance(component, str):
-            component = component.replace("comp", "").replace("_", "")
-            component = [int(component)]
-        elif isinstance(component, (list, tuple)):
-            component_ = []
-            for c in component:
-                if isinstance(c, int):
-                    component_.append(c)
-                elif isinstance(c, str):
-                    c_ = c.replace("comp", "").replace("_", "")
-                    component_.append(int(c_))
-                elif hasattr(c, "id"):
-                    c_ = c.id.replace("comp", "").replace("_", "")
-                    component_.append(int(c_))
-                    del c_
-            component = component_
-            del component_
-        return component
+        positions = []
+        for c in component:
+            if isinstance(c, (int, np.integer)) and not isinstance(c, bool):
+                if not 0 <= c < self.ncomp:
+                    raise ValueError(f"No component at position {c}.")
+                positions.append(int(c))
+            elif isinstance(c, str):
+                cid = _check_name(c)
+                if cid not in self._prefix:
+                    raise ValueError(f"No component with id '{c}'.")
+                positions.append(self._prefix.index(cid))
+            else:
+                match = [i for i, m in enumerate(self.components) if m is c]
+                if not match:
+                    raise ValueError(
+                        f"This {type(c).__name__} is not in the model."
+                    )
+                positions.append(match[0])
+        return positions
 
     # Get the model map
     # --------------------------------------------------------
@@ -634,28 +701,18 @@ class Model:
         """
         pars = {}
         for ki, key in enumerate(self.params):
-            if isinstance(self.priors[key], (float, int)):
-                pars[key] = self.priors[key]
-            elif isinstance(
+            if isinstance(
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 pars[key], pp = pp[0], pp[1:]
+            elif not self.tied[ki]:
+                pars[key] = self.priors[key]
 
         for key, factor in self.conversions.items():
             if key in pars:
                 pars[key] = pars[key] * factor
 
-        for ki, key in enumerate(self.params):
-            if self.tied[ki]:
-                if isinstance(self.priors[key], _BoundTo):
-                    pars[key] = pars[self.priors[key].key]
-                else:
-                    kwarg = list(
-                        inspect.signature(self.priors[key]).parameters.keys()
-                    )
-                    kwarg = {k: pars[k] for k in kwarg}
-                    pars[key] = self.priors[key](**kwarg)
-                    del kwarg
+        self._resolve_ties(pars)
 
         mbkg = jp.zeros(img.data.shape)
         mraw = jp.zeros(img.data.shape)
@@ -666,7 +723,7 @@ class Model:
         comp_ = self._comp_filter(component)
 
         for nc in comp_:
-            kwarg = self.components[nc]._build_kwargs(pars, f"comp_{nc:02d}")
+            kwarg = self.components[nc]._build_kwargs(pars, self._prefix[nc])
             mone = self.components[nc]._evaluate(img, **kwarg)
 
             if self.positive[nc] and self.type[nc] != "Point":
@@ -722,6 +779,3 @@ class Model:
         msmo = msmo + mbkg
 
         return mraw, msmo, mbkg, mneg
-
-
-Component.idcls = 0

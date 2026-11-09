@@ -6,7 +6,6 @@ such as intracluster bridges and filaments connecting galaxy clusters.
 
 from functools import partial
 import inspect
-import types
 
 import warnings
 
@@ -20,7 +19,7 @@ from ..base import Component, _warn_range, _warn_span
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
-from ...priors import _BoundTo
+from ...priors import _TIED, _Function, function
 
 
 class Bridge(Component):
@@ -163,30 +162,13 @@ class Bridge(Component):
                 delattr(self.parallel, bkey)
             self.parallel.units.pop(pname, None)
 
-        if self.radial.id != self.id:
-            type(self).idcls -= 1
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
-
         for attr in [self.parallel, self.radial]:
             attr.addparameter(attr._scale_amp, 1.00)
 
-        self.parallel.addparameter(
-            self.parallel._scale_radius,
-            eval(f"lambda {self.id}_rs: {self.id}_rs"),
-        )
-
-        self.radial.addparameter(
-            self.radial._scale_radius,
-            eval(
-                f"lambda {self.id}_rs, {self.id}_e: "
-                f"{self.id}_rs * (1.00 - {self.id}_e)"
-            ),
-        )
+        self.parallel.addparameter(self.parallel._scale_radius)
+        self.radial.addparameter(self.radial._scale_radius)
+        self._scale_ties()
+        self._namespaces = {"radial": self.radial, "parallel": self.parallel}
 
         self._rkw = [
             f"r_{key}"
@@ -319,49 +301,10 @@ class Bridge(Component):
         The model is computed by evaluating the combined radial and parallel
         profiles on a rotated coordinate grid centered on the bridge position.
         """
-        kwarg = {}
-        for key in list(inspect.signature(self.profile).parameters.keys()):
-            if key not in ["r", "z"]:
-                if key.startswith("r_"):
-                    val = getattr(self.radial, key.replace("r_", ""))
-                elif key.startswith("z_"):
-                    val = getattr(self.parallel, key.replace("z_", ""))
-                else:
-                    continue
-
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [
-                            getattr(self, p.replace(f"{self.id}_", ""))
-                            for p in params
-                        ]
-                        val = val(*args)
-
-                kwarg[key] = val
-
-        kwarg["xc"] = self.xc
-        kwarg["yc"] = self.yc
-        kwarg["Is"] = self.Is
-        kwarg["theta"] = self.theta
-
-        for key in ["xc", "yc", "Is", "theta"]:
-            if isinstance(kwarg[key], _BoundTo):
-                kwarg[key] = kwarg[key].resolve()
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
+        keys = {k: f"radial.{k[2:]}" for k in self._rkw}
+        keys.update({k: f"parallel.{k[2:]}" for k in self._zkw})
+        keys.update({k: k for k in ["xc", "yc", "Is", "theta"]})
+        kwarg = self._getpars(keys)
 
         mgrid = self._evaluate(img, **kwarg)
 
@@ -416,6 +359,28 @@ class Bridge(Component):
 
         return rgrid, zgrid
 
+    def _scale_ties(self):
+        """Tie the sub-profiles' scale radii to rs and e."""
+        setattr(
+            self.parallel,
+            self.parallel._scale_radius,
+            function(lambda rs: rs, (self, "rs")),
+        )
+        setattr(
+            self.radial,
+            self.radial._scale_radius,
+            function(lambda rs, e: rs * (1.00 - e), (self, "rs"), (self, "e")),
+        )
+
+    @staticmethod
+    def _internal(value, pars, comp_prefix):
+        """Evaluate an internal scale-radius tie on the model parameters."""
+        if not isinstance(value, _Function):
+            return value
+        return value(
+            *[pars[f"{comp_prefix}_{name}"] for _, name in value.sources]
+        )
+
     def _build_kwargs(self, pars, comp_prefix):
         """
         Build keyword arguments for _evaluate from the full parameters dict.
@@ -440,16 +405,9 @@ class Bridge(Component):
             if pars_key in pars:
                 kwarg[key] = pars[pars_key]
             else:
-                val = getattr(self.radial, attr_name)
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [pars[p] for p in params]
-                        val = val(*args)
-                kwarg[key] = val
+                kwarg[key] = self._internal(
+                    getattr(self.radial, attr_name), pars, comp_prefix
+                )
 
         for key in self._zkw:
             attr_name = key.replace("z_", "")
@@ -457,16 +415,9 @@ class Bridge(Component):
             if pars_key in pars:
                 kwarg[key] = pars[pars_key]
             else:
-                val = getattr(self.parallel, attr_name)
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [pars[p] for p in params]
-                        val = val(*args)
-                kwarg[key] = val
+                kwarg[key] = self._internal(
+                    getattr(self.parallel, attr_name), pars, comp_prefix
+                )
 
         kwarg["xc"] = pars[f"{comp_prefix}_xc"]
         kwarg["yc"] = pars[f"{comp_prefix}_yc"]
@@ -541,9 +492,7 @@ class Bridge(Component):
                     kvalue = None
                 elif isinstance(kvalue, numpyro.distributions.Distribution):
                     kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
+                elif isinstance(kvalue, _TIED):
                     kvalue = "Tied parameter"
                 else:
                     kvalue = f"{kvalue:.4E}"

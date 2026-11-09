@@ -3,7 +3,6 @@
 from abc import abstractmethod
 from functools import partial
 import inspect
-import types
 import warnings
 
 import jax
@@ -13,7 +12,7 @@ import numpyro.distributions
 from .. import config
 from ..base import Component
 from ..base import _warn_span
-from ...priors import _BoundTo
+from ...priors import _TIED
 from .truncation import Truncation, HyperTangent
 
 
@@ -151,9 +150,7 @@ class Profile(Component):
 
     @e.setter
     def e(self, value):  # noqa: D102
-        if value is None or isinstance(
-            value, (types.LambdaType, types.FunctionType, _BoundTo)
-        ):
+        if value is None or isinstance(value, _TIED):
             self._e = value
             return
 
@@ -250,31 +247,7 @@ class Profile(Component):
         if self.truncation is not None:
             _keys += ["rt", "wt"]
 
-        kwarg = {key: getattr(self, key) for key in _keys if key != "r"}
-
-        for key, val in kwarg.items():
-            if isinstance(val, _BoundTo):
-                kwarg[key] = val.resolve()
-            elif callable(val):
-                sig = inspect.signature(val)
-                params = list(sig.parameters.keys())
-                if params:
-                    args = [
-                        getattr(self, p.replace(f"{self.id}_", ""))
-                        for p in params
-                    ]
-                    kwarg[key] = val(*args)
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
+        kwarg = self._getpars([key for key in _keys if key != "r"])
 
         mgrid = self._evaluate(img, **kwarg)
 

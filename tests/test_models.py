@@ -160,12 +160,6 @@ class TestModelGetmodel:
 class TestComponent:
     """Tests for Component base class."""
 
-    def test_unique_id(self):
-        """Test that components get unique IDs."""
-        comp1 = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5)
-        comp2 = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5)
-        assert comp1.id != comp2.id
-
     def test_parlist(self):
         """Test parlist returns parameter names."""
         beta = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0, beta=0.5)
@@ -521,11 +515,6 @@ class TestTopHat:
 class TestSimpleBridge:
     """Tests for SimpleBridge model."""
 
-    @pytest.fixture(autouse=True)
-    def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
-
     def test_initialization(self):
         """Test SimpleBridge default initialization."""
         bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
@@ -587,11 +576,6 @@ class TestSimpleBridge:
 class TestMesaBridge:
     """Tests for MesaBridge model."""
 
-    @pytest.fixture(autouse=True)
-    def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
-
     def test_initialization(self):
         """Test MesaBridge default initialization."""
         bridge = models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
@@ -626,11 +610,6 @@ class TestMesaBridge:
 
 class TestDisk:
     """Tests for Disk model."""
-
-    @pytest.fixture(autouse=True)
-    def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
 
     def test_default_initialization(self):
         """Test Disk default initialization."""
@@ -674,11 +653,6 @@ class TestDisk:
 
 class TestEllipsoid:
     """Tests for Ellipsoid model."""
-
-    @pytest.fixture(autouse=True)
-    def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
 
     def test_default_initialization(self):
         """Test Ellipsoid default initialization."""
@@ -866,11 +840,6 @@ class TestEllipsoid:
 
 class TestBuildKwargsEvaluate:
     """Tests for _build_kwargs and _evaluate methods."""
-
-    @pytest.fixture(autouse=True)
-    def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
 
     @pytest.fixture
     def simple_img(self, simple_hdu, gaussian_psf):
@@ -1098,11 +1067,6 @@ class TestBuildKwargsEvaluate:
 class TestGetmodelWithBridge:
     """Tests for Model.getmodel with Bridge components."""
 
-    @pytest.fixture(autouse=True)
-    def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
-
     @pytest.fixture
     def bridge_model_and_image(self, simple_hdu, gaussian_psf):
         """Create a Bridge model and image for testing."""
@@ -1142,11 +1106,6 @@ class TestGetmodelWithBridge:
 
 class TestGetmodelWithEllipsoid:
     """Tests for Model.getmodel with Ellipsoid components."""
-
-    @pytest.fixture(autouse=True)
-    def reset_idcls(self):
-        """Reset Component.idcls before each test."""
-        models.Component.idcls = 0
 
     @pytest.fixture
     def ellipsoid_model_and_image(self, simple_hdu, gaussian_psf):
@@ -1228,8 +1187,7 @@ class TestGetmodelWithEllipsoid:
         """Test that Ellipsoid.getmap() called directly resolves boundto() ties.
 
         Regression test: calling a component's own getmap() (not through
-        Model) previously failed to resolve boundto()-tied parameters --
-        see socca/priors.py's _BoundTo.resolve().
+        Model) previously failed to resolve boundto()-tied parameters.
         """
         _, ell, img = disk_and_tied_ellipsoid
         mraw = ell.getmap(img, convolve=False)
@@ -1241,9 +1199,9 @@ class TestGetmodelWithEllipsoid:
     ):
         """Test that the tied xc used by getmap() matches the disk's value."""
         disk, ell, _ = disk_and_tied_ellipsoid
-        assert ell.xc.resolve() == disk.radial.xc
-        assert ell.theta.resolve() == disk.radial.theta
-        assert ell.inc.resolve() == disk.vertical.inc
+        assert ell._resolve("xc") == disk.radial.xc
+        assert ell._resolve("theta") == disk.radial.theta
+        assert ell._resolve("inc") == disk.vertical.inc
 
 
 class TestModelComposition:
@@ -1256,3 +1214,326 @@ class TestModelComposition:
         point = models.Point(xc=180.1, yc=45.1, Ic=100.0)
         mod.addcomponent(point)
         assert mod.ncomp == 2
+
+
+class TestTies:
+    """Tie resolution by object, in dependency order, with cycle checks."""
+
+    @pytest.fixture
+    def img(self, simple_hdu):
+        """Create an Image without PSF."""
+        return data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+    @staticmethod
+    def beta(**kwargs):
+        """Create a fixed Beta profile."""
+        pars = dict(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        pars.update(kwargs)
+        return models.Beta(**pars)
+
+    def test_boundto_follows_object(self, img):
+        """Binding follows the bound object, not its position."""
+        a = self.beta(xc=180.003)
+        b = self.beta()
+        b.xc = priors.boundto(a, "xc")
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        ref = models.Model(self.beta(xc=180.003))
+        ref.addcomponent(self.beta(xc=180.003))
+        np.testing.assert_allclose(mod.getmap(img), ref.getmap(img))
+
+    def test_boundto_order_independent(self, img):
+        """A component may be bound to one added after it."""
+        a = self.beta(xc=180.003)
+        b = self.beta()
+        b.xc = priors.boundto(a, "xc")
+        mod = models.Model(b)
+        mod.addcomponent(a)
+        ref = models.Model(self.beta(xc=180.003))
+        ref.addcomponent(self.beta(xc=180.003))
+        np.testing.assert_allclose(mod.getmap(img), ref.getmap(img))
+
+    def test_boundto_missing_object(self, img):
+        """Binding to a component outside the model raises."""
+        a = self.beta()
+        b = self.beta()
+        b.xc = priors.boundto(a, "xc")
+        mod = models.Model(b)
+        with pytest.raises(ValueError, match="not in this model"):
+            mod.getmap(img)
+
+    def test_boundto_sub_component(self):
+        """Binding accepts a Disk sub-component."""
+        disk = models.Disk(
+            radial=models.Exponential(xc=180.002, yc=45.0, rs=0.005, Is=1.0),
+            vertical=models.disk.vertical.HyperSecantHeight(zs=1e-3, inc=0.5),
+        )
+        b = self.beta()
+        b.xc = priors.boundto(disk.radial, "xc")
+        mod = models.Model(disk)
+        mod.addcomponent(b)
+        pars = {k: v for k, v in mod.priors.items() if not callable(v)}
+        mod._resolve_ties(pars)
+        assert pars["comp_01_xc"] == 180.002
+
+    def test_chained_ties(self):
+        """A tie to a tied parameter resolves regardless of order."""
+        a = self.beta(xc=180.003)
+        b = self.beta()
+        c = self.beta()
+        c.xc = lambda comp_01_xc: comp_01_xc
+        b.xc = priors.boundto(a, "xc")
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        mod.addcomponent(c)
+        pars = {k: v for k, v in mod.priors.items() if not callable(v)}
+        mod._resolve_ties(pars)
+        assert pars["comp_02_xc"] == 180.003
+
+    def test_circular_ties(self, img):
+        """Circular ties raise."""
+        a = self.beta()
+        b = self.beta()
+        a.xc = lambda comp_01_xc: comp_01_xc
+        b.xc = lambda comp_00_xc: comp_00_xc
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        with pytest.raises(ValueError, match="Circular tie"):
+            mod.getmap(img)
+
+    def test_unknown_tie_argument(self, img):
+        """A lambda naming no model parameter raises."""
+        a = self.beta()
+        a.rc = lambda comp_05_rc: comp_05_rc
+        mod = models.Model(a)
+        with pytest.raises(KeyError, match="comp_05_rc"):
+            mod.getmap(img)
+
+    def test_bridge_internal_ties_by_position(self, img):
+        """Bridge internal ties use the model prefix, also at position 1."""
+
+        def bridge():
+            return models.SimpleBridge(
+                xc=180.0, yc=45.0, rs=0.005, Is=1.0, e=0.5, theta=0.0
+            )
+
+        mod = models.Model(self.beta(Ic=0.0))
+        mod.addcomponent(bridge())
+        np.testing.assert_allclose(
+            mod.getmap(img), models.Model(bridge()).getmap(img)
+        )
+        np.testing.assert_allclose(mod.getmap(img), bridge().getmap(img))
+
+    @pytest.mark.parametrize("kind", ["point", "background"])
+    def test_standalone_boundto(self, img, kind):
+        """Standalone getmap resolves boundto on Point and Background."""
+        a = self.beta(xc=180.003)
+        if kind == "point":
+            c = models.Point(xc=180.0, yc=45.0, Ic=1.0)
+            c.xc = priors.boundto(a, "xc")
+            ref = models.Point(xc=180.003, yc=45.0, Ic=1.0)
+        else:
+            c = models.Background(a0=1.0)
+            c.a0 = priors.boundto(a, "Ic")
+            ref = models.Background(a0=1.0)
+        np.testing.assert_allclose(c.getmap(img), ref.getmap(img))
+
+    def test_standalone_own_lambda(self, img):
+        """Standalone getmap resolves lambdas on the component's own pars."""
+        a = self.beta(rc=0.004)
+        models.Model(a)
+        a.Ic = lambda comp_00_rc: comp_00_rc * 250
+        np.testing.assert_allclose(
+            a.getmap(img), self.beta(rc=0.004, Ic=1.0).getmap(img)
+        )
+
+    def test_standalone_disk_lambda(self, img):
+        """Standalone Disk getmap resolves namespaced lambda arguments."""
+
+        def disk(**kwargs):
+            radial = models.Exponential(xc=180.0, yc=45.0, rs=0.005, Is=1.0)
+            vertical = models.disk.vertical.HyperSecantHeight(zs=1e-3, inc=0.5)
+            for key, value in kwargs.items():
+                setattr(radial, key, value)
+            return models.Disk(radial=radial, vertical=vertical)
+
+        d = disk()
+        models.Model(d)
+        d.radial.Is = lambda comp_00_radial_rs: comp_00_radial_rs * 200
+        np.testing.assert_allclose(d.getmap(img), disk().getmap(img))
+
+    def test_standalone_foreign_lambda(self, img):
+        """Standalone getmap raises clearly on another component's names."""
+        a = self.beta()
+        a.xc = lambda comp_99_xc: comp_99_xc
+        with pytest.raises(ValueError, match="function"):
+            a.getmap(img)
+        models.Model(a)
+        with pytest.raises(ValueError, match="Model.getmap"):
+            a.getmap(img)
+
+    def test_standalone_circular(self, img):
+        """Standalone circular boundto raises."""
+        a = self.beta()
+        b = self.beta()
+        a.xc = priors.boundto(b, "xc")
+        b.xc = priors.boundto(a, "xc")
+        with pytest.raises(ValueError, match="Circular tie"):
+            a.getmap(img)
+
+    def test_function_in_model(self, img):
+        """function() with several sources resolves through a Model."""
+        a = self.beta(rc=0.004)
+        b = self.beta()
+        b.addparameter("scale", 0.5)
+        b.rc = priors.function(lambda s, r: s * r, (b, "scale"), (a, "rc"))
+        mod = models.Model(b)
+        mod.addcomponent(a)
+        ref = models.Model(self.beta(rc=0.002))
+        ref.addcomponent(self.beta(rc=0.004))
+        np.testing.assert_allclose(mod.getmap(img), ref.getmap(img))
+        np.testing.assert_allclose(
+            b.getmap(img), self.beta(rc=0.002).getmap(img)
+        )
+
+    def test_function_cycle(self, img):
+        """Circular function() ties raise."""
+        a = self.beta()
+        b = self.beta()
+        a.rc = priors.function(lambda r: 2 * r, (b, "rc"))
+        b.rc = priors.function(lambda r: 2 * r, (a, "rc"))
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        with pytest.raises(ValueError, match="Circular tie"):
+            mod.getmap(img)
+
+
+class TestIds:
+    """Component ids from model positions or names."""
+
+    @staticmethod
+    def beta(**kwargs):
+        """Create a fixed Beta profile."""
+        pars = dict(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        pars.update(kwargs)
+        return models.Beta(**pars)
+
+    def test_positions_ignore_other_components(self):
+        """Unused components and wrappers do not shift the numbering."""
+        models.Beta()
+        disk = models.Disk(
+            radial=models.Exponential(xc=180.0, yc=45.0, rs=0.005, Is=1.0),
+            vertical=models.disk.vertical.HyperSecantHeight(zs=1e-3, inc=0.5),
+        )
+        a = self.beta()
+        mod = models.Model(disk)
+        mod.addcomponent(a)
+        assert (disk.id, a.id) == ("comp_00", "comp_01")
+        assert "comp_00_radial.xc" in mod.params
+        assert "comp_01_xc" in mod.params
+        assert disk.radial.id is None
+
+    @pytest.mark.parametrize(
+        "name, cid",
+        [
+            ("core", "core"),
+            (3, "comp_03"),
+            ("comp_3", "comp_03"),
+            (12, "comp_12"),
+        ],
+    )
+    def test_names(self, name, cid):
+        """Names are used as ids; numbers act as positions."""
+        a = self.beta(name=name)
+        mod = models.Model(a)
+        assert a.id == cid
+        assert f"{cid}_xc" in mod.params
+
+    @pytest.mark.parametrize("name", ["1core", "a.b", "lambda", -1, 1.5, True])
+    def test_invalid_names(self, name):
+        """Names that cannot be used in keys raise."""
+        with pytest.raises(ValueError, match="Invalid component name"):
+            self.beta(name=name)
+
+    def test_name_collision(self):
+        """A name or number already used in the model raises."""
+        mod = models.Model(self.beta())
+        with pytest.raises(ValueError, match="'comp_00' is already used"):
+            mod.addcomponent(self.beta(name=0))
+        mod.addcomponent(self.beta(name="core"))
+        with pytest.raises(ValueError, match="'core' is already used"):
+            mod.addcomponent(self.beta(name="core"))
+        assert mod.ncomp == 2
+
+    def test_named_then_positional(self):
+        """Unnamed components keep their position after named ones."""
+        a = self.beta(name="core")
+        b = self.beta()
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        assert b.id == "comp_01"
+
+    def test_positional_skips_numbered_name(self):
+        """An unnamed component skips an id already taken by a number."""
+        mod = models.Model(self.beta(name=1))
+        b = self.beta()
+        mod.addcomponent(b)
+        assert b.id == "comp_02"
+
+    def test_same_object_twice(self):
+        """Adding the same object twice raises."""
+        a = self.beta()
+        mod = models.Model(a)
+        with pytest.raises(ValueError, match="already in the model"):
+            mod.addcomponent(a)
+
+    def test_second_model(self):
+        """A component in a second model takes that model's id."""
+        a = self.beta()
+        first = models.Model(a)
+        second = models.Model(self.beta())
+        second.addcomponent(a)
+        assert a.id == "comp_01"
+        assert first._prefix == ["comp_00"]
+
+    def test_comp_filter(self):
+        """Selections by position, id, name and object."""
+        a, b, c = self.beta(), self.beta(name="core"), self.beta()
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        mod.addcomponent(c)
+        assert mod._comp_filter(None) == [0, 1, 2]
+        assert mod._comp_filter([2, "core", "comp_00", b]) == [2, 1, 0, 1]
+        assert mod._comp_filter(np.int64(1)) == [1]
+        for bad in [3, "comp_05", self.beta()]:
+            with pytest.raises(ValueError):
+                mod._comp_filter(bad)
+
+    def test_lambda_warns(self):
+        """Lambda ties warn; function and boundto do not."""
+        a = self.beta()
+        a.Ic = lambda comp_00_rc: comp_00_rc
+        with pytest.warns(FutureWarning, match="priors.function"):
+            models.Model(a)
+        b = self.beta()
+        b.Ic = priors.function(lambda r: r, (b, "rc"))
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            models.Model(b)
+
+    @pytest.mark.parametrize(
+        "value", [np.float32(0.004), np.float64(0.004), jp.asarray(0.004)]
+    )
+    def test_fixed_value_types(self, simple_hdu, value):
+        """Fixed values of any numeric type enter the model."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        a = self.beta(rc=value)
+        b = self.beta()
+        b.rc = priors.boundto(a, "rc")
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        ref = models.Model(self.beta(rc=0.004))
+        ref.addcomponent(self.beta(rc=0.004))
+        np.testing.assert_allclose(mod.getmap(img), ref.getmap(img), rtol=1e-6)
