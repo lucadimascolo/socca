@@ -10,7 +10,7 @@ import jax.numpy as jp
 
 
 from .. import config
-from ..base import Component, _warn_range
+from ..base import Component, _subkeys, _warn_range
 from ..radial import Sersic
 
 
@@ -18,15 +18,17 @@ class Ellipsoid(Component):
     """
     3D triaxial-ellipsoid model evaluated via line-of-sight integration.
 
-    Projects an ellipsoidal Sersic-like density onto the sky by integrating
+    Projects an ellipsoidal density onto the sky by integrating
     along the line of sight, in the same spirit as Disk but using a single
     radial profile for shape rather than separate radial/vertical profiles.
     A common use case is modeling a galactic bar embedded within a host
     Disk, with its position, position angle, and inclination tied to the
     disk's via boundto() -- see the Examples below and
     socca.priors.boundto(). xc, yc, theta, e, eratio, inc, rot, losdepth,
-    and losbins live directly on Ellipsoid; radial only supplies the
-    brightness-shape parameters (re, Ie, ns for Sersic).
+    and losbins live directly on Ellipsoid; radial supplies the density
+    profile, evaluated on the ellipsoidal radius
+    sqrt(x^2 + (y / (1 - e))^2 + (z / (1 - eratio * e))^2), and its shape
+    parameters (e.g. re, Ie, ns for Sersic).
 
     The ellipsoid has one major semi-axis (along x) and two minor
     semi-axes (along y and z), which need not be equal: e sets the
@@ -38,11 +40,12 @@ class Ellipsoid(Component):
     Parameters
     ----------
     radial : Profile, optional
-        Profile defining the ellipsoid's brightness-shape parameters (re,
-        Ie, ns for Sersic). Default is Sersic(). Any xc/yc/theta/e already
-        set on it are inherited by Ellipsoid unless also passed as an
-        Ellipsoid keyword argument, in which case Ellipsoid's value wins
-        and a warning is raised.
+        Radial profile defining the ellipsoid's density and its shape
+        parameters (e.g. re, Ie, ns for Sersic). Any radial profile can be
+        used, with its truncation if any. Default is Sersic(). Any
+        xc/yc/theta/e already set on it are inherited by Ellipsoid unless
+        also passed as an Ellipsoid keyword argument, in which case
+        Ellipsoid's value wins and a warning is raised.
     xc, yc : float, optional
         Right ascension and declination of the ellipsoid centroid (deg).
     theta : float, optional
@@ -144,6 +147,7 @@ class Ellipsoid(Component):
             self.radial.description.pop(key, None)
 
         self._namespaces = {"radial": self.radial}
+        self._wrap()
 
         self.eratio = kwargs.get("eratio", config.Ellipsoid.eratio)
         self.inc = kwargs.get("inc", config.Ellipsoid.inc)
@@ -154,8 +158,6 @@ class Ellipsoid(Component):
         for param in ["losdepth", "losbins"]:
             if param not in self.hyper:
                 self.hyper.append(param)
-
-        self.profile = jax.jit(Ellipsoid._ellipsoid_profile)
 
         self.units.update(
             {
@@ -299,6 +301,8 @@ class Ellipsoid(Component):
             for key in inspect.signature(self.radial.profile).parameters
             if key != "r"
         }
+        if self.radial.truncation is not None:
+            keys.update(rt="radial.rt", wt="radial.wt")
         keys.update(
             {
                 key: key
@@ -347,10 +351,11 @@ class Ellipsoid(Component):
             losbins.
         """
         # radial profile shape parameters (re, Ie, ns)
+        keys = {key[2:] for key in _subkeys(self.radial, "r")}
         kwarg = {
-            key.replace(f"{comp_prefix}_radial.", ""): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_radial.")
+            key: pars[f"{comp_prefix}_radial.{key}"]
+            for key in keys
+            if f"{comp_prefix}_radial.{key}" in pars
         }
         # Ellipsoid's own position, orientation, and 3D geometry
         for key in [
@@ -367,13 +372,13 @@ class Ellipsoid(Component):
             kwarg[key] = pars[f"{comp_prefix}_{key}"]
         return kwarg
 
-    @staticmethod
-    def _ellipsoid_profile(xt, yt, zt, Ie, re, e, eratio, ns):
-        """Evaluate a triaxial-ellipsoid Sersic-like density on a 3D grid."""
-        rs1 = re * (1 - e)
-        rs2 = re * (1 - eratio * e)
-        m = jp.sqrt((xt / re) ** 2 + (yt / rs1) ** 2 + (zt / rs2) ** 2)
-        return Sersic.profile(m, Ie, 1.0, ns)
+    def profile(self, xt, yt, zt, e, eratio, rt=None, wt=None, **kw):
+        """Evaluate the radial profile on the ellipsoidal radius."""
+        r = jp.sqrt(xt**2 + (yt / (1 - e)) ** 2 + (zt / (1 - eratio * e)) ** 2)
+        mgrid = self.radial.profile(r, **kw)
+        if rt is not None:
+            mgrid = mgrid * self.radial.truncation.profile(r, rt, wt)
+        return mgrid
 
     def _evaluate(self, img, **kwarg):
         """

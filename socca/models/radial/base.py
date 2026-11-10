@@ -124,6 +124,8 @@ class Profile(Component):
             if hasattr(self, "wt"):
                 self.removeparameter("wt")
         self._truncation = value
+        if self._wrapper is not None:
+            self._wrapper._retruncate(self)
 
     @property
     def theta(self):  # noqa: D102
@@ -464,4 +466,16 @@ class CustomProfile(Profile):
                 {p["name"]: p.get("description", "No description provided")}
             )
 
+        self._function = profile
         self.profile = jax.jit(profile)
+
+    def __getstate__(self):
+        """Drop the compiled profile, rebuilt on unpickling."""
+        state = self.__dict__.copy()
+        state.pop("profile", None)
+        return state
+
+    def __setstate__(self, state):
+        """Restore state and recompile the profile."""
+        self.__dict__.update(state)
+        self.__dict__["profile"] = jax.jit(self._function)

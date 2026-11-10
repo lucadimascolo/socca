@@ -208,6 +208,32 @@ def _check_name(name):
     return f"comp_{number:02d}"
 
 
+def _subkeys(prof, prefix):
+    """Prefixed keyword names of a wrapped sub-profile, truncation included."""
+    keys = [
+        f"{prefix}_{key}"
+        for key in inspect.signature(prof.profile).parameters
+        if key not in ["r", "z"]
+    ]
+    if getattr(prof, "truncation", None) is not None:
+        keys += [f"{prefix}_rt", f"{prefix}_wt"]
+    return keys
+
+
+def _subprofile(prof, x, kw, prefix):
+    """Evaluate a wrapped sub-profile on its prefixed keywords."""
+    pars = {
+        key[len(prefix) + 1 :]: val
+        for key, val in kw.items()
+        if key.startswith(f"{prefix}_")
+    }
+    rt, wt = pars.pop("rt", None), pars.pop("wt", None)
+    out = prof.profile(x, **pars)
+    if rt is not None:
+        out = out * prof.truncation.profile(x, rt, wt)
+    return out
+
+
 class Component:
     """
     Base class for all model components.
@@ -239,6 +265,7 @@ class Component:
 
     id = None
     name = None
+    _wrapper = None
 
     def __init__(self, **kwargs):
         """
@@ -267,6 +294,24 @@ class Component:
         self.description = {}
         self.periodic = {}
         self._initialized = False
+
+    def _wrap(self):
+        """Mark the sub-profiles as wrapped by this component."""
+        for sub in self._namespaces.values():
+            sub._wrapper = self
+
+    def _retruncate(self, sub):
+        """Follow a truncation added to or removed from a sub-profile."""
+        for name, prof in self._namespaces.items():
+            if prof is not sub:
+                continue
+            for key in ["rt", "wt"]:
+                if key in sub.units:
+                    self.units[f"{name}.{key}"] = sub.units[key]
+                    self.description[f"{name}.{key}"] = sub.description[key]
+                else:
+                    self.units.pop(f"{name}.{key}", None)
+                    self.description.pop(f"{name}.{key}", None)
 
     def __setattr__(self, name, value):
         """Prevent adding undefined attributes after initialization."""

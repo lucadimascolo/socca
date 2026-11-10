@@ -1,5 +1,8 @@
 """Tests for socca.models module."""
 
+import copy
+import pickle
+
 import jax.numpy as jp
 import numpy as np
 import numpyro.distributions
@@ -841,8 +844,8 @@ class TestEllipsoid:
     def test_profile_major_axis_surface(self):
         """Test that the profile equals Ie on the major (x) axis surface."""
         re, e, eratio, Ie, ns = 0.001, 0.5, 1.0, 3.0, 1.0
-        val = models.Ellipsoid._ellipsoid_profile(
-            re, 0.0, 0.0, Ie, re, e, eratio, ns
+        val = models.Ellipsoid().profile(
+            re, 0.0, 0.0, e=e, eratio=eratio, Ie=Ie, re=re, ns=ns
         )
         assert float(val) == pytest.approx(Ie, rel=1e-3)
 
@@ -850,8 +853,8 @@ class TestEllipsoid:
         """Test that the profile equals Ie on the first minor (y) axis surface."""
         re, e, eratio, Ie, ns = 0.001, 0.5, 1.0, 3.0, 1.0
         rs1 = re * (1 - e)
-        val = models.Ellipsoid._ellipsoid_profile(
-            0.0, rs1, 0.0, Ie, re, e, eratio, ns
+        val = models.Ellipsoid().profile(
+            0.0, rs1, 0.0, e=e, eratio=eratio, Ie=Ie, re=re, ns=ns
         )
         assert float(val) == pytest.approx(Ie, rel=1e-3)
 
@@ -859,8 +862,8 @@ class TestEllipsoid:
         """Test that the profile equals Ie on the eratio-scaled z-axis surface."""
         re, e, eratio, Ie, ns = 0.001, 0.6, 0.5, 3.0, 1.0
         rs2 = re * (1 - eratio * e)
-        val = models.Ellipsoid._ellipsoid_profile(
-            0.0, 0.0, rs2, Ie, re, e, eratio, ns
+        val = models.Ellipsoid().profile(
+            0.0, 0.0, rs2, e=e, eratio=eratio, Ie=Ie, re=re, ns=ns
         )
         assert float(val) == pytest.approx(Ie, rel=1e-3)
 
@@ -1156,6 +1159,19 @@ class TestGetmodelWithEllipsoid:
         ell = models.Ellipsoid(radial=radial, xc=xc, yc=yc, e=0.5, inc=0.3)
         mod = models.Model(ell)
         return mod, img
+
+    def test_radial_extra_parameter(self, simple_hdu):
+        """A parameter added to the radial profile is not passed to it."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        radial = models.Sersic(Ie=1.0, ns=1.0)
+        radial.addparameter("scale", 2.0)
+        radial.re = priors.function(lambda s: s * 0.0025, (radial, "scale"))
+        ell = models.Ellipsoid(
+            radial=radial, xc=180.0, yc=45.0, losdepth=0.005, losbins=51
+        )
+        np.testing.assert_allclose(
+            models.Model(ell).getmap(img), ell.getmap(img)
+        )
 
     def test_getmodel_returns_tuple(self, ellipsoid_model_and_image):
         """Test that getmodel returns 4-tuple with Ellipsoid."""
@@ -1886,3 +1902,174 @@ class TestRefactor:
         prof.addparameter("scale", 0.5, description="A scale")
         new = prof.refactor()
         assert new.scale == 0.5 and new.description["scale"] == "A scale"
+
+
+class TestWrappedProfiles:
+    """Tests for sub-profiles evaluated inside Disk, Ellipsoid and Bridge."""
+
+    @pytest.fixture
+    def img(self, simple_hdu):
+        """Create an image centred on (180, 45)."""
+        return data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+    @staticmethod
+    def _trunc(rt):
+        return models.radial.truncation.HyperTangent(rt=rt, wt=1e-4)
+
+    def test_bridge_profiles_on_absolute_distances(self, img):
+        """Bridge maps are finite and symmetric about the bridge axes."""
+        for radial in [models.Beta(alpha=1.5), models.Exponential()]:
+            bridge = models.SimpleBridge(
+                radial=radial, xc=180.0, yc=45.0, rs=0.005, Is=1.0
+            )
+            mgrid = np.asarray(bridge.getmap(img))
+            assert np.all(np.isfinite(mgrid))
+            assert mgrid.max() <= 1.0 + 1e-12
+            np.testing.assert_allclose(mgrid, mgrid[:, ::-1], rtol=1e-4)
+
+    def test_mesabridge_getmap(self, img):
+        """MesaBridge maps scale with Is."""
+        kw = dict(xc=180.0, yc=45.0, rs=0.005)
+        m1 = models.MesaBridge(Is=1.0, **kw).getmap(img)
+        m2 = models.MesaBridge(Is=2.0, **kw).getmap(img)
+        np.testing.assert_allclose(m2, 2.0 * m1)
+
+    def test_disk_truncation(self, img):
+        """A truncated Disk loses flux; a far truncation changes nothing."""
+
+        def flux(rt):
+            radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+            if rt is not None:
+                radial.truncation = self._trunc(rt)
+            vertical = models.disk.vertical.HyperSecantHeight(zs=5e-4)
+            disk = models.Disk(radial=radial, vertical=vertical)
+            return float(np.sum(disk.getmap(img)))
+
+        assert flux(1e-3) < 0.5 * flux(None)
+        np.testing.assert_allclose(flux(1.0), flux(None), rtol=1e-10)
+
+    def test_bridge_truncation(self, img):
+        """Truncating the parallel profile shortens the bridge."""
+
+        def flux(rt):
+            parallel = models.TopHat()
+            if rt is not None:
+                parallel.truncation = self._trunc(rt)
+            bridge = models.SimpleBridge(
+                parallel=parallel, xc=180.0, yc=45.0, rs=0.01, Is=1.0
+            )
+            return float(np.sum(bridge.getmap(img)))
+
+        assert flux(2e-3) < 0.5 * flux(None)
+        np.testing.assert_allclose(flux(1.0), flux(None), rtol=1e-10)
+
+    def test_ellipsoid_truncation(self, img):
+        """Ellipsoid truncation works on its own and inside a Model."""
+        radial = models.Sersic(re=0.005, Ie=1.0, ns=1.0)
+        radial.truncation = self._trunc(1e-3)
+        ell = models.Ellipsoid(radial=radial, xc=180.0, yc=45.0, e=0.3)
+        full = models.Ellipsoid(
+            radial=models.Sersic(re=0.005, Ie=1.0, ns=1.0),
+            xc=180.0,
+            yc=45.0,
+            e=0.3,
+        )
+        mgrid = ell.getmap(img)
+        assert float(np.sum(mgrid)) < 0.5 * float(np.sum(full.getmap(img)))
+        mraw = models.Model(ell).getmodel(img, [])[0]
+        np.testing.assert_allclose(mraw, mgrid)
+
+    @pytest.mark.parametrize(
+        "radial",
+        [
+            models.Beta(rc=0.005, Ic=1.0),
+            models.Exponential(rs=0.005, Is=1.0),
+            models.gNFW(rc=0.005, Ic=1.0),
+        ],
+        ids=["Beta", "Exponential", "gNFW"],
+    )
+    def test_ellipsoid_any_radial(self, img, radial):
+        """Ellipsoid accepts any radial profile, alone and in a Model."""
+        ell = models.Ellipsoid(radial=radial, xc=180.0, yc=45.0, e=0.3)
+        mgrid = ell.getmap(img)
+        assert np.all(np.isfinite(mgrid)) and float(np.max(mgrid)) > 0
+        mraw = models.Model(ell).getmodel(img, [])[0]
+        np.testing.assert_allclose(mraw, mgrid)
+
+    def test_ellipsoid_sersic_density(self):
+        """The Sersic density matches the ellipsoidal-radius formula."""
+        ell = models.Ellipsoid(
+            radial=models.Sersic(re=0.005, Ie=2.0, ns=1.5), e=0.4, eratio=0.5
+        )
+        rng = np.random.default_rng(0)
+        x, y, z = rng.uniform(-0.01, 0.01, (3, 50))
+        rs1, rs2 = 0.005 * (1 - 0.4), 0.005 * (1 - 0.2)
+        m = np.sqrt((x / 0.005) ** 2 + (y / rs1) ** 2 + (z / rs2) ** 2)
+        expected = models.Sersic.profile(m, 2.0, 1.0, 1.5)
+        got = ell.profile(x, y, z, e=0.4, eratio=0.5, Ie=2.0, re=0.005, ns=1.5)
+        np.testing.assert_allclose(got, expected, rtol=1e-12)
+
+    def test_truncation_set_after_wrapping(self, img):
+        """A truncation added to a wrapped sub-profile is applied."""
+        radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+        vertical = models.disk.vertical.HyperSecantHeight(zs=5e-4)
+        disk = models.Disk(radial=radial, vertical=vertical)
+        full = float(np.sum(disk.getmap(img)))
+        disk.radial.truncation = self._trunc(1e-3)
+        assert float(np.sum(disk.getmap(img))) < 0.5 * full
+        mraw = models.Model(disk).getmodel(img, [])[0]
+        np.testing.assert_allclose(mraw, disk.getmap(img))
+
+        bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+        full = float(np.sum(bridge.getmap(img)))
+        bridge.parallel.truncation = self._trunc(2e-3)
+        assert float(np.sum(bridge.getmap(img))) < 0.5 * full
+        mraw = models.Model(bridge).getmodel(img, [])[0]
+        np.testing.assert_allclose(mraw, bridge.getmap(img))
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda: models.Disk(
+                radial=models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0),
+                vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+            ),
+            lambda: models.Ellipsoid(
+                radial=models.Beta(rc=0.005, Ic=1.0), xc=180.0, yc=45.0
+            ),
+            lambda: models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0),
+            lambda: models.MesaBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0),
+            lambda: models.gNFW(xc=180.0, yc=45.0, rc=0.005, Ic=1.0),
+            lambda: _custom(),
+        ],
+        ids=[
+            "Disk",
+            "Ellipsoid",
+            "SimpleBridge",
+            "MesaBridge",
+            "gNFW",
+            "Custom",
+        ],
+    )
+    def test_pickle_roundtrip(self, img, make):
+        """Components and models pickle and give the same maps."""
+        comp = make()
+        mgrid = comp.getmap(img)
+        np.testing.assert_allclose(
+            pickle.loads(pickle.dumps(comp)).getmap(img), mgrid
+        )
+        np.testing.assert_allclose(copy.deepcopy(comp).getmap(img), mgrid)
+        mod = pickle.loads(pickle.dumps(models.Model(make())))
+        np.testing.assert_allclose(mod.getmodel(img, [])[0], mgrid)
+
+
+def _custom_profile(r, Ic, rc):
+    return Ic * jp.exp(-r / rc)
+
+
+def _custom():
+    prof = models.CustomProfile(
+        [dict(name="Ic"), dict(name="rc")], _custom_profile, xc=180.0, yc=45.0
+    )
+    prof.Ic, prof.rc = 1.0, 0.005
+    return prof

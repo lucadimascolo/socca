@@ -5,7 +5,6 @@ such as intracluster bridges and filaments connecting galaxy clusters.
 """
 
 from functools import partial
-import inspect
 
 import warnings
 
@@ -13,11 +12,15 @@ import jax
 import jax.numpy as jp
 
 
-from ..base import Component, _warn_range
+from ..base import Component, _subkeys, _subprofile, _warn_range
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
-from ...priors import _Function, function
+from ...priors import _Function, _identity, function
+
+
+def _minor(rs, e):
+    return rs * (1.00 - e)
 
 
 class Bridge(Component):
@@ -167,21 +170,7 @@ class Bridge(Component):
         self.radial.addparameter(self.radial._scale_radius)
         self._scale_ties()
         self._namespaces = {"radial": self.radial, "parallel": self.parallel}
-
-        self._rkw = [
-            f"r_{key}"
-            for key in list(
-                inspect.signature(self.radial.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
-        self._zkw = [
-            f"z_{key}"
-            for key in list(
-                inspect.signature(self.parallel.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
+        self._wrap()
 
         for key in self.radial.hyper:
             self.hyper.append(f"radial.{key}")
@@ -223,7 +212,13 @@ class Bridge(Component):
             }
         )
 
-        self.profile = None
+    @property
+    def _rkw(self):
+        return _subkeys(self.radial, "r")
+
+    @property
+    def _zkw(self):
+        return _subkeys(self.parallel, "z")
 
     @property
     def rs(self):  # noqa: D102
@@ -347,15 +342,13 @@ class Bridge(Component):
             grid.y - yc
         ) * sint
 
-        return rgrid, zgrid
+        return jp.abs(rgrid), jp.abs(zgrid)
 
     def _scale_ties(self):
         """Tie the sub-profiles' scale radii to rs and e, in native units."""
         ties = {
-            self.parallel: function(lambda rs: rs, (self, "rs")),
-            self.radial: function(
-                lambda rs, e: rs * (1.00 - e), (self, "rs"), (self, "e")
-            ),
+            self.parallel: function(_identity, (self, "rs")),
+            self.radial: function(_minor, (self, "rs"), (self, "e")),
         }
         for sub, tie in ties.items():
             tie.native = True
@@ -506,18 +499,15 @@ class SimpleBridge(Bridge):
     def __init__(self, radial=None, parallel=None, **kwargs):
         super().__init__(radial=radial, parallel=parallel, **kwargs)
 
-        _profile = [
-            "rfoo.profile(r,{0})".format(",".join(self._rkw)),
-            "zfoo.profile(z,{0})".format(",".join(self._zkw)),
-        ]
-        _profile = "*".join(_profile)
-        _profile = "lambda rfoo,zfoo,r,z,Is,{0},{1}: Is*{2}".format(
-            ",".join(self._rkw), ",".join(self._zkw), _profile
-        )
-        self.profile = jax.jit(
-            partial(eval(_profile), self.radial, self.parallel)
-        )
         self._initialized = True
+
+    def profile(self, r, z, Is, **kw):
+        """Evaluate Is * f_r(r) * f_z(z)."""
+        return (
+            Is
+            * _subprofile(self.radial, r, kw, "r")
+            * _subprofile(self.parallel, z, kw, "z")
+        )
 
 
 class MesaBridge(Bridge):
@@ -592,15 +582,11 @@ class MesaBridge(Bridge):
 
         super().__init__(radial=radial, parallel=parallel, **kwargs)
 
-        _profile = [
-            "1.00/rfoo.profile(r,{0})".format(",".join(self._rkw)),
-            "1.00/zfoo.profile(z,{0})".format(",".join(self._zkw)),
-        ]
-        _profile = "+".join(_profile)
-        _profile = "lambda rfoo,zfoo,r,z,{0},{1}: 1.00/({2})".format(
-            ",".join(self._rkw), ",".join(self._zkw), _profile
-        )
-        self.profile = jax.jit(
-            partial(eval(_profile), self.radial, self.parallel)
-        )
         self._initialized = True
+
+    def profile(self, r, z, Is, **kw):
+        """Evaluate Is / (1 / f_r(r) + 1 / f_z(z))."""
+        return Is / (
+            1.00 / _subprofile(self.radial, r, kw, "r")
+            + 1.00 / _subprofile(self.parallel, z, kw, "z")
+        )

@@ -186,6 +186,12 @@ class gNFW(Profile):
         else:
             self.profile = jax.jit(_profile)
 
+    def __getstate__(self):
+        """Drop the compiled profile and emulator, rebuilt on unpickling."""
+        state = self.__dict__.copy()
+        state.update(profile=None, _emulator_model=None)
+        return state
+
     def __setstate__(self, state):
         """Restore state and rebuild profile from current source."""
         self.__dict__.update(state)

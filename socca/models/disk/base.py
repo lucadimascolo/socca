@@ -1,7 +1,6 @@
 """Disk model with finite thickness."""
 
 from functools import partial
-import inspect
 
 import warnings
 
@@ -9,7 +8,7 @@ import jax
 import jax.numpy as jp
 
 
-from ..base import Component
+from ..base import Component, _subkeys, _subprofile
 from ..radial import Sersic
 from .vertical import HyperSecantHeight
 
@@ -105,34 +104,7 @@ class Disk(Component):
         self.vertical = vertical
 
         self._namespaces = {"radial": self.radial, "vertical": self.vertical}
-
-        self._rkw = [
-            f"r_{key}"
-            for key in list(
-                inspect.signature(self.radial.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
-        self._zkw = [
-            f"z_{key}"
-            for key in list(
-                inspect.signature(self.vertical.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
-
-        _profile = [
-            "rfoo.profile(r,{0})".format(",".join(self._rkw)),
-            "zfoo.profile(z,{0})".format(",".join(self._zkw)),
-        ]
-        _profile = "*".join(_profile)
-        _profile = "lambda rfoo,zfoo,r,z,{0},{1}: {2}".format(
-            ",".join(self._rkw), ",".join(self._zkw), _profile
-        )
-
-        self.profile = jax.jit(
-            partial(eval(_profile), self.radial, self.vertical)
-        )
+        self._wrap()
 
         for key in self.radial.hyper:
             self.hyper.append(f"radial.{key}")
@@ -168,6 +140,20 @@ class Disk(Component):
             }
         )
         self._initialized = True
+
+    @property
+    def _rkw(self):
+        return _subkeys(self.radial, "r")
+
+    @property
+    def _zkw(self):
+        return _subkeys(self.vertical, "z")
+
+    def profile(self, r, z, **kw):
+        """Evaluate the density radial(r) * vertical(z)."""
+        return _subprofile(self.radial, r, kw, "r") * _subprofile(
+            self.vertical, z, kw, "z"
+        )
 
     def getmap(self, img, convolve=False):
         """
