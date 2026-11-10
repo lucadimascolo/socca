@@ -743,6 +743,39 @@ class TestDisk:
         d1.radial.re = 0.005
         assert d2.radial.re is None
 
+    @pytest.mark.parametrize(
+        "vertical, kw",
+        [
+            ("HyperSecantHeight", dict(alpha=2.0)),
+            ("HyperSecantHeight", dict(alpha=0.7)),
+            ("ExponentialHeight", {}),
+        ],
+    )
+    def test_vertical_unit_integral(self, vertical, kw):
+        """Vertical profiles integrate to one along z."""
+        zs = 2e-4
+        z = np.linspace(-200 * zs, 200 * zs, 400001)
+        prof = getattr(models.disk.vertical, vertical).profile
+        h = np.asarray(prof(z, zs=zs, **kw))
+        assert float(jp.trapezoid(h, z)) == pytest.approx(1.0, rel=1e-4)
+
+    def test_face_on_disk_projects_onto_radial(self, simple_hdu):
+        """A face-on disk has the surface brightness of its radial profile."""
+        img = data.Image(simple_hdu)
+        kw = dict(
+            xc=simple_hdu.header["CRVAL1"],
+            yc=simple_hdu.header["CRVAL2"],
+            rs=0.005,
+            Is=3.0,
+        )
+        vertical = models.disk.vertical.HyperSecantHeight(
+            zs=0.001, inc=0.0, losdepth=0.04, losbins=2001
+        )
+        disk = models.Disk(radial=models.Exponential(**kw), vertical=vertical)
+        got = np.asarray(disk.getmap(img))
+        exp = np.asarray(models.Exponential(**kw).getmap(img))
+        np.testing.assert_allclose(got, exp, rtol=1e-8)
+
 
 class TestEllipsoid:
     """Tests for Ellipsoid model."""
@@ -938,6 +971,32 @@ class TestEllipsoid:
         rs1 = re * (1 - e)
         rs2 = re * (1 - 1.0 * e)
         assert rs1 == pytest.approx(rs2)
+
+    @staticmethod
+    def _major_axis(m):
+        """Major-axis angle of a map from its second moments (rad, mod pi)."""
+        y, x = np.mgrid[: m.shape[0], : m.shape[1]]
+        w = m / m.sum()
+        dx, dy = x - (w * x).sum(), y - (w * y).sum()
+        cxx, cyy = (w * dx * dx).sum(), (w * dy * dy).sum()
+        return 0.5 * np.arctan2(2 * (w * dx * dy).sum(), cxx - cyy) % np.pi
+
+    @pytest.mark.parametrize("inc", [0.0, 1.0])
+    def test_rot_zero_puts_major_axis_along_theta(self, simple_hdu, inc):
+        """With rot = 0 the major axis has position angle theta, as Sersic."""
+        img = data.Image(simple_hdu)
+        xc, yc = simple_hdu.header["CRVAL1"], simple_hdu.header["CRVAL2"]
+        kw = dict(xc=xc, yc=yc, theta=0.5, e=0.5)
+        ref = models.Sersic(re=0.005, Ie=1.0, ns=1.0, **kw)
+        ell = models.Ellipsoid(
+            radial=models.Sersic(re=0.005, Ie=1.0, ns=1.0),
+            inc=inc,
+            losdepth=0.03,
+            **kw,
+        )
+        got = self._major_axis(np.asarray(ell.getmap(img)))
+        exp = self._major_axis(np.asarray(ref.getmap(img)))
+        assert got == pytest.approx(exp, abs=1e-2)
 
 
 class TestBuildKwargsEvaluate:

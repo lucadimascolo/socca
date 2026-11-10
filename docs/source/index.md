@@ -70,4 +70,5 @@ Copyright (c) 2024 [Luca Di Mascolo](https://lucadimascolo.github.io) and [contr
 :caption: Additional resources
 ./api/index.md
 ./faq.md
+./migration.md
 ```

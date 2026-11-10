@@ -3,6 +3,7 @@
 from abc import abstractmethod
 
 import jax
+import jax.scipy.special
 import jax.numpy as jp
 import numpy as np
 import numpyro.distributions
@@ -211,14 +212,19 @@ class HyperSecantHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: sech(abs(z)/zs)^alpha.
+            Density at height z: sech(abs(z)/zs)^alpha / (zs B(alpha/2, 1/2)),
+            normalised to unit integral along z.
 
         Notes
         -----
         Uses absolute value of z to ensure symmetry about the midplane.
         """
         u = jp.abs(z) / zs
-        return jp.exp(alpha * (jp.log(2.00) - u - jp.log1p(jp.exp(-2.00 * u))))
+        norm = zs * jp.exp(jax.scipy.special.betaln(0.50 * alpha, 0.50))
+        return (
+            jp.exp(alpha * (jp.log(2.00) - u - jp.log1p(jp.exp(-2.00 * u))))
+            / norm
+        )
 
 
 # Exponential height
@@ -307,10 +313,11 @@ class ExponentialHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: exp(-abs(z)/zs).
+            Density at height z: exp(-abs(z)/zs) / (2 zs), normalised to unit
+            integral along z.
 
         Notes
         -----
         Uses absolute value of z to ensure symmetry about the midplane.
         """
-        return jp.exp(-jp.abs(z) / zs)
+        return jp.exp(-jp.abs(z) / zs) / (2.00 * zs)

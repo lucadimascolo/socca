@@ -50,7 +50,8 @@ class Ellipsoid(Component):
     xc, yc : float, optional
         Right ascension and declination of the ellipsoid centroid (deg).
     theta : float, optional
-        Position angle, east from north (rad).
+        Position angle of the line of nodes, east from north (rad), as for
+        Disk. With rot = 0 it is also the position angle of the major axis.
     e : float, optional
         Ellipticity (1 - axis ratio) between the major (x) axis and the
         first minor (y) axis -- i.e. the ellipticity of the face-on
@@ -64,9 +65,11 @@ class Ellipsoid(Component):
         Inclination angle (0 = face-on). Typically tied to a host Disk's
         inclination via boundto().
     rot : float, optional
-        Rotation applied after inclining, within the ellipsoid's own
-        tilted frame. Only equivalent to a position-angle offset (i.e.
-        theta + rot) when inc = 0.
+        Rotation of the major axis away from the line of nodes, applied
+        after inclining, within the ellipsoid's own tilted frame. With
+        rot = 0 the major axis lies along the line of nodes, so theta is
+        also its position angle. Only equivalent to a position-angle
+        offset (i.e. theta + rot) when inc = 0.
     losdepth : float, optional
         Half line-of-sight extent for integration.
     losbins : int, optional
@@ -193,11 +196,11 @@ class Ellipsoid(Component):
             dict(
                 xc="Right ascension of centroid",
                 yc="Declination of centroid",
-                theta="Position angle (east from north)",
+                theta="Position angle of the line of nodes (east from north)",
                 e="Ellipticity between the major axis and the first (in-plane) minor axis",
                 eratio="Ratio of the second (vertical) minor axis's ellipticity to e",
                 inc="Inclination angle (0=face-on); Typically inherited from a Disk object",
-                rot="Rotation applied after inclining, in the ellipsoid's own tilted frame",
+                rot="Rotation of the major axis from the line of nodes, in the tilted frame",
                 losdepth="Half line-of-sight extent for integration",
                 losbins="Number of points for line-of-sight integration",
             )
@@ -452,13 +455,15 @@ class Ellipsoid(Component):
         losbins : int, optional
             Number of integration points along line of sight. Default is 200.
         theta : float, optional
-            Position angle, east from north (rad). Default is 0.
+            Position angle of the line of nodes, east from north (rad), as
+            for Disk. Default is 0.
         inc : float, optional
             Inclination angle (0 = face-on, pi/2 = edge-on) (rad). Default is 0.
         rot : float, optional
-            Rotation applied after inclining, within the already-inclined
-            frame (rad). Default is 0. Only equivalent to a position-angle
-            offset (i.e. theta + rot) when inc = 0 -- see Notes.
+            Rotation of the major axis away from the line of nodes, within
+            the already-inclined frame (rad). Default is 0. Only equivalent
+            to a position-angle offset (i.e. theta + rot) when inc = 0 --
+            see Notes.
 
         Returns
         -------
@@ -470,10 +475,10 @@ class Ellipsoid(Component):
         -----
         The transformation sequence:
         1. Center coordinates on (xc, yc) and apply spherical geometry correction (cos(dec))
-        2. Rotate by position angle theta, with a 90-degree offset to match Disk's convention
+        2. Rotate by position angle theta, so that the tilt (y) axis is the line of nodes, as for Disk
         3. Create the line-of-sight grid from -losdepth to +losdepth and broadcast to 4D
         4. Incline around the y-axis, mixing the position-angle-rotated x with the line-of-sight coordinate
-        5. Rotate by rot within that already-inclined (x, y) frame
+        5. Rotate by rot + pi/2 within that already-inclined (x, y) frame, so that rot = 0 aligns the major axis with the line of nodes
 
         Because step 4 mixes the line-of-sight coordinate into x before
         step 5 runs, rot is not simply an additive offset to theta except
@@ -512,8 +517,8 @@ class Ellipsoid(Component):
         # carries a line-of-sight (z) contribution from the inclination
         # step above, so this is only equivalent to a theta offset when
         # inc == 0.
-        sinr = jp.sin(rot)
-        cosr = jp.cos(rot)
+        sinr = jp.sin(rot + 0.5 * jp.pi)
+        cosr = jp.cos(rot + 0.5 * jp.pi)
         xt, yt = xt * cosr + yt * sinr, -xt * sinr + yt * cosr
 
         return xt, yt, zt

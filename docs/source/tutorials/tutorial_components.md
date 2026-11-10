@@ -474,7 +474,7 @@ $$
 I(r) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} s(R) \, h(R,z) \, \mathrm{d}l,
 $$
 
-where $R$ and $z$ are the cylindrical coordinates in the disk frame, while $r$ and $l$ denote the projected radius and line-of-sight coordinate in the observer frame, respectively. The transformation between the two coordinate systems depends on the inclination angle of the disk with respect to the line-of-sight direction. A detailed discussion of the coordinate transformations involved in this calculation can be found in [van Asselt et al. (2026)](https://scixplorer.org/abs/2026arXiv260103339V).
+where $R$ and $z$ are the cylindrical coordinates in the disk frame, while $r$ and $l$ denote the projected radius and line-of-sight coordinate in the observer frame, respectively. The vertical profiles are normalized to unit integral along $z$, so that a face-on disk projects exactly onto its radial profile, $I(r) = s(r)$: the amplitude of the radial profile keeps its usual meaning (e.g. the central surface brightness `Is` of an `Exponential`) and is independent of the scale height. The transformation between the two coordinate systems depends on the inclination angle of the disk with respect to the line-of-sight direction. A detailed discussion of the coordinate transformations involved in this calculation can be found in [van Asselt et al. (2026)](https://scixplorer.org/abs/2026arXiv260103339V).
 
 ```python
 >>> from socca.models import Disk
@@ -534,8 +534,10 @@ Please note that the `Height` subclasses can not be used as standalone model com
 The `HyperSecantHeight` class implements a hyperbolic secant vertical profile raised to a power $\alpha$:
 
 $$
-h(z) = \mathrm{sech}^{\alpha}\left(|z|/z_s\right).
+h(z) = \frac{\mathrm{sech}^{\alpha}\left(|z|/z_s\right)}{z_s\,B(\alpha/2,\,1/2)},
 $$
+
+where the Euler beta function $B$ normalizes the profile to unit integral along $z$ (for $\alpha = 2$, $z_s\,B(1, 1/2) = 2 z_s$).
 
 Here, $z_s$ is the scale height of the disk, and $\alpha$ is an exponent that controls the sharpness of the vertical profile. By default, $\alpha = 2$, corresponding to the squared hyperbolic secant profile commonly used to describe the vertical structure of disk galaxies ([van der Kruit & Searle 1981](https://ui.adsabs.harvard.edu/abs/1981A&A....95..105V)).
 
@@ -560,8 +562,10 @@ losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 The `ExponentialHeight` class implements an exponential vertical profile. The functional form of this profile is given simply by:
 
 $$
-h(z) = \exp\left(-|z|/z_s\right).
+h(z) = \frac{\exp\left(-|z|/z_s\right)}{2 z_s},
 $$
+
+normalized to unit integral along $z$.
 
 As in the previous case, $z_s$ is the scale height of the disk.
 
@@ -597,18 +601,20 @@ A common use case for `Ellipsoid` is modeling a galactic bar embedded within a h
 ```
 
 $$
-I(x_0, y_0) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} I_e \exp\left\{-b_n\left[m(l)^{1/n}-1\right]\right\} \mathrm{d}l,
+I(x_0, y_0) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} f\big(m(l)\big)\, \mathrm{d}l,
 $$
 
-where $(x_0, y_0)$ are the sky-plane coordinates of a given pixel, and $m(l)$ is the dimensionless ellipsoidal radius (already normalized by the ellipsoid's semi-axes, so it evaluates to 1 on the ellipsoid's surface) at line-of-sight position $l$:
+where $(x_0, y_0)$ are the sky-plane coordinates of a given pixel, $f$ is the profile of the `radial` sub-component (any radial profile, `Sersic` by default), and $m(l)$ is the ellipsoidal radius, measured along the major axis, at line-of-sight position $l$:
 
 $$
-m(l) = \sqrt{\left(\frac{x_t(l)}{r_e}\right)^2 + \left(\frac{y_t(l)}{r_{s,1}}\right)^2 + \left(\frac{z_t(l)}{r_{s,2}}\right)^2}, \qquad r_{s,1} = r_e (1 - e), \quad r_{s,2} = r_e (1 - e_{\mathrm{ratio}}\, e).
+m(l) = \sqrt{x_t(l)^2 + \left(\frac{y_t(l)}{1 - e}\right)^2 + \left(\frac{z_t(l)}{1 - e_{\mathrm{ratio}}\, e}\right)^2}.
 $$
 
-$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and then applying the rotation $\mathrm{rot}$ within that already-inclined frame -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above.
+For the default `Sersic` profile, $f(m) = I_e \exp\{-b_n[(m/r_e)^{1/n}-1]\}$.
 
-The ellipsoid has one major semi-axis, $r_e$, along $x_t$, and two minor semi-axes along $y_t$ and $z_t$ that need not be equal. $e$ sets the ellipticity between the major axis and the $y_t$ minor axis -- the plane $(x_t, y_t)$ is exactly the plane visible in projection when the ellipsoid is seen face-on ($\mathrm{inc}=0$), so $e$ is the ellipticity of the face-on projected ellipse. $e_{\mathrm{ratio}} \in [0, 1]$ then sets the $z_t$ minor axis's ellipticity as a fraction of $e$ (default 1, making both minor axes equal -- a prolate/oblate spheroid rather than a fully triaxial ellipsoid).
+$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and then applying the rotation $\mathrm{rot}$ within that already-inclined frame -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above. As for `Disk`, $\theta$ is the position angle of the line of nodes, about which the ellipsoid is inclined, and $\mathrm{rot}$ rotates the major axis away from it: for $\mathrm{rot} = 0$ the major axis lies along the line of nodes, so $\theta$ is also its position angle.
+
+The ellipsoid has one major axis along $x_t$ and two minor axes along $y_t$ and $z_t$ that need not be equal. $e$ sets the ellipticity between the major axis and the $y_t$ minor axis -- the plane $(x_t, y_t)$ is exactly the plane visible in projection when the ellipsoid is seen face-on ($\mathrm{inc}=0$), so $e$ is the ellipticity of the face-on projected ellipse. $e_{\mathrm{ratio}} \in [0, 1]$ then sets the $z_t$ minor axis's ellipticity as a fraction of $e$ (default 1, making both minor axes equal -- a prolate/oblate spheroid rather than a fully triaxial ellipsoid).
 
 ```{caution}
 Because inclining mixes the line-of-sight coordinate into $x_t$ *before* $\mathrm{rot}$ is applied, $\mathrm{rot}$ is **not** simply an additive offset to $\theta$ (i.e. equivalent to using $\theta + \mathrm{rot}$ as the position angle) except in the face-on case $\mathrm{inc} = 0$. For $\mathrm{inc} \neq 0$, it is a genuine rotation of the ellipsoid within its own already-inclined frame -- e.g. letting a bar's long axis point in a different direction than the disk's line of nodes, even though both share the same inclination.
@@ -626,11 +632,11 @@ radial.Ie [image] : None       | Surface brightness at re
 radial.ns      [] : 5.0000E-01 | Sersic index
 xc          [deg] : None       | Right ascension of centroid
 yc          [deg] : None       | Declination of centroid
-theta       [rad] : 0.0000E+00 | Position angle (east from north)
+theta       [rad] : 0.0000E+00 | Position angle of the line of nodes (east from north)
 e              [] : 0.0000E+00 | Ellipticity between the major axis and the first (in-plane) minor axis
 eratio         [] : 1.0000E+00 | Ratio of the second (vertical) minor axis's ellipticity to e
 inc         [rad] : 0.0000E+00 | Inclination angle (0=face-on); Typically inherited from a Disk object
-rot         [rad] : 0.0000E+00 | Rotation applied after inclining, in the ellipsoid's own tilted frame
+rot         [rad] : 0.0000E+00 | Rotation of the major axis from the line of nodes, in the tilted frame
 
 Hyperparameters
 ===============
@@ -638,7 +644,7 @@ losdepth    [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
 losbins        [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
-Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-components, `Ellipsoid` only delegates the brightness-shape parameters (`re`, `Ie`, `ns` for the default `Sersic` profile) to its `radial` sub-component. Position, orientation, both ellipticities, inclination, rotation, and the line-of-sight integration hyperparameters (`xc`, `yc`, `theta`, `e`, `eratio`, `inc`, `rot`, `losdepth`, `losbins`) live directly on `Ellipsoid` itself:
+Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-components, `Ellipsoid` only delegates the brightness-shape parameters (e.g. `re`, `Ie`, `ns` for the default `Sersic` profile) to its `radial` sub-component, which can be any radial profile. Position, orientation, both ellipticities, inclination, rotation, and the line-of-sight integration hyperparameters (`xc`, `yc`, `theta`, `e`, `eratio`, `inc`, `rot`, `losdepth`, `losbins`) live directly on `Ellipsoid` itself:
 
 ```python
 >>> from socca.models import Ellipsoid, Sersic
