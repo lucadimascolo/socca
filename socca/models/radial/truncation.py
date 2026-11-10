@@ -60,7 +60,11 @@ class Truncation:
             "rt",
             lower=0,
             lower_strict=True,
-            note="The truncation radius must be strictly positive.",
+            upper=float("inf"),
+            upper_strict=True,
+            note="The truncation radius must be strictly positive and "
+            "finite; set a profile's truncation to None for none.",
+            error=True,
         )
         self._rt = value
 
@@ -75,7 +79,11 @@ class Truncation:
             "wt",
             lower=0,
             lower_strict=True,
-            note="The truncation width must be strictly positive.",
+            upper=float("inf"),
+            upper_strict=True,
+            note="The truncation width must be strictly positive and "
+            "finite; set a profile's truncation to None for none.",
+            error=True,
         )
         self._wt = value
 

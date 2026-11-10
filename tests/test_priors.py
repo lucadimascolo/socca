@@ -467,3 +467,79 @@ class TestPowerLawPytree:
         assert float(copy.support.lower_bound) == 1.0
         assert float(copy.support.upper_bound) == 10.0
         assert np.isfinite(float(copy.log_prob(3.0)))
+
+
+class TestPowerLawGradient:
+    """Exact icdf derivatives, including at the edges of the unit interval."""
+
+    @pytest.mark.parametrize(
+        "alpha, low, high",
+        [
+            (-1.0, 1e-3, 1e3),
+            (2.0, 1.0, 5.0),
+            (-2.5, 0.1, 10.0),
+            (0.0, 1.0, 2.0),
+            (50.0, 1.0, 10.0),
+            (-60.0, 1.0, 10.0),
+        ],
+    )
+    def test_du_is_inverse_density(self, alpha, low, high):
+        """The icdf derivative is 1 / pdf, also at u = 0 and 1."""
+        dist = priors.powerlaw(alpha, low, high)
+        u = jp.array([0.0, 1e-9, 0.3, 1.0 - 1e-9, 1.0])
+        grad = jax.vmap(jax.grad(dist.icdf))(u)
+        pdf = jp.exp(dist.log_prob(dist.icdf(u)))
+        np.testing.assert_allclose(grad * pdf, 1.0, rtol=1e-9)
+
+    @pytest.mark.parametrize("u", [0.0, 0.3, 1.0])
+    @pytest.mark.parametrize("alpha", [-40.0, -2.5, -1.0, 0.0, 2.0, 40.0])
+    def test_parameter_derivatives(self, alpha, u):
+        """Derivatives with respect to alpha, low and high match differences."""
+
+        def icdf(a, lo, hi):
+            return priors.PowerLaw(a, lo, hi).icdf(u)
+
+        pars = (alpha, 0.5, 4.0)
+        grad = jax.grad(icdf, argnums=(0, 1, 2))(*pars)
+        for i, g in enumerate(grad):
+            h = 1e-6
+            up, dn = list(pars), list(pars)
+            up[i] += h
+            dn[i] -= h
+            fd = (icdf(*up) - icdf(*dn)) / (2 * h)
+            np.testing.assert_allclose(g, fd, rtol=1e-6, atol=1e-8)
+
+    @pytest.mark.parametrize(
+        "alpha, low, high, x",
+        [
+            (30.0, 1e-10, 1.0, 0.9),
+            (200.0, 1e-3, 1e3, 500.0),
+            (-200.0, 1e-3, 1e3, 1.1e-3),
+        ],
+    )
+    def test_steep_cdf_derivatives(self, alpha, low, high, x):
+        """The cdf derivatives stay finite where exp(beta * span) overflows."""
+        dist = priors.PowerLaw(alpha, low, high)
+        np.testing.assert_allclose(
+            jax.grad(dist.cdf)(x), jp.exp(dist.log_prob(x)), rtol=1e-7
+        )
+
+        def cdf(a):
+            return priors.PowerLaw(a, low, high).cdf(x)
+
+        h = 1e-6 * abs(alpha)
+        fd = (cdf(alpha + h) - cdf(alpha - h)) / (2 * h)
+        np.testing.assert_allclose(
+            jax.grad(cdf)(alpha), fd, rtol=1e-5, atol=1e-13
+        )
+
+    @pytest.mark.parametrize("alpha", [-1.0, -1.0 + 1e-7, -1.002])
+    def test_log_prob_alpha_derivative(self, alpha):
+        """The alpha derivative of log_prob is right, also at alpha = -1."""
+
+        def logp(a):
+            return priors.PowerLaw(a, 1.0, 10.0).log_prob(2.0)
+
+        h = 1e-5
+        fd = (logp(alpha + h) - logp(alpha - h)) / (2 * h)
+        np.testing.assert_allclose(jax.grad(logp)(alpha), fd, rtol=1e-7)

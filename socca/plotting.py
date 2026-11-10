@@ -106,6 +106,20 @@ def getframe(wcs):
 
 # Plotting utilities
 # ========================================================
+def _component_indices(fit, positions):
+    """Columns of fit.labels owned by the components at these positions."""
+    fit._checkmodel()
+    mod = fit.mod
+    return np.array(
+        [
+            i
+            for i, key in enumerate(fit.labels)
+            if mod._owner[mod.params.index(key)] in positions
+        ],
+        dtype=int,
+    )
+
+
 class Plotter:
     """
     Visualization interface for model fitting results.
@@ -188,8 +202,9 @@ class Plotter:
                 f"'{self.fit.method}' method does not produce samples."
             )
 
-        component = self.fit.mod._comp_filter(component)
-        component = [self.fit.mod._prefix[ci] for ci in component]
+        mod = self.fit.mod
+        positions = mod._comp_filter(component)
+        component = [mod._prefix[ci] for ci in positions]
 
         # Periodic parameters (e.g. a position angle symmetric under
         # theta -> theta + pi) are recentered on their circular mean here,
@@ -235,14 +250,7 @@ class Plotter:
                 labels.append(f"{label}\n")
         labels = np.array(labels)
 
-        indices = np.array(
-            [
-                i
-                for i, lbl in enumerate(labels)
-                if any(lbl.startswith(c) for c in component)
-            ],
-            dtype=int,
-        )
+        indices = _component_indices(self.fit, positions)
 
         if len(indices) == 0:
             raise ValueError(

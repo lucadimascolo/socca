@@ -4,6 +4,7 @@ This module provides models for describing elongated emission structures
 such as intracluster bridges and filaments connecting galaxy clusters.
 """
 
+import numbers
 from functools import partial
 
 import warnings
@@ -12,7 +13,7 @@ import jax
 import jax.numpy as jp
 
 
-from ..base import Component, _subkeys, _subprofile, _warn_range
+from ..base import Component, _claim, _subkeys, _subprofile, _warn_range
 from ..misc import Background, Point
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
 from .. import config
@@ -93,6 +94,7 @@ class Bridge(Component):
             radial = Beta()
         if parallel is None:
             parallel = TopHat()
+        _claim(radial, parallel)
 
         self.xc = kwargs.get("xc", config.Bridge.xc)
         self.yc = kwargs.get("yc", config.Bridge.yc)
@@ -286,6 +288,7 @@ class Bridge(Component):
         The model is computed by evaluating the combined radial and parallel
         profiles on a rotated coordinate grid centered on the bridge position.
         """
+        self._check_internal()
         keys = {k: f"radial.{k[2:]}" for k in self._rkw}
         keys.update({k: f"parallel.{k[2:]}" for k in self._zkw})
         keys.update({k: k for k in ["xc", "yc", "Is", "theta"]})
@@ -301,6 +304,19 @@ class Bridge(Component):
             else:
                 mgrid = img.convolve(mgrid)
         return mgrid
+
+    def _check_internal(self):
+        """Reject values set on the sub-profiles' scale radius or amplitude."""
+        for sub in (self.radial, self.parallel):
+            rs = getattr(sub, sub._scale_radius)
+            amp = getattr(sub, sub._scale_amp)
+            tied = isinstance(rs, _Function) and rs.native
+            if not tied or not (isinstance(amp, numbers.Real) and amp == 1):
+                raise ValueError(
+                    f"{type(sub).__name__}.{sub._scale_radius} and "
+                    f".{sub._scale_amp} are set by the {type(self).__name__} "
+                    "from rs, e and Is: set those instead."
+                )
 
     @staticmethod
     @partial(jax.jit, static_argnames=["grid"])
@@ -355,12 +371,15 @@ class Bridge(Component):
             setattr(sub, sub._scale_radius, tie)
 
     @staticmethod
-    def _internal(value, pars, comp_prefix):
-        """Evaluate an internal scale-radius tie on the model parameters."""
+    def _internal(sub, name, pars, comp_prefix):
+        """Value of a sub-profile's internal scale radius or amplitude."""
+        if name not in (sub._scale_radius, sub._scale_amp):
+            raise KeyError(f"{comp_prefix}: {name} is not in the model.")
+        value = getattr(sub, name)
         if not isinstance(value, _Function):
             return value
         return value(
-            *[pars[f"{comp_prefix}_{name}"] for _, name in value.sources]
+            *[pars[f"{comp_prefix}_{key}"] for _, key in value.sources]
         )
 
     def _build_kwargs(self, pars, comp_prefix):
@@ -380,25 +399,26 @@ class Bridge(Component):
             Keyword arguments for _evaluate including geometric and profile
             parameters with r_ and z_ prefixes.
         """
+        self._check_internal()
         kwarg = {}
         for key in self._rkw:
-            attr_name = key.replace("r_", "")
+            attr_name = key[2:]
             pars_key = f"{comp_prefix}_radial.{attr_name}"
             if pars_key in pars:
                 kwarg[key] = pars[pars_key]
             else:
                 kwarg[key] = self._internal(
-                    getattr(self.radial, attr_name), pars, comp_prefix
+                    self.radial, attr_name, pars, comp_prefix
                 )
 
         for key in self._zkw:
-            attr_name = key.replace("z_", "")
+            attr_name = key[2:]
             pars_key = f"{comp_prefix}_parallel.{attr_name}"
             if pars_key in pars:
                 kwarg[key] = pars[pars_key]
             else:
                 kwarg[key] = self._internal(
-                    getattr(self.parallel, attr_name), pars, comp_prefix
+                    self.parallel, attr_name, pars, comp_prefix
                 )
 
         kwarg["xc"] = pars[f"{comp_prefix}_xc"]
@@ -434,7 +454,7 @@ class Bridge(Component):
         theta = kwarg.pop("theta")
 
         rgrid, zgrid = self.getgrid(img.grid, xc, yc, theta)
-        mgrid = self.profile(rgrid, zgrid, **kwarg)
+        mgrid = self._compiled()(rgrid, zgrid, **kwarg)
         return jp.mean(mgrid, axis=0)
 
     def parlist(self):

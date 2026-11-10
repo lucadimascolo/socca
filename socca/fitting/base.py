@@ -90,6 +90,9 @@ class fitter:
         """
         self.img = img
         self.mod = mod
+        self.mod._sync()
+        self.mod._tieorder()
+        self._modelstate = self.mod._state()
 
         self.img._init_noise()
 
@@ -120,6 +123,18 @@ class fitter:
 
     #   Compute total model
     #   --------------------------------------------------------
+    def _checkmodel(self):
+        """Raise if the model changed since this fitter was created."""
+        self.mod._sync()
+        state = getattr(self, "_modelstate", None)
+        if state is not None and not self.mod._samestate(
+            state, self.mod._state()
+        ):
+            raise ValueError(
+                "The model changed after this fitter was created: create a "
+                "new fitter to use it."
+            )
+
     def _getmodel(self, pp):
         """
         Compute the total model with response and exposure corrections.
@@ -148,7 +163,7 @@ class fitter:
         Response is applied if any element of img.response differs from 1.0.
         Exposure is applied if any element of img.exposure differs from 1.0.
         """
-        return self.mod.getmodel(
+        return self.mod._getmodel(
             self.img,
             pp,
             doresp=self._doresp,
@@ -322,6 +337,7 @@ class fitter:
         **kwargs : dict
             Additional keyword arguments passed to the sampler.
         """
+        self._checkmodel()
         self.method = method
 
         def log_likelihood(theta):
@@ -679,8 +695,10 @@ class fitter:
                         f"Generating {', '.join(labels[:-1])} and {labels[-1]} models"
                     )
 
+        self._checkmodel()
+
         def gm(pp):
-            return self.mod.getmodel(
+            return self.mod._getmodel(
                 self.img if img is None else img, pp, doresp, doexp, component
             )
 
@@ -857,6 +875,7 @@ class fitter:
         Requires that the sampler has been run and samples are available.
         Uses importance weights for nested sampling results.
         """
+        self._checkmodel()
         print("\nBest-fit parameters")
         print("=" * 40)
 

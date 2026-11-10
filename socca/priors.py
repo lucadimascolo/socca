@@ -244,14 +244,6 @@ class PowerLaw(numpyro.distributions.Distribution):
         # built on demand: unflattened copies (jax pytrees) skip __init__
         return numpyro.distributions.constraints.interval(self.low, self.high)
 
-    def _terms(self):
-        """Return beta = alpha + 1, |beta| (1 where 0), log low, log range."""
-        beta = self.alpha + 1.0
-        nonzero = beta != 0
-        safe = jp.where(nonzero, jp.abs(beta), 1.0)
-        loglow = jp.log(self.low)
-        return beta, nonzero, safe, loglow, jp.log(self.high) - loglow
-
     def log_prob(self, x):
         """
         Log probability density.
@@ -266,14 +258,20 @@ class PowerLaw(numpyro.distributions.Distribution):
         float or array_like
             Log density, -inf outside [low, high].
         """
-        beta, nonzero, safe, loglow, span = self._terms()
-        lognorm = jp.where(
-            nonzero,
-            jp.maximum(beta * loglow, beta * (loglow + span))
-            + jp.log(-jp.expm1(-safe * span))
-            - jp.log(safe),
-            jp.log(span),
+        beta, _, _, loglow, span = _powerlaw_terms(
+            self.alpha, self.low, self.high
         )
+        small = jp.abs(beta * span) < 1.0e-03
+        b = jp.where(small, 1.0, beta)
+        exact = (
+            jp.maximum(b * loglow, b * (loglow + span))
+            + jp.log(-jp.expm1(-jp.abs(b) * span))
+            - jp.log(jp.abs(b))
+        )
+        series = (
+            jp.log(span) + beta * loglow + jp.log(_expm1_ratio(beta * span))
+        )
+        lognorm = jp.where(small, series, exact)
         inside = (x >= self.low) & (x <= self.high)
         xsafe = jp.where(inside, x, self.low)
         return jp.where(inside, self.alpha * jp.log(xsafe) - lognorm, -jp.inf)
@@ -292,14 +290,8 @@ class PowerLaw(numpyro.distributions.Distribution):
         float or array_like
             Probability of a value not larger than x.
         """
-        beta, nonzero, safe, loglow, span = self._terms()
-        t = jp.log(jp.clip(x, self.low, self.high)) - loglow
-        denom = jp.expm1(-safe * span)
-        rising = jp.expm1(-safe * (span - t)) / denom
-        falling = jp.expm1(-safe * t) / denom
-        return jp.where(
-            nonzero, jp.where(beta > 0, 1.0 - rising, falling), t / span
-        )
+        x = jp.clip(x, self.low, self.high)
+        return _powerlaw_cdf(x, self.alpha, self.low, self.high, upper=False)
 
     def icdf(self, u):
         """
@@ -315,32 +307,7 @@ class PowerLaw(numpyro.distributions.Distribution):
         float or array_like
             Values in [low, high].
         """
-        beta, nonzero, safe, loglow, span = self._terms()
-        decay = -safe * span
-        small = decay > -1.0
-        rising = (
-            loglow
-            + span
-            + jp.where(
-                small,
-                jp.log1p((1.0 - u) * jp.expm1(decay)),
-                jp.logaddexp(jp.log(u), jp.log1p(-u) + decay),
-            )
-            / safe
-        )
-        falling = (
-            loglow
-            - jp.where(
-                small,
-                jp.log1p(u * jp.expm1(decay)),
-                jp.logaddexp(jp.log1p(-u), jp.log(u) + decay),
-            )
-            / safe
-        )
-        logx = jp.where(
-            nonzero, jp.where(beta > 0, rising, falling), loglow + u * span
-        )
-        return jp.clip(jp.exp(logx), self.low, self.high)
+        return _powerlaw_icdf(u, self.alpha, self.low, self.high)
 
     def sample(self, key, sample_shape=()):
         """
@@ -360,6 +327,89 @@ class PowerLaw(numpyro.distributions.Distribution):
         """
         u = jax.random.uniform(key, sample_shape + self.batch_shape)
         return self.icdf(u)
+
+
+def _expm1_ratio(z):
+    """expm1(z) / z for small z."""
+    return 1.0 + z / 2.0 + z**2 / 6.0 + z**3 / 24.0
+
+
+def _powerlaw_terms(alpha, low, high):
+    """Return beta = alpha + 1, beta != 0, |beta| (1 where 0), log low, log range."""
+    beta = alpha + 1.0
+    nonzero = beta != 0
+    safe = jp.where(nonzero, jp.abs(beta), 1.0)
+    loglow = jp.log(low)
+    return beta, nonzero, safe, loglow, jp.log(high) - loglow
+
+
+@jax.custom_jvp
+def _powerlaw_icdf(u, alpha, low, high):
+    """PowerLaw icdf, with exact derivatives also at u = 0 and 1."""
+    beta, nonzero, safe, loglow, span = _powerlaw_terms(alpha, low, high)
+    decay = -safe * span
+    small = decay > -1.0
+    rising = (
+        loglow
+        + span
+        + jp.where(
+            small,
+            jp.log1p((1.0 - u) * jp.expm1(decay)),
+            jp.logaddexp(jp.log(u), jp.log1p(-u) + decay),
+        )
+        / safe
+    )
+    falling = (
+        loglow
+        - jp.where(
+            small,
+            jp.log1p(u * jp.expm1(decay)),
+            jp.logaddexp(jp.log1p(-u), jp.log(u) + decay),
+        )
+        / safe
+    )
+    logx = jp.where(
+        nonzero, jp.where(beta > 0, rising, falling), loglow + u * span
+    )
+    return jp.clip(jp.exp(logx), low, high)
+
+
+def _powerlaw_cdf(x, alpha, low, high, upper):
+    """
+    PowerLaw cdf without clipping, also used for the icdf derivatives.
+
+    Smooth in alpha across alpha = -1; with upper, 1 - (1 - cdf) is used,
+    which keeps the derivatives accurate near x = high.
+    """
+    beta = alpha + 1.0
+    t = jp.log(x) - jp.log(low)
+    span = jp.log(high) - jp.log(low)
+    small = jp.abs(beta * span) < 1.0e-03
+    b = jp.where(small, 1.0, beta)
+    s = jp.abs(b)  # exponents kept <= 0, so neither branch overflows
+    norm = -jp.expm1(-s * span)
+    near = -jp.expm1(-s * t)
+    far = -jp.expm1(-s * (span - t))
+    lower = jp.where(b > 0, jp.exp(-s * (span - t)) * near, near)
+    above = jp.where(b > 0, far, jp.exp(-s * t) * far)
+    exact = jp.where(upper, 1.0 - above / norm, lower / norm)
+    series = t / span * _expm1_ratio(beta * t) / _expm1_ratio(beta * span)
+    return jp.where(small, series, exact)
+
+
+@_powerlaw_icdf.defjvp
+def _powerlaw_icdf_jvp(primals, tangents):
+    # implicit derivative of cdf(x) = u: dx = (du - dcdf/dpars) / pdf(x)
+    u, alpha, low, high = primals
+    du, dalpha, dlow, dhigh = tangents
+    x = _powerlaw_icdf(u, alpha, low, high)
+    _, dcdf = jax.jvp(
+        lambda a, lo, hi: _powerlaw_cdf(x, a, lo, hi, u >= 0.5),
+        (alpha, low, high),
+        (dalpha, dlow, dhigh),
+    )
+    pdf = jp.exp(PowerLaw(alpha, low, high).log_prob(x))
+    return x, (du - dcdf) / pdf
 
 
 def powerlaw(alpha, low, high):
@@ -404,6 +454,22 @@ def _identity(value):
     return value
 
 
+def _checked(comp, var):
+    """Reject parameters a wrapper computes internally (Bridge radii)."""
+    obj = comp
+    for part in var.split(".")[:-1]:
+        obj = getattr(obj, part)
+    value = getattr(obj, var.split(".")[-1])
+    if isinstance(value, _Function) and value.native:
+        owner = getattr(obj, "_wrapper", None) or comp
+        raise ValueError(
+            f"{type(obj).__name__}.{var.split('.')[-1]} is computed by its "
+            f"{type(owner).__name__} from its own parameters (rs, e): tie "
+            f"to those of the {type(owner).__name__} instead."
+        )
+    return comp, var
+
+
 def _source(comp, var):
     """Return (component, parameter name) for a tie source, checking it."""
     units = getattr(comp, "units", None)
@@ -412,7 +478,7 @@ def _source(comp, var):
             f"Expected a model component, got {type(comp).__name__}."
         )
     if var in units:
-        return comp, var
+        return _checked(comp, var)
     found = [
         f"{name}.{var}"
         for name in getattr(comp, "_namespaces", {})
@@ -425,7 +491,7 @@ def _source(comp, var):
         )
     if not found:
         raise ValueError(f"{type(comp).__name__} has no parameter '{var}'.")
-    return comp, found[0]
+    return _checked(comp, found[0])
 
 
 class _Function:

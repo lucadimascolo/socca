@@ -168,6 +168,43 @@ class TestFitter:
         mod = models.Model(gaussian)
         return fitting.fitter(img, mod)
 
+    def test_model_change_detected_without_resync(self, simple_fitter):
+        """The fitter notices a model change made after its creation."""
+        simple_fitter.mod.components[0].rs = 0.006
+        with pytest.raises(ValueError, match="model changed"):
+            simple_fitter.getmodel()
+        with pytest.raises(ValueError, match="model changed"):
+            simple_fitter.parameters()
+
+    def test_array_values_compared_by_value(self, simple_fitter):
+        """Fixed array values are compared by value, not by identity."""
+        comp = simple_fitter.mod.components[0]
+        value = np.array(0.005)
+        comp.rs = value
+        fit = fitting.fitter(simple_fitter.img, simple_fitter.mod)
+        comp.rs = np.array(0.005)  # equal, so not a change
+        fit._checkmodel()
+        comp.rs = value
+        value[...] = 0.006
+        with pytest.raises(ValueError, match="model changed"):
+            fit._checkmodel()
+
+    def test_loaded_fitter_matches_its_model(self, simple_fitter, tmp_path):
+        """A dumped and loaded fitter does not see its model as changed."""
+        simple_fitter.dump(tmp_path / "fit.pickle")
+        fitting.load(tmp_path / "fit.pickle")._checkmodel()
+
+    def test_loaded_fitter_with_lambda(self, simple_fitter, tmp_path):
+        """A loaded fitter with a lambda tie does not see its model as changed."""
+        comp = simple_fitter.mod.components[0]
+        tied = models.Gaussian(
+            xc=lambda comp_00_xc: comp_00_xc, yc=comp.yc, rs=0.005, Is=1.0
+        )
+        simple_fitter.mod.addcomponent(tied)
+        fit = fitting.fitter(simple_fitter.img, simple_fitter.mod)
+        fit.dump(tmp_path / "fit.pickle")
+        fitting.load(tmp_path / "fit.pickle")._checkmodel()
+
     def test_initialization(self, simple_fitter):
         """Test fitter initialization."""
         assert simple_fitter.img is not None
@@ -1081,3 +1118,21 @@ def test_parameters_grouped_by_id(simple_hdu, capsys):
     out = capsys.readouterr().out
     assert "Gaussian (my_core)" in out
     assert "rs_scale" in out
+
+
+def test_corner_selection_by_owner(simple_hdu):
+    """Selecting a component does not pick others sharing its prefix."""
+    from socca.plotting import _component_indices
+
+    img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+    disk = models.Beta(name="disk", xc=priors.uniform(179.9, 180.1), yc=45.0)
+    bar = models.Beta(
+        name="disk_bar", xc=priors.uniform(179.9, 180.1), yc=45.0
+    )
+    for comp in (disk, bar):
+        comp.rc, comp.Ic = 0.01, 1.0
+    mod = models.Model(disk)
+    mod.addcomponent(bar)
+    fit = fitting.fitter(img, mod)
+    assert list(_component_indices(fit, mod._comp_filter("disk"))) == [0]
+    assert list(_component_indices(fit, mod._comp_filter("disk_bar"))) == [1]

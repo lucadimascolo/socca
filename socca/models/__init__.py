@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import copy
 import functools
 import inspect
 import types
@@ -62,6 +63,8 @@ __all__ = [
     "Background",
     # disk
     "Disk",
+    # ellipsoid
+    "Ellipsoid",
     # bridge
     "SimpleBridge",
     "MesaBridge",
@@ -139,9 +142,9 @@ def zoo():
         print(m)
 
     print("\nFilaments")
-    print("============")
+    print("=========")
     models = [
-        "SharpBridge",
+        "SimpleBridge",
         "MesaBridge",
     ]
 
@@ -190,6 +193,13 @@ def _warn_lambda(key, stacklevel):
         FutureWarning,
         stacklevel=stacklevel,
     )
+
+
+def _snapshot(value):
+    """Copy a fixed array value, so later in-place edits are seen."""
+    if isinstance(value, (np.ndarray, jax.Array)):
+        return np.array(value)
+    return value
 
 
 class Model:
@@ -253,17 +263,39 @@ class Model:
         self.params = []
         self.paridx = []
         self.positive = []
-        self.components = []
+        self.components = ()
         self.tied = []
         self.type = []
         self.units = {}
         self.periodic = {}
         self.conversions = {}
-        self._prefix = []
+        self._prefix = ()
         self._owner = []
+        self._positive = ()
+        self._lambdas = {}
+        self._warned = set()
 
         if prof is not None:
             self._addcomponent(prof, positive, stacklevel=3)
+
+    def __setstate__(self, state):
+        """Restore a pickled model."""
+        self.__dict__.update(state)
+        for key in ("components", "_prefix", "_positive"):
+            self.__dict__[key] = tuple(self.__dict__[key])
+        # rekey on the ids of the unpickled lambdas
+        self._lambdas = {id(p): (p, f) for p, f in self._lambdas.values()}
+
+    def __copy__(self):
+        """Copy the model's tables; the components themselves are shared."""
+        new = Model.__new__(Model)
+        new.__dict__.update(
+            {
+                k: copy.copy(v) if isinstance(v, (list, dict, set)) else v
+                for k, v in self.__dict__.items()
+            }
+        )
+        return new
 
     # Add a new component to the model
     # --------------------------------------------------------
@@ -321,6 +353,18 @@ class Model:
             raise ValueError(
                 f"This {type(prof).__name__} is already in the model."
             )
+        if prof._wrapper is not None:
+            raise ValueError(
+                f"This {type(prof).__name__} is part of a "
+                f"{type(prof._wrapper).__name__}: add the "
+                f"{type(prof._wrapper).__name__} instead."
+            )
+        subs = getattr(prof, "_namespaces", {}).values()
+        if any(sub is c for sub in subs for c in self.components):
+            raise ValueError(
+                f"A sub-component of this {type(prof).__name__} is already "
+                "in the model."
+            )
         prefix = prof.name
         if prefix is None:
             n = self.ncomp
@@ -333,64 +377,169 @@ class Model:
                 f"this {type(prof).__name__} another name."
             )
 
-        entries, notes = [], []
-        for p in prof.parlist():
-            par = functools.reduce(getattr, p.split("."), prof)
-            key = f"{prefix}_{p}"
-
-            if par is None:
-                raise ValueError(
-                    f"Parameter {p} in component {prefix} is set "
-                    f"to None. Please provide a valid value or prior."
-                )
-
-            unit = prof._input_unit(p)
-            factor = prof._factor(p)
-            period = _period(prof, p)
-            if period is not None:
-                period = period / factor
-                notes.append((_warn_span, (par, key, period, unit)))
-
-            if isinstance(par, types.FunctionType):
-                notes.append((_warn_lambda, (key,)))
-                _glb = {
-                    name: par.__globals__[name]
-                    for name in par.__code__.co_names
-                    if name in par.__globals__
-                }
-                _glb["jp"] = jp
-                _glb.setdefault("__builtins__", __builtins__)
-                par = types.FunctionType(
-                    par.__code__,
-                    _glb,
-                    par.__name__,
-                    par.__defaults__,
-                    par.__closure__,
-                )
-            entries.append((key, par, unit, factor, period))
-
-        for warn, args in notes:
-            warn(*args, stacklevel=stacklevel + 1)
-
-        self.type.append(prof.__class__.__name__)
-        self.positive.append(prof.positive if positive is None else positive)
-        for key, par, unit, factor, period in entries:
-            self.params.append(key)
-            self._owner.append(self.ncomp)
-            self.priors[key] = par
-            if isinstance(par, numpyro.distributions.Distribution):
-                self.paridx.append(len(self.params) - 1)
-            self.tied.append(isinstance(par, _TIED))
-            self.units[key] = unit
-            if factor != 1.0:
-                self.conversions[key] = factor
-            if period is not None:
-                self.periodic[key] = period
-
-        self.components.append(prof)
-        self._prefix.append(prefix)
+        old = (prof.id, self.components, self._prefix, self._positive)
+        self.components += (prof,)
+        self._prefix += (prefix,)
+        self._positive += (positive,)
         prof.id = prefix
-        self.ncomp += 1
+        try:
+            self._sync(stacklevel + 1)
+        except Exception:
+            prof.id, self.components, self._prefix, self._positive = old
+            raise
+
+    def _legacy(self, par):
+        """Return a lambda tie with jax.numpy available as jp."""
+        cached = self._lambdas.get(id(par))
+        if cached is not None and cached[0] is par:
+            return cached[1]
+        _glb = {
+            name: par.__globals__[name]
+            for name in par.__code__.co_names
+            if name in par.__globals__
+        }
+        _glb["jp"] = jp
+        _glb.setdefault("__builtins__", __builtins__)
+        new = types.FunctionType(
+            par.__code__,
+            _glb,
+            par.__name__,
+            par.__defaults__,
+            par.__closure__,
+        )
+        new.__dict__.update(par.__dict__)
+        self._lambdas[id(par)] = (par, new)
+        return new
+
+    def _sync(self, stacklevel=3, strict=True):
+        """
+        Rebuild the parameter tables from the components.
+
+        Called when a component is added and whenever the model is used
+        (getmap, parameters, fitter), so changes made to the components
+        after adding them are followed: values, priors, ties, units and
+        truncations. With strict=False (listings), unset values are
+        allowed.
+        """
+        tables = dict(
+            type=[],
+            positive=[],
+            params=[],
+            _owner=[],
+            priors={},
+            paridx=[],
+            tied=[],
+            units={},
+            conversions={},
+            periodic={},
+        )
+        notes = []
+        for nc, (prof, prefix) in enumerate(
+            zip(self.components, self._prefix)
+        ):
+            if strict and prof._wrapper is not None:
+                raise ValueError(
+                    f"The {type(prof).__name__} '{prefix}' is now part of a "
+                    f"{type(prof._wrapper).__name__}: a component can "
+                    "belong to one model entry only."
+                )
+            positive = self._positive[nc]
+            tables["type"].append(prof.__class__.__name__)
+            tables["positive"].append(
+                prof.positive if positive is None else positive
+            )
+            for p in prof.parlist():
+                par = functools.reduce(getattr, p.split("."), prof)
+                key = f"{prefix}_{p}"
+                if key in tables["priors"]:
+                    raise ValueError(
+                        f"Two parameters share the model key {key}: rename "
+                        "a component or the parameter."
+                    )
+
+                if par is None and strict:
+                    raise ValueError(
+                        f"Parameter {p} in component {prefix} is set "
+                        f"to None. Please provide a valid value or prior."
+                    )
+                if (
+                    strict
+                    and p in prof.hyper
+                    and isinstance(
+                        par, (numpyro.distributions.Distribution, *_TIED)
+                    )
+                ):
+                    raise ValueError(
+                        f"{key} is a hyperparameter, not fitted: set it to a "
+                        "fixed value."
+                    )
+
+                unit = prof._input_unit(p)
+                factor = prof._factor(p)
+                period = _period(prof, p)
+                if period is not None:
+                    period = period / factor
+                    notes.append((_warn_span, par, key, (period, unit)))
+
+                if isinstance(par, types.FunctionType):
+                    notes.append((_warn_lambda, par, key, ()))
+                    par = self._legacy(par)
+
+                tables["params"].append(key)
+                tables["_owner"].append(nc)
+                tables["priors"][key] = par
+                if isinstance(par, numpyro.distributions.Distribution):
+                    tables["paridx"].append(len(tables["params"]) - 1)
+                tables["tied"].append(isinstance(par, _TIED))
+                tables["units"][key] = unit
+                if factor != 1.0:
+                    tables["conversions"][key] = factor
+                if period is not None:
+                    tables["periodic"][key] = period
+
+        for warn, par, key, args in notes:
+            tag = (warn.__name__, key, id(par), args)
+            if tag not in self._warned:
+                if warn is _warn_span:
+                    warn(par, key, *args, stacklevel=stacklevel + 1)
+                else:
+                    warn(key, stacklevel=stacklevel + 1)
+                self._warned.add(tag)
+
+        self.__dict__.update(tables)
+        self.ncomp = len(self.components)
+
+    def _state(self):
+        """Return a snapshot of the parameter tables, to detect changes."""
+        return (
+            tuple(self.params),
+            tuple(self.positive),
+            tuple(_snapshot(self.priors[key]) for key in self.params),
+            tuple(sorted(self.conversions.items())),
+            tuple(
+                (
+                    type(getattr(prof, "truncation", None)),
+                    getattr(prof, "_numerics_key", tuple)(),
+                )
+                for comp in self.components
+                for prof in [comp, *getattr(comp, "_namespaces", {}).values()]
+            ),
+        )
+
+    @staticmethod
+    def _samestate(old, new):
+        """Whether two snapshots match: values by value, priors by identity."""
+        if old[:2] != new[:2] or old[3:] != new[3:]:
+            return False
+
+        def same(a, b):
+            if isinstance(a, (int, float, np.number, np.ndarray)):
+                return isinstance(
+                    b, (int, float, np.number, np.ndarray)
+                ) and np.array_equal(a, b)
+            return a is b
+
+        return all(same(a, b) for a, b in zip(old[2], new[2]))
 
     def parameters(self, freeonly=False):
         """
@@ -418,10 +567,11 @@ class Model:
         yc [deg] : 4.5200E+01         | Declination of centroid
         ...
         """
+        self._sync(strict=False)
         blocks = []
         for nc, prefix in enumerate(self._prefix):
             comp = self.components[nc]
-            rows = []
+            rows, hyper = [], []
             for key, owner in zip(self.params, self._owner):
                 par = self.priors[key]
                 if owner != nc or (
@@ -430,7 +580,7 @@ class Model:
                 ):
                     continue
                 name = key[len(prefix) + 1 :]
-                rows.append(
+                (hyper if name in comp.hyper else rows).append(
                     (
                         name,
                         self.units[key],
@@ -438,20 +588,28 @@ class Model:
                         comp.description.get(name, ""),
                     )
                 )
-            if rows:
-                blocks.append((f"{self.type[nc]} ({prefix})", rows))
+            if rows or hyper:
+                blocks.append((f"{self.type[nc]} ({prefix})", rows, hyper))
 
         if not blocks:
             print("No free parameters." if freeonly else "No parameters.")
             return
-        lines = _format_rows([row for _, rows in blocks for row in rows])
-        for title, rows in blocks:
+        lines = _format_rows(
+            [row for _, rows, hyper in blocks for row in rows + hyper]
+        )
+        for title, rows, hyper in blocks:
             print(f"\n{title}\n" + "=" * len(title))
-            print("\n".join(lines[: len(rows)]))
+            if rows:
+                print("\n".join(lines[: len(rows)]))
             lines = lines[len(rows) :]
+            if hyper:
+                print("\nHyperparameters\n" + "-" * 15)
+                print("\n".join(lines[: len(hyper)]))
+            lines = lines[len(hyper) :]
 
     def __repr__(self):
         """List the model components with their ids."""
+        self._sync(strict=False)
         lines = [
             f"{ctype} ({prefix})"
             for ctype, prefix in zip(self.type, self._prefix)
@@ -462,9 +620,9 @@ class Model:
         """Label of a tie source: the component id and parameter name."""
         try:
             key = self._keyof(comp, name)
+            prefix = self._prefix[self._owner[self.params.index(key)]]
         except ValueError:
             return f"{type(comp).__name__}.{name} (not in model)"
-        prefix = self._prefix[self._owner[self.params.index(key)]]
         return f"{prefix}.{key[len(prefix) + 1 :]}"
 
     # Get the model map with fixed parameters
@@ -522,6 +680,7 @@ class Model:
         >>> # Get PSF-convolved model
         >>> convolved_map = model.getmap(img, convolve=True)
         """
+        self._sync()
         pars = {}
         for ki, key in enumerate(self.params):
             if isinstance(
@@ -534,7 +693,7 @@ class Model:
             elif not self.tied[ki]:
                 pars[key] = self.priors[key]
 
-        mraw, msmo, mbkg, _ = self.getmodel(
+        mraw, msmo, mbkg, _ = self._getmodel(
             img, pars, doresp=False, doexp=False
         )
 
@@ -579,6 +738,12 @@ class Model:
                     f"Tie argument '{name}' of {key} matches no parameter "
                     "of this model."
                 )
+            if len(match) > 1:
+                raise KeyError(
+                    f"Tie argument '{name}' of {key} matches several "
+                    f"parameters ({', '.join(match)}): use "
+                    "socca.priors.function() instead."
+                )
             args.append(match[0])
         return args
 
@@ -590,15 +755,40 @@ class Model:
         units (see Component.set_units); boundto copies the value.
         """
         scale = self.conversions
+        deps, order = self._tieorder()
+        for key in order:
+            tie = self.priors[key]
+            if isinstance(tie, _BoundTo):
+                pars[key] = pars[deps[key][0]]
+            elif getattr(tie, "native", False):
+                pars[key] = tie(*[pars[dep] for dep in deps[key]])
+            else:
+                args = [pars[dep] / scale.get(dep, 1.0) for dep in deps[key]]
+                pars[key] = tie(*args) * scale.get(key, 1.0)
+
+    def _tieorder(self):
+        """
+        Return the tie dependencies and an evaluation order.
+
+        Raises if a tie refers to a component outside the model, to an
+        unknown parameter, or if ties form a cycle.
+        """
         deps = {
             key: self._tieargs(key)
             for key, tied in zip(self.params, self.tied)
             if tied
         }
-        done = set()
+        for key, args in deps.items():
+            for dep in args:
+                if dep not in self.priors:
+                    raise ValueError(
+                        f"{key} is tied to {dep}, which is not a parameter "
+                        "of this model."
+                    )
+        order = []
 
-        def resolve(key, chain):
-            if key in done:
+        def visit(key, chain):
+            if key in order:
                 return
             if key in chain:
                 raise ValueError(
@@ -606,17 +796,12 @@ class Model:
                 )
             for dep in deps[key]:
                 if dep in deps:
-                    resolve(dep, chain + [key])
-            tie = self.priors[key]
-            if isinstance(tie, _BoundTo):
-                pars[key] = pars[deps[key][0]]
-            else:
-                args = [pars[dep] / scale.get(dep, 1.0) for dep in deps[key]]
-                pars[key] = tie(*args) * scale.get(key, 1.0)
-            done.add(key)
+                    visit(dep, chain + [key])
+            order.append(key)
 
         for key in deps:
-            resolve(key, [])
+            visit(key, [])
+        return deps, order
 
     def _comp_filter(self, component=None):
         """
@@ -637,7 +822,8 @@ class Model:
         Raises
         ------
         ValueError
-            If a selection matches no component of the model.
+            If a selection matches no component of the model, or names
+            a component more than once.
 
         Examples
         --------
@@ -668,6 +854,11 @@ class Model:
                         f"This {type(c).__name__} is not in the model."
                     )
                 positions.append(match[0])
+        if len(set(positions)) < len(positions):
+            raise ValueError(
+                f"The selection {component!r} names a component more "
+                "than once."
+            )
         return positions
 
     # Get the model map
@@ -737,6 +928,11 @@ class Model:
         >>> pp = [180.5]  # value for xc
         >>> mraw, msmo, mbkg, mneg = model.getmodel(img, pp, doresp=True, doexp=True)
         """
+        self._sync()
+        return self._getmodel(img, pp, doresp, doexp, component)
+
+    def _getmodel(self, img, pp, doresp=False, doexp=False, component=None):
+        """Compute the model images; the tables must already be synced."""
         pars = {}
         for ki, key in enumerate(self.params):
             if isinstance(

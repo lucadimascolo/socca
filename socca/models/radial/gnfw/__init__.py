@@ -59,16 +59,11 @@ class gNFW(Profile):
         self.beta = kwargs.get("beta", config.gNFW.beta)
         self.gamma = kwargs.get("gamma", config.gNFW.gamma)
 
-        self.rz = np.asarray(
-            kwargs.get("rz", np.logspace(-7, 2, 1000)), dtype=np.float64
-        )
+        self.rz = kwargs.get("rz", np.logspace(-7, 2, 1000))
         self.eps = kwargs.get("eps", 1.00e-08)
         self.interpolate = kwargs.get("interpolate", True)
 
         self.emulator = kwargs.get("emulator", None)
-        self._emulator_model = None
-        if self.emulator is not None:
-            self._emulator_model = gNFW._load_emulator(self.emulator)
 
         self.units.update(
             dict(rc="deg", alpha="", beta="", gamma="", Ic="image")
@@ -187,19 +182,67 @@ class gNFW(Profile):
             self.profile = jax.jit(_profile)
 
     def __getstate__(self):
-        """Drop the compiled profile and emulator, rebuilt on unpickling."""
-        state = self.__dict__.copy()
-        state.update(profile=None, _emulator_model=None)
+        """Drop the compiled profile, rebuilt on unpickling."""
+        state = super().__getstate__()
+        state["profile"] = None
         return state
 
     def __setstate__(self, state):
         """Restore state and rebuild profile from current source."""
-        self.__dict__.update(state)
-        self.rz = np.asarray(self.rz, dtype=np.float64)
-        self._emulator_model = None
-        if self.emulator is not None:
+        super().__setstate__(state)
+        rz = np.array(self.rz)
+        rz.flags.writeable = False  # unpickled arrays are writable again
+        self.__dict__["_rz"] = rz
+        if self.emulator and state.get("_emulator_model") is None:
             self._emulator_model = gNFW._load_emulator(self.emulator)
         self._rebuild_profile()
+
+    def _numerics(self, name, value):
+        """Set a numerical setting, recompiling the profile if built."""
+        self.__dict__[f"_{name}"] = value
+        if "profile" in self.__dict__:
+            self._rebuild_profile()
+
+    @property
+    def emulator(self):  # noqa: D102
+        return self._emulator
+
+    @emulator.setter
+    def emulator(self, value):  # noqa: D102
+        # False, like None, means no emulator (open(False) reads stdin)
+        model = gNFW._load_emulator(value) if value else None
+        self.__dict__["_emulator_model"] = model
+        self._numerics("emulator", value)
+
+    def _numerics_key(self):
+        """Return the settings that change the profile but are not parameters."""
+        return (self.eps, self.interpolate, self.rz.tobytes(), self.emulator)
+
+    @property
+    def rz(self):  # noqa: D102
+        return self._rz
+
+    @rz.setter
+    def rz(self, value):  # noqa: D102
+        rz = np.array(value, dtype=np.float64)
+        rz.flags.writeable = False  # edits in place would not recompile
+        self._numerics("rz", rz)
+
+    @property
+    def eps(self):  # noqa: D102
+        return self._eps
+
+    @eps.setter
+    def eps(self, value):  # noqa: D102
+        self._numerics("eps", value)
+
+    @property
+    def interpolate(self):  # noqa: D102
+        return self._interpolate
+
+    @interpolate.setter
+    def interpolate(self, value):  # noqa: D102
+        self._numerics("interpolate", value)
 
     @property
     def rc(self):  # noqa: D102

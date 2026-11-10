@@ -1,7 +1,10 @@
 """Tests for socca.models module."""
 
 import copy
+import gc
+import importlib.util
 import pickle
+import weakref
 
 import jax.numpy as jp
 import numpy as np
@@ -24,6 +27,30 @@ class TestModel:
         assert mod.ncomp == 0
         assert mod.priors == {}
         assert mod.params == []
+
+    def test_copy_is_independent(self):
+        """Test that adding to a shallow copy leaves the original intact."""
+        mod = models.Model(
+            models.Beta(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        )
+        new = copy.copy(mod)
+        new.addcomponent(models.Point(xc=180.0, yc=45.0, Ic=1.0))
+        assert (mod.ncomp, len(mod.components)) == (1, 1)
+        assert mod.params[-1] == "comp_00_Ic"
+        assert new.ncomp == 2 and new.params[-1] == "comp_01_Ic"
+
+    def test_components_read_only(self):
+        """Test that the component list cannot be changed in place."""
+        mod = models.Model(
+            models.Beta(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        )
+        with pytest.raises(AttributeError):
+            mod.components.pop()
+        with pytest.raises(TypeError):
+            mod.components[0] = models.Beta(
+                xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6
+            )
+        assert mod.ncomp == 1
 
     def test_initialization_with_profile(self):
         """Test creating a model with initial profile."""
@@ -462,6 +489,44 @@ class TestZoo:
 
 class TestgNFW:
     """Tests for gNFW profile."""
+
+    def test_numerics_change_detected(self, simple_hdu):
+        """A fitter notices numerical settings changed after its creation."""
+        import socca
+
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+        gnfw = models.gNFW(
+            xc=180.0, yc=45.0, rc=0.01, alpha=1.0, beta=4.0, gamma=0.5
+        )
+        gnfw.Ic = priors.uniform(0.0, 2.0)
+        fit = socca.fitter(img, models.Model(gnfw))
+        gnfw.rz = np.logspace(-2, 0, 5)
+        with pytest.raises(ValueError, match="model changed"):
+            fit._checkmodel()
+
+    def test_numerics_rebuild_profile(self):
+        """Changing eps, rz or interpolate after a first use takes effect."""
+        gnfw = models.gNFW(
+            xc=180.0, yc=45.0, rc=0.01, Ic=1.0, alpha=1.0, beta=4.0, gamma=0.5
+        )
+        r = jp.linspace(1e-4, 0.05, 50)
+        args = (1.0, 0.01, 1.0, 4.0, 0.5)
+        before = np.asarray(gnfw.profile(r, *args))
+        gnfw.rz = np.logspace(-7, 2, 200)
+        after = np.asarray(gnfw.profile(r, *args))
+        assert np.abs(after - before).max() > 0
+        np.testing.assert_array_equal(
+            copy.deepcopy(gnfw).profile(r, *args), after
+        )
+        with pytest.raises(ValueError, match="read-only"):
+            gnfw.rz[-1] = 1.0  # in place, it would not recompile
+
+    def test_emulator_false(self):
+        """emulator=False means no emulator, like None."""
+        gnfw = models.gNFW(emulator=False)
+        assert gnfw._emulator_model is None
+        assert copy.deepcopy(gnfw)._emulator_model is None
 
     def test_initialization(self):
         """Test gNFW profile initialization."""
@@ -1281,6 +1346,33 @@ class TestTies:
         pars.update(kwargs)
         return models.Beta(**pars)
 
+    def test_plain_callable_refused(self):
+        """A callable that is not a tie points to priors.function."""
+        import functools
+
+        double = functools.partial(np.multiply, 2.0)
+        with pytest.raises(TypeError, match="priors.function"):
+            models.Beta(xc=180.0, yc=45.0, rc=double, Ic=1.0, beta=0.6)
+        beta = models.Beta(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        with pytest.raises(TypeError, match="priors.function"):
+            beta.rc = double
+        beta.rc = priors.function(double, (beta, "Ic"))
+
+    def test_standalone_chain_linear(self):
+        """A long chain of ties resolves each source once."""
+        import time
+
+        beta = models.Beta(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        beta.addparameter("p0", 2.0)
+        for i in range(1, 24):
+            beta.addparameter(
+                f"p{i}",
+                priors.function(lambda x: x + 1.0, (beta, f"p{i - 1}")),
+            )
+        start = time.perf_counter()
+        assert beta._resolve("p23") == 25.0
+        assert time.perf_counter() - start < 1.0  # 2^24 resolves took ~25 s
+
     def test_boundto_follows_object(self, img):
         """Binding follows the bound object, not its position."""
         a = self.beta(xc=180.003)
@@ -1457,6 +1549,16 @@ class TestTies:
         with pytest.raises(ValueError, match="Circular tie"):
             mod.getmap(img)
 
+    def test_bridge_internals_fixed(self, img):
+        """The sub-profiles' scale radius and amplitude cannot be set."""
+        for name, value in [("rc", 0.003), ("Ic", 2.0)]:
+            bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.005, Is=1.0)
+            setattr(bridge.radial, name, value)
+            with pytest.raises(ValueError, match="set by the SimpleBridge"):
+                bridge.getmap(img)
+            with pytest.raises(ValueError, match="set by the SimpleBridge"):
+                models.Model(bridge).getmap(img)
+
 
 class TestIds:
     """Component ids from model positions or names."""
@@ -1467,6 +1569,27 @@ class TestIds:
         pars = dict(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
         pars.update(kwargs)
         return models.Beta(**pars)
+
+    def test_duplicate_keys(self):
+        """Two parameters with the same model key are rejected."""
+        pars = dict(xc=180.0, yc=45.0, rs=0.005, Is=1.0)
+        a = models.Gaussian(name="core", **pars)
+        a.addparameter("x_rs", 1.0)
+        mod = models.Model(a)
+        with pytest.raises(ValueError, match="share the model key core_x_rs"):
+            mod.addcomponent(models.Gaussian(name="core_x", **pars))
+        assert mod.ncomp == 1
+
+    def test_failed_add_restores_id(self):
+        """A component whose addition fails keeps its previous id."""
+        pars = dict(xc=180.0, yc=45.0, rs=0.005, Is=1.0)
+        a = models.Gaussian(name="core", **pars)
+        a.addparameter("x_rs", 1.0)
+        mod = models.Model(a)
+        b = models.Gaussian(name="core_x", **pars)
+        with pytest.raises(ValueError):
+            mod.addcomponent(b)
+        assert b.id is None and mod._prefix == ("core",)
 
     def test_positions_ignore_other_components(self):
         """Unused components and wrappers do not shift the numbering."""
@@ -1537,6 +1660,18 @@ class TestIds:
         with pytest.raises(ValueError, match="already in the model"):
             mod.addcomponent(a)
 
+    def test_rename(self):
+        """Names are checked when set, and model members keep theirs."""
+        a = models.Beta(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        with pytest.raises(ValueError, match="Invalid component name"):
+            a.name = "1 bad"
+        a.name = 3
+        assert a.name == "comp_03"
+        a.name = "halo"
+        models.Model(a)
+        with pytest.raises(ValueError, match="in a model as 'halo'"):
+            a.name = "core"
+
     def test_second_model(self):
         """A component in a second model takes that model's id."""
         a = self.beta()
@@ -1544,7 +1679,7 @@ class TestIds:
         second = models.Model(self.beta())
         second.addcomponent(a)
         assert a.id == "comp_01"
-        assert first._prefix == ["comp_00"]
+        assert first._prefix == ("comp_00",)
 
     def test_comp_filter(self):
         """Selections by position, id, name and object."""
@@ -1553,9 +1688,10 @@ class TestIds:
         mod.addcomponent(b)
         mod.addcomponent(c)
         assert mod._comp_filter(None) == [0, 1, 2]
-        assert mod._comp_filter([2, "core", "comp_00", b]) == [2, 1, 0, 1]
+        assert mod._comp_filter([2, "core", "comp_00"]) == [2, 1, 0]
+        assert mod._comp_filter(b) == [1]
         assert mod._comp_filter(np.int64(1)) == [1]
-        for bad in [3, "comp_05", self.beta()]:
+        for bad in [3, "comp_05", self.beta(), [1, "core"], [0, 0], [b, 1]]:
             with pytest.raises(ValueError):
                 mod._comp_filter(bad)
 
@@ -2009,6 +2145,84 @@ class TestWrappedProfiles:
         got = ell.profile(x, y, z, e=0.4, eratio=0.5, Ie=2.0, re=0.005, ns=1.5)
         np.testing.assert_allclose(got, expected, rtol=1e-12)
 
+    def test_truncation_swap_resets_units(self):
+        """A new truncation's values are native, whatever the old units."""
+        trunc = models.radial.truncation
+        beta = models.Beta(
+            xc=180.0,
+            yc=45.0,
+            rc=0.005,
+            Ic=1.0,
+            truncation=trunc.HyperTangent(rt=0.002, wt=0.0002),
+        )
+        beta.set_units(rt="arcsec")
+        beta.rt = 7.2
+        beta.truncation = trunc.Exponential(rt=0.002, wt=0.0002)
+        mod = models.Model(beta)
+        assert "comp_00_rt" not in mod.conversions
+        assert beta.rt == 0.002
+
+    @pytest.mark.parametrize("value", [np.inf, np.nan])
+    @pytest.mark.parametrize("name", ["rt", "wt"])
+    def test_truncation_parameters_finite(self, name, value):
+        """An infinite or NaN truncation radius or width raises."""
+        beta = models.Beta(rc=0.005, Ic=1.0, truncation=self._trunc(0.02))
+        with pytest.raises(ValueError, match="positive and finite"):
+            setattr(beta, name, value)
+
+    def test_disk_losdepth_finite(self):
+        """A Disk vertical profile refuses an infinite losdepth."""
+        for value in (np.inf, np.nan, np.array(np.inf), jp.array(jp.inf)):
+            with pytest.raises(ValueError, match="must be finite"):
+                models.disk.vertical.HyperSecantHeight(zs=1e-3, losdepth=value)
+        with pytest.raises(ValueError, match="must be a number"):
+            models.disk.vertical.HyperSecantHeight(zs=1e-3, losdepth=True)
+        models.Ellipsoid(losdepth=np.inf)  # the Ellipsoid default
+
+    def test_truncation_object_finite(self):
+        """A truncation object refuses infinite values, pointing to None."""
+        with pytest.raises(ValueError, match="truncation to None"):
+            models.radial.truncation.HyperTangent(rt=np.inf, wt=1e-3)
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda **kw: models.disk.vertical.HyperSecantHeight(zs=1e-3, **kw),
+            lambda **kw: models.Ellipsoid(**kw),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "kw",
+        [
+            dict(losdepth=-0.01),
+            dict(losdepth=0.0),
+            dict(losdepth=np.nan),
+            dict(losbins=1),
+            dict(losbins=2.5),
+            dict(losbins=True),
+        ],
+    )
+    def test_line_of_sight_settings_checked(self, make, kw):
+        """A non-positive losdepth, or losbins not an integer >= 2, raises."""
+        with pytest.raises(ValueError, match="losdepth|losbins"):
+            make(**kw)
+
+    def test_truncation_parameters_positive(self):
+        """Non-positive truncation radii and widths raise, priors included."""
+        beta = models.Beta(rc=0.005, Ic=1.0, truncation=self._trunc(0.02))
+        for name, value in [
+            ("wt", -1e-3),
+            ("wt", 0.0),
+            ("wt", priors.uniform(-1e-3, 1e-3)),
+            ("rt", priors.normal(0.02, 0.01)),
+        ]:
+            with pytest.raises(ValueError, match="strictly positive"):
+                setattr(beta, name, value)
+        beta.wt = priors.uniform(0.0, 1e-3)
+        beta.rt = priors.loguniform(1e-3, 1e-1)
+        with pytest.raises(ValueError, match="strictly positive"):
+            models.radial.truncation.HyperTangent(wt=-1e-3)
+
     def test_truncation_set_after_wrapping(self, img):
         """A truncation added to a wrapped sub-profile is applied."""
         radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
@@ -2073,3 +2287,355 @@ def _custom():
     )
     prof.Ic, prof.rc = 1.0, 0.005
     return prof
+
+
+class TestModelSync:
+    """The model follows changes made to its components after adding them."""
+
+    @pytest.fixture
+    def img(self, simple_hdu):
+        """Create an image centred on (180, 45)."""
+        return data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+    @staticmethod
+    def beta(**kw):
+        """Return a fixed Beta at the image centre."""
+        return models.Beta(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, **kw)
+
+    def test_values_priors_and_units(self, img):
+        """Values, priors and declared units set after adding are used."""
+        b = self.beta()
+        mod = models.Model(b)
+        b.Ic = 2.0
+        np.testing.assert_allclose(mod.getmap(img), b.getmap(img))
+        b.set_units(rc="arcsec")
+        b.rc = 18.0
+        np.testing.assert_allclose(mod.getmap(img), b.getmap(img))
+        assert mod.units["comp_00_rc"] == "arcsec"
+        b.Ic = priors.uniform(0.0, 3.0)
+        mod.parameters()
+        assert [mod.params[i] for i in mod.paridx] == ["comp_00_Ic"]
+
+    def test_getmodel_follows_changes(self, img):
+        """Model.getmodel uses values set after adding."""
+        b = self.beta()
+        mod = models.Model(b)
+        b.Ic = 2.0
+        mraw = mod.getmodel(img, [])[0]
+        np.testing.assert_allclose(mraw, b.getmap(img))
+
+    def test_ties_after_adding(self, img):
+        """A tie set after adding is resolved."""
+        a, b = self.beta(), self.beta()
+        mod = models.Model(a)
+        mod.addcomponent(b)
+        b.xc = priors.function(lambda x: x + 0.002, (a, "xc"))
+        ref = a.getmap(img) + models.Beta(
+            xc=180.002, yc=45.0, rc=0.005, Ic=1.0
+        ).getmap(img)
+        np.testing.assert_allclose(mod.getmap(img), ref)
+
+    @pytest.mark.parametrize("kind", ["Disk", "Ellipsoid", "SimpleBridge"])
+    def test_late_truncation(self, img, kind):
+        """A truncation set after adding is used by every wrapper."""
+        if kind == "Disk":
+            comp = models.Disk(
+                radial=models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0),
+                vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+            )
+            sub = comp.radial
+        elif kind == "Ellipsoid":
+            comp = models.Ellipsoid(
+                radial=models.Sersic(re=0.005, Ie=1.0), xc=180.0, yc=45.0
+            )
+            sub = comp.radial
+        else:
+            comp = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.01, Is=1.0)
+            sub = comp.parallel
+        mod = models.Model(comp)
+        full = float(np.sum(mod.getmap(img)))
+        sub.truncation = models.radial.truncation.HyperTangent(
+            rt=1e-3, wt=1e-4
+        )
+        cut = mod.getmap(img)
+        assert float(np.sum(cut)) < 0.5 * full
+        np.testing.assert_allclose(cut, comp.getmap(img))
+        sub.truncation = None
+        np.testing.assert_allclose(float(np.sum(mod.getmap(img))), full)
+        assert not any(k.endswith((".rt", ".wt")) for k in mod.params)
+
+    def test_fitter_follows_changes_before_creation(self, img):
+        """A fitter sees the components as they are when it is created."""
+        from socca import fitting
+
+        b = self.beta()
+        mod = models.Model(b)
+        b.Ic = priors.uniform(0.0, 3.0)
+        fit = fitting.fitter(img, mod)
+        assert fit.labels == ["comp_00_Ic"]
+
+    def test_fitter_rejects_later_changes(self, img):
+        """Changing the model after creating a fitter raises at run()."""
+        from socca import fitting
+
+        b = self.beta()
+        b.Ic = priors.uniform(0.0, 3.0)
+        mod = models.Model(b)
+        fit = fitting.fitter(img, mod)
+        b.rc = 0.01
+        with pytest.raises(ValueError, match="changed after this fitter"):
+            fit.run(method="optimizer")
+
+    def test_tie_outside_model_raises_at_fitter(self, img):
+        """A tie to a component outside the model is caught early."""
+        from socca import fitting
+
+        a, b = self.beta(), self.beta()
+        b.xc = priors.boundto(a, "xc")
+        b.Ic = priors.uniform(0.0, 3.0)
+        with pytest.raises(ValueError, match="not in this model"):
+            fitting.fitter(img, models.Model(b))
+
+    def test_span_warning_once(self):
+        """Repeated syncs do not repeat warnings."""
+        import warnings
+
+        b = self.beta(theta=priors.uniform(-np.pi, np.pi))
+        with pytest.warns(UserWarning, match="more than its period"):
+            mod = models.Model(b)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            mod.parameters()
+            repr(mod)
+
+    @pytest.mark.parametrize("name", ["losdepth", "losbins"])
+    def test_hyperparameters_are_not_fitted(self, name):
+        """A prior on a hyperparameter raises."""
+        disk = models.Disk(
+            radial=self.beta(),
+            vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+        )
+        setattr(disk.vertical, name, priors.uniform(1.0, 2.0))
+        with pytest.raises(ValueError, match="hyperparameter"):
+            models.Model(disk)
+
+
+class TestOwnership:
+    """A profile belongs to one component, and a model holds it once."""
+
+    def test_wrap_twice(self):
+        """Wrapping an already wrapped profile raises, before any change."""
+        s = models.Sersic()
+        models.Disk(radial=s)
+        units = dict(s.units)
+        for make in [
+            lambda: models.Disk(radial=s),
+            lambda: models.Ellipsoid(radial=s),
+            lambda: models.SimpleBridge(radial=s),
+        ]:
+            with pytest.raises(ValueError, match="already part of a Disk"):
+                make()
+        assert s.units == units
+        with pytest.raises(ValueError, match="used twice"):
+            models.SimpleBridge(radial=(t := models.TopHat()), parallel=t)
+
+    def test_copy_of_a_sub_profile(self):
+        """A deep copy of a wrapped profile is free; a copied wrapper keeps its own."""
+        disk = models.Disk()
+        free = copy.deepcopy(disk.radial)
+        assert free._wrapper is None
+        models.Disk(radial=free)
+        assert disk.radial._wrapper is disk
+        other = copy.deepcopy(disk)
+        assert other.radial._wrapper is other
+
+    def test_model_rejects_sub_profiles(self):
+        """A sub-profile cannot also be a model entry."""
+        disk = models.Disk(
+            radial=models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0),
+            vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+        )
+        mod = models.Model(disk)
+        with pytest.raises(ValueError, match="part of a Disk"):
+            mod.addcomponent(disk.radial)
+        s = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+        mod = models.Model(s)
+        models.Disk(
+            radial=s, vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4)
+        )
+        mod.parameters()
+        with pytest.raises(ValueError, match="now part of a Disk"):
+            mod.getmap(None)
+
+    def test_reserved_truncation_names(self):
+        """Profiles cannot define their own rt or wt."""
+        with pytest.raises(ValueError, match="reserved"):
+            models.CustomProfile([dict(name="rt")], lambda r, rt: r)
+        with pytest.raises(ValueError, match="reserved"):
+            models.Beta().addparameter("wt", 1.0)
+
+    def test_truncation_parameters_are_not_removable(self):
+        """The rt and wt parameters go with the truncation."""
+        prof = models.Sersic(truncation=True)
+        with pytest.raises(ValueError, match="truncation = None"):
+            prof.removeparameter("rt")
+        prof.truncation = None
+        assert not hasattr(prof, "rt")
+
+    @staticmethod
+    def _disk():
+        radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+        vertical = models.disk.vertical.HyperSecantHeight(zs=5e-4, inc=0.5)
+        return models.Disk(radial=radial, vertical=vertical)
+
+    def test_copies_of_sub_profiles_are_free(self):
+        """Refactors, copies and pickles of a sub-profile leave the wrapper."""
+        disk = self._disk()
+        vertical = models.disk.vertical.HyperSecantHeight(zs=5e-4)
+        with pytest.warns(UserWarning, match="Nothing to refactor"):
+            radial = disk.radial.refactor()
+        models.Disk(radial=radial, vertical=vertical)
+        assert copy.copy(disk.radial)._wrapper is None
+        assert pickle.loads(pickle.dumps(disk.radial))._wrapper is None
+        assert copy.deepcopy(disk.radial)._wrapper is None
+
+    def test_copies_of_wrappers_keep_their_subs(self):
+        """A copied wrapper owns its copied subs; a shallow copy steals none."""
+        disk = self._disk()
+        deep = copy.deepcopy(disk)
+        assert deep.radial._wrapper is deep
+        assert disk.radial._wrapper is disk
+        copy.copy(disk)
+        assert disk.radial._wrapper is disk
+
+
+class TestReviewChecks:
+    """Listing, tie and selection checks."""
+
+    def test_bridge_internal_radius_tie(self):
+        """Tying to a Bridge's internal scale radius raises."""
+        bridge = models.SimpleBridge()
+        for sub in [bridge.radial, bridge.parallel]:
+            with pytest.raises(
+                ValueError, match="computed by its SimpleBridge"
+            ):
+                priors.boundto(sub, sub._scale_radius)
+            with pytest.raises(
+                ValueError, match="computed by its SimpleBridge"
+            ):
+                priors.function(lambda r: r, (sub, sub._scale_radius))
+        priors.boundto(bridge, "rs")
+
+    def test_prior_ranges_distinguishable(self, capsys):
+        """Narrow priors print with enough digits to tell the bounds apart."""
+        b = models.Beta(
+            xc=priors.uniform(179.995, 180.005), rc=priors.uniform(0, 20)
+        )
+        b.parameters()
+        out = capsys.readouterr().out
+        assert "Uniform [179.995, 180.005]" in out
+        assert "Uniform [0, 20]" in out
+
+    def test_standalone_listing_declared_units(self, capsys):
+        """Component listings show declared units."""
+        b = models.Beta(rc=36.0)
+        b.set_units(rc="arcsec")
+        b.parameters()
+        assert "rc [arcsec]" in capsys.readouterr().out
+
+    def test_hyperparameters_listed_apart(self, capsys):
+        """Model listings put losdepth and losbins under hyperparameters."""
+        disk = models.Disk(
+            radial=models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0),
+            vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+        )
+        models.Model(disk).parameters()
+        out = capsys.readouterr().out
+        head, _, tail = out.partition("Hyperparameters")
+        assert "vertical.losbins" in tail and "vertical.losbins" not in head
+
+    def test_ambiguous_lambda_argument(self):
+        """A lambda argument matching two parameters raises."""
+        a = models.Beta(name="x_radial", xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
+        disk = models.Disk(
+            name="x",
+            radial=models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0),
+            vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+        )
+        b = models.Beta(yc=45.0, rc=0.01, Ic=1.0)
+        b.xc = lambda x_radial_xc: x_radial_xc
+        mod = models.Model(a)
+        mod.addcomponent(disk)
+        mod.addcomponent(b)
+        with pytest.raises(KeyError, match="several"):
+            mod._tieorder()
+
+    def test_named_lambda_standalone(self, simple_hdu):
+        """A named component resolves its own lambda ties before adding."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        b = models.Beta(name="core", xc=180.0, yc=45.0, rc=0.01)
+        b.Ic = lambda core_rc: core_rc * 100.0
+        ref = models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0).getmap(img)
+        np.testing.assert_allclose(b.getmap(img), ref)
+
+    def test_prior_source_standalone(self, simple_hdu):
+        """A function tie on a prior gives a clear standalone error."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        a = models.Beta(xc=priors.uniform(179.9, 180.1))
+        b = models.Beta(yc=45.0, rc=0.01, Ic=1.0)
+        b.xc = priors.function(lambda x: x, (a, "xc"))
+        with pytest.raises(ValueError, match="has a prior"):
+            b.getmap(img)
+
+    @pytest.mark.skipif(
+        importlib.util.find_spec("flax") is None,
+        reason="the gNFW emulator needs flax",
+    )
+    def test_gnfw_keeps_its_emulator(self, monkeypatch):
+        """Unpickling a gNFW does not reload the emulator from disk."""
+        g = models.gNFW(emulator=True)
+        blob = pickle.dumps(g)
+        monkeypatch.setattr(
+            models.gNFW,
+            "_load_emulator",
+            staticmethod(lambda path: (_ for _ in ()).throw(OSError(path))),
+        )
+        new = pickle.loads(blob)
+        assert new._emulator_model is not None
+
+
+def test_compiled_profile_follows_replacements(simple_hdu):
+    """Replacing a sub-profile's truncation recompiles the wrapper profile."""
+    trunc = models.radial.truncation
+    img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+
+    def disk(tr):
+        radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+        radial.truncation = tr
+        return models.Disk(
+            radial=radial,
+            vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+        )
+
+    comp = disk(trunc.HyperTangent(rt=1e-3, wt=1e-4))
+    comp.getmap(img)
+    comp.radial.truncation = trunc.Exponential(rt=1e-3, wt=1e-4)
+    ref = disk(trunc.Exponential(rt=1e-3, wt=1e-4)).getmap(img)
+    np.testing.assert_allclose(comp.getmap(img), ref)
+    assert "_jit" not in pickle.loads(pickle.dumps(comp)).__dict__
+
+
+def test_compiled_profile_keeps_its_truncation(simple_hdu):
+    """The cache keeps its truncation alive, so no new one takes its address."""
+    trunc = models.radial.truncation
+    img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+    radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+    radial.truncation = trunc.HyperTangent(rt=1e-3, wt=1e-4)
+    comp = models.Disk(
+        radial=radial, vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4)
+    )
+    comp.getmap(img)
+    old = weakref.ref(radial.truncation)
+    radial.truncation = trunc.Exponential(rt=1e-3, wt=1e-4)
+    gc.collect()
+    assert old() is not None

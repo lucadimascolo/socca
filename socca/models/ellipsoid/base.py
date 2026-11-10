@@ -10,7 +10,7 @@ import jax.numpy as jp
 
 
 from .. import config
-from ..base import Component, _subkeys, _warn_range
+from ..base import Component, _claim, _subkeys, _warn_range
 from ..radial import Sersic
 
 
@@ -109,7 +109,9 @@ class Ellipsoid(Component):
         # radial below, which would otherwise corrupt a single
         # module-level-evaluated default shared across every Ellipsoid()
         # call that doesn't pass its own radial.
-        self.radial = Sersic() if radial is None else radial
+        radial = Sersic() if radial is None else radial
+        _claim(radial)
+        self.radial = radial
 
         # xc/yc/theta/e live on Ellipsoid itself, not on radial. If the
         # caller set one of them on radial (before passing it in) and
@@ -417,7 +419,7 @@ class Ellipsoid(Component):
         )
 
         dx = 2.0 * losdepth / (losbins - 1)
-        mgrid = self.profile(xt, yt, zt, **kwarg)
+        mgrid = self._compiled()(xt, yt, zt, **kwarg)
         mgrid = jp.trapezoid(mgrid, dx=dx, axis=1)
         return jp.mean(mgrid, axis=0)
 

@@ -7,10 +7,24 @@ import warnings
 
 import jax
 import jax.numpy as jp
+import numpy as np
 
 from .. import config
 from ..base import Component, _warn_range
 from .truncation import Truncation, HyperTangent
+
+
+_TRUNCATION = dict(rt="radius", wt="width")
+
+
+def _check_names(names):
+    """Reject parameter names reserved for the truncation."""
+    for name in names:
+        if name in ("rt", "wt"):
+            raise ValueError(
+                f"'{name}' is reserved for the profile's truncation: give "
+                "this parameter another name."
+            )
 
 
 class Profile(Component):
@@ -69,6 +83,7 @@ class Profile(Component):
             Keyword arguments including xc, yc, theta, e, cbox, positive.
             See class docstring for parameter descriptions.
         """
+        _check_names(inspect.signature(type(self).profile).parameters)
         super().__init__(**kwargs)
         self.xc = kwargs.get("xc", config.Profile.xc)
         self.yc = kwargs.get("yc", config.Profile.yc)
@@ -93,6 +108,12 @@ class Profile(Component):
         self._truncation = None
         self.truncation = kwargs.get("truncation", None)
 
+    def addparameter(self, name, value=None, units="", description=""):  # noqa: D102
+        _check_names([name])
+        super().addparameter(name, value, units, description)
+
+    addparameter.__doc__ = Component.addparameter.__doc__
+
     @property
     def truncation(self):  # noqa: D102
         return self._truncation
@@ -112,6 +133,9 @@ class Profile(Component):
             self.wt = value.wt
             self._initialized = _init
             self.units.update(dict(rt=value.units["rt"], wt=value.units["wt"]))
+            # the new values are native, whatever units the old ones had
+            self._input_units.pop("rt", None)
+            self._input_units.pop("wt", None)
             self.description.update(
                 dict(
                     rt=value.description["rt"],
@@ -119,6 +143,7 @@ class Profile(Component):
                 )
             )
         else:
+            self._truncation = None
             if hasattr(self, "rt"):
                 self.removeparameter("rt")
             if hasattr(self, "wt"):
@@ -134,6 +159,22 @@ class Profile(Component):
     @theta.setter
     def theta(self, value):  # noqa: D102
         self._theta = value
+
+    def __setattr__(self, name, value):
+        """Reject non-positive truncation radii and widths, priors included."""
+        if name in ("rt", "wt"):
+            _warn_range(
+                value,
+                name,
+                lower=0,
+                lower_strict=True,
+                upper=np.inf,
+                upper_strict=True,
+                note=f"The truncation {_TRUNCATION[name]} must be strictly "
+                "positive and finite; set truncation = None for none.",
+                error=True,
+            )
+        super().__setattr__(name, value)
 
     @property
     def e(self):  # noqa: D102
@@ -457,6 +498,7 @@ class CustomProfile(Profile):
         **kwargs : dict
             Standard profile parameters (xc, yc, theta, e, cbox).
         """
+        _check_names([p["name"] for p in parameters])
         super().__init__(**kwargs)
 
         for p in parameters:
@@ -471,11 +513,11 @@ class CustomProfile(Profile):
 
     def __getstate__(self):
         """Drop the compiled profile, rebuilt on unpickling."""
-        state = self.__dict__.copy()
+        state = super().__getstate__()
         state.pop("profile", None)
         return state
 
     def __setstate__(self, state):
         """Restore state and recompile the profile."""
-        self.__dict__.update(state)
+        super().__setstate__(state)
         self.__dict__["profile"] = jax.jit(self._function)

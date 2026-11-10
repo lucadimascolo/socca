@@ -7,6 +7,7 @@ import keyword
 import re
 import warnings
 
+import jax
 import numpy as np
 import numpyro.distributions
 
@@ -52,6 +53,8 @@ def _warn_range(
     else:
         kind = f"The {name} parameter is"
         vlo = vhi = value
+        if error and np.isnan(np.asarray(value, dtype=float)).any():
+            raise ValueError(f"{kind} NaN. {note}".strip())
     messages = []
     if upper is not None and (vhi >= upper if upper_strict else vhi > upper):
         suffix = "or equal to " if upper_strict else ""
@@ -111,16 +114,20 @@ def _source_label(comp, name):
     return f"{comp.id or type(comp).__name__}.{name}"
 
 
-def _format_bound(value):
-    """Short text for a prior bound."""
-    value = float(value)
-    return (
-        "inf"
-        if value == np.inf
-        else "-inf"
-        if value == -np.inf
-        else (f"{value:.4g}")
-    )
+def _format_bounds(low, high):
+    """Short texts for prior bounds, with enough digits to tell them apart."""
+    for digits in range(4, 18):
+        texts = [
+            "inf"
+            if v == np.inf
+            else "-inf"
+            if v == -np.inf
+            else f"{v:.{digits}g}"
+            for v in (low, high)
+        ]
+        if texts[0] != texts[1] or low == high:
+            return texts
+    return texts
 
 
 def _format_value(value, label=_source_label):
@@ -142,9 +149,8 @@ def _format_value(value, label=_source_label):
             return text
         left = "(" if np.isinf(low) else "["
         right = ")" if np.isinf(high) else "]"
-        return (
-            f"{text} {left}{_format_bound(low)}, {_format_bound(high)}{right}"
-        )
+        low, high = _format_bounds(low, high)
+        return f"{text} {left}{low}, {high}{right}"
     if isinstance(value, _BoundTo):
         return "= " + label(*value.sources[0])
     if isinstance(value, _Function):
@@ -206,6 +212,50 @@ def _check_name(name):
     if number < 0:
         raise ValueError(f"Invalid component name {name!r}: negative.")
     return f"comp_{number:02d}"
+
+
+def _check_losdepth(value):
+    """Reject a non-positive line-of-sight depth (inf is allowed)."""
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"losdepth must be a number, not {value!r}.")
+    _warn_range(
+        value,
+        "losdepth",
+        lower=0,
+        lower_strict=True,
+        note="The line-of-sight depth must be strictly positive.",
+        error=True,
+    )
+
+
+def _check_losbins(value):
+    """Reject a number of line-of-sight nodes that is not an integer >= 2."""
+    if isinstance(value, (numpyro.distributions.Distribution, *_TIED)):
+        return  # not a fixed value: the model raises for hyperparameters
+    if not (
+        isinstance(value, (int, np.integer))
+        and not isinstance(value, bool)
+        and value >= 2
+    ):
+        raise ValueError(
+            f"losbins must be an integer of at least 2, not {value!r}."
+        )
+
+
+_LOS_CHECKS = {"losdepth": _check_losdepth, "losbins": _check_losbins}
+
+
+def _claim(*subs):
+    """Check that sub-profiles are free to be wrapped by a new component."""
+    for sub in subs:
+        if sub._wrapper is not None:
+            raise ValueError(
+                f"This {type(sub).__name__} is already part of a "
+                f"{type(sub._wrapper).__name__}: use a separate profile "
+                "(e.g. copy.deepcopy) for each component."
+            )
+    if len({id(sub) for sub in subs}) < len(subs):
+        raise ValueError("The same profile cannot be used twice.")
 
 
 def _subkeys(prof, prefix):
@@ -285,7 +335,7 @@ class Component:
                 position ``n``. Default is the position in the model.
         """
         self.id = None
-        self.name = _check_name(kwargs.get("name"))
+        self.name = kwargs.get("name")
 
         self.positive = kwargs.get("positive", config.Component.positive)
         self.hyper = []
@@ -294,6 +344,46 @@ class Component:
         self.description = {}
         self.periodic = {}
         self._initialized = False
+
+    def __getstate__(self):
+        """Return the state for pickling and copying, without compiled code."""
+        state = self.__dict__.copy()
+        state.pop("_jit", None)
+        state.pop("_wrapper", None)  # set again by the wrapper's __setstate__
+        return state
+
+    def __setstate__(self, state):
+        """Restore a pickled component."""
+        self.__dict__.update(state)
+        for sub in state.get("_namespaces", {}).values():
+            if sub._wrapper is None:
+                sub._wrapper = self
+
+    def _compiled(self):
+        """
+        Return the compiled profile of a wrapper.
+
+        It is cached until a sub-profile, its profile function or its
+        truncation is replaced.
+        """
+        key = [
+            obj
+            for sub in self._namespaces.values()
+            for obj in (
+                sub,
+                sub.__dict__.get("profile"),
+                getattr(sub, "truncation", None),
+            )
+        ]
+        cached = self.__dict__.get("_jit")
+        if (
+            cached is None
+            or len(cached[0]) != len(key)
+            or any(a is not b for a, b in zip(cached[0], key))
+        ):
+            cached = (key, jax.jit(self.profile))
+            self.__dict__["_jit"] = cached
+        return cached[1]
 
     def _wrap(self):
         """Mark the sub-profiles as wrapped by this component."""
@@ -321,6 +411,28 @@ class Component:
                 f"{self.__class__.__name__}. "
                 f"Use addparameter() to add new parameters."
             )
+        if name in _LOS_CHECKS:
+            _LOS_CHECKS[name](value)
+        if (
+            callable(value)
+            and not isinstance(
+                value, (_TIED, numpyro.distributions.Distribution)
+            )
+            and not name.startswith("_")
+            and name != "profile"
+        ):
+            raise TypeError(
+                f"{name} cannot be set to {type(value).__name__} "
+                f"{value!r}: tie it with socca.priors.function(func, "
+                "(component, 'name'), ...) instead."
+            )
+        if name == "name":
+            value = _check_name(value)
+            if self.id is not None and value != self.name:
+                raise ValueError(
+                    f"This {type(self).__name__} is in a model as "
+                    f"'{self.id}': rename a copy.copy of it instead."
+                )
         super().__setattr__(name, value)
 
     #   Print model parameters
@@ -353,7 +465,7 @@ class Component:
             [
                 (
                     key,
-                    self.units[key],
+                    self._input_unit(key),
                     _format_value(
                         functools.reduce(getattr, key.split("."), self)
                     ),
@@ -387,6 +499,7 @@ class Component:
             key: _repoint(value, self, new) for key, value in state.items()
         }
         state["id"] = None
+        state.pop("_wrapper", None)
         new.__dict__.update(state)
         return new
 
@@ -413,15 +526,19 @@ class Component:
             raise ValueError(f"Circular tie involving {attr}.")
         _seen = _seen | {tag}
 
+        sources = getattr(value, "sources", [])
+        args = [comp._resolve(name, _seen) for comp, name in sources]
+        for arg, (comp, name) in zip(args, sources):
+            if isinstance(arg, numpyro.distributions.Distribution):
+                raise ValueError(
+                    f"{attr} is tied to {_source_label(comp, name)}, which "
+                    "has a prior: standalone getmap() needs fixed values. "
+                    "Use Model.getmodel() with sampled values instead."
+                )
         if isinstance(value, _BoundTo):
-            comp, name = value.sources[0]
-            return (
-                comp._resolve(name, _seen)
-                * comp._factor(name)
-                / self._factor(attr)
-            )
+            comp, name = sources[0]
+            return args[0] * comp._factor(name) / self._factor(attr)
         if isinstance(value, _Function):
-            args = [comp._resolve(name, _seen) for comp, name in value.sources]
             if value.native:
                 args = [
                     arg * comp._factor(name)
@@ -429,28 +546,28 @@ class Component:
                 ]
                 return value(*args) / self._factor(attr)
             return value(*args)
-        return value(
-            *[
-                self._resolve(self._tiearg(name), _seen)
-                for name in inspect.signature(value).parameters
-            ]
-        )
+        keys = [
+            self._tiearg(name) for name in inspect.signature(value).parameters
+        ]
+        args = [self._resolve(key, _seen) for key in keys]
+        return value(*args)
 
     def _tiearg(self, name):
         """Map a lambda argument name to one of this component's parameters."""
-        if self.id is None:
+        cid = self.id or self.name
+        if cid is None:
             raise ValueError(
                 f"Cannot resolve the lambda argument '{name}': this "
                 f"{type(self).__name__} is not in a model, so it has no id. "
                 "Use socca.priors.function() instead."
             )
-        local = re.sub(rf"^{re.escape(self.id)}_", "", name)
+        local = re.sub(rf"^{re.escape(cid)}_", "", name)
         for key in self.units:
             if local in (key, key.replace(".", "_")) and local != name:
                 return key
         raise ValueError(
             f"Tie argument '{name}' is not a parameter of this "
-            f"{type(self).__name__} ({self.id}). Standalone getmap() can "
+            f"{type(self).__name__} ({cid}). Standalone getmap() can "
             "only resolve ties to the component's own parameters; add the "
             "components to a Model and use Model.getmap() instead."
         )
@@ -643,6 +760,11 @@ class Component:
             raise AttributeError(
                 f"Parameter '{name}' does not exist on "
                 f"{self.__class__.__name__}."
+            )
+        if name in ("rt", "wt") and getattr(self, "truncation", None):
+            raise ValueError(
+                f"'{name}' belongs to the truncation: set truncation = None "
+                "to remove it."
             )
         self._initialized = False
         delattr(self, name)

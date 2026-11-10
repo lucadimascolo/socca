@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jp
 
 
-from ..base import Component, _subkeys, _subprofile
+from ..base import Component, _claim, _subkeys, _subprofile
 from ..radial import Sersic
 from .vertical import HyperSecantHeight
 
@@ -97,6 +97,7 @@ class Disk(Component):
             radial = Sersic()
         if vertical is None:
             vertical = HyperSecantHeight()
+        _claim(radial, vertical)
 
         _radial_exclude = ["e", "cbox"]
 
@@ -313,7 +314,7 @@ class Disk(Component):
             img.grid, xc, yc, losdepth, losbins, theta, inc
         )
         dx = 2.00 * losdepth / (losbins - 1)
-        mgrid = self.profile(rcube, zcube, **kwarg)
+        mgrid = self._compiled()(rcube, zcube, **kwarg)
         mgrid = jp.trapezoid(mgrid, dx=dx, axis=1)
         return jp.mean(mgrid, axis=0)
 

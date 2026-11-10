@@ -4,8 +4,11 @@ from abc import abstractmethod
 
 import jax
 import jax.numpy as jp
+import numpy as np
+import numpyro.distributions
 
 from .. import config
+from ...priors import _TIED
 from ..base import Component, _warn_range
 
 
@@ -47,6 +50,19 @@ class Height(Component):
     - Larger losdepth needed for extended vertical distributions
     - More losbins increase accuracy but decrease speed
     """
+
+    def __setattr__(self, name, value):
+        """Reject an infinite losdepth: the Disk spaces its nodes over it."""
+        fixed = not isinstance(
+            value, (numpyro.distributions.Distribution, *_TIED, type(None))
+        )
+        if name == "losdepth" and fixed:
+            if not np.isfinite(np.asarray(value, dtype=float)).all():
+                raise ValueError(
+                    "A Disk's losdepth must be finite: its line-of-sight "
+                    "nodes are spread over [-losdepth, losdepth]."
+                )
+        super().__setattr__(name, value)
 
     def __init__(self, **kwargs):
         """
