@@ -10,6 +10,7 @@ import jax.numpy as jp
 
 from ..base import Component, _claim, _subkeys, _subprofile
 from ..radial import Sersic
+from ..radial.base import _safe_power
 from .vertical import HyperSecantHeight
 
 
@@ -402,7 +403,7 @@ class Disk(Component):
 
         zt, yt = yt * cosi - zt * sini, yt * sini + zt * cosi
 
-        return jp.sqrt(xt**2 + yt**2), zt
+        return _safe_power(xt**2 + yt**2, 0.50), zt
 
     def parlist(self):
         """

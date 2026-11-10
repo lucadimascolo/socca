@@ -14,6 +14,12 @@ from ..base import Component, _warn_range
 from .truncation import Truncation, HyperTangent
 
 
+def _safe_power(x, p):
+    """Return x**p for x >= 0 and p > 0, with finite gradients at x = 0."""
+    safe = jp.where(x > 0, x, 1.00)
+    return jp.where(x > 0, jp.power(safe, p), 0.00)
+
+
 _TRUNCATION = dict(rt="radius", wt="width")
 
 
@@ -410,7 +416,7 @@ class Profile(Component):
 
         xgrid = jp.abs(xgrid) ** (cbox + 2.00)
         ygrid = jp.abs(ygrid / (1.00 - e)) ** (cbox + 2.00)
-        return jp.power(xgrid + ygrid, 1.00 / (cbox + 2.00))
+        return _safe_power(xgrid + ygrid, 1.00 / (cbox + 2.00))
 
     def refactor(self):
         """

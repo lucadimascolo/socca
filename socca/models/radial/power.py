@@ -87,4 +87,5 @@ class Power(Profile):
         >>> r = jp.linspace(0.001, 0.1, 100)
         >>> I = Power.profile(r, Ic=100.0, rc=0.01, alpha=2.0)
         """
-        return Ic * jp.power(r / rc, -alpha)
+        x = jp.maximum(r / rc, 1.00e-07)
+        return Ic * jp.power(x, -alpha)

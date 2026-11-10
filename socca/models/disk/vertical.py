@@ -217,8 +217,8 @@ class HyperSecantHeight(Height):
         -----
         Uses absolute value of z to ensure symmetry about the midplane.
         """
-        factor = jp.cosh(jp.abs(z) / zs)
-        return 1.00 / factor**alpha
+        u = jp.abs(z) / zs
+        return jp.exp(alpha * (jp.log(2.00) - u - jp.log1p(jp.exp(-2.00 * u))))
 
 
 # Exponential height

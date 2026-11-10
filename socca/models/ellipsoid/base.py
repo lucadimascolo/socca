@@ -12,6 +12,7 @@ import jax.numpy as jp
 from .. import config
 from ..base import Component, _claim, _subkeys, _warn_range
 from ..radial import Sersic
+from ..radial.base import _safe_power
 
 
 class Ellipsoid(Component):
@@ -376,7 +377,9 @@ class Ellipsoid(Component):
 
     def profile(self, xt, yt, zt, e, eratio, rt=None, wt=None, **kw):
         """Evaluate the radial profile on the ellipsoidal radius."""
-        r = jp.sqrt(xt**2 + (yt / (1 - e)) ** 2 + (zt / (1 - eratio * e)) ** 2)
+        r = _safe_power(
+            xt**2 + (yt / (1 - e)) ** 2 + (zt / (1 - eratio * e)) ** 2, 0.50
+        )
         mgrid = self.radial.profile(r, **kw)
         if rt is not None:
             mgrid = mgrid * self.radial.truncation.profile(r, rt, wt)

@@ -144,9 +144,9 @@ class Exponential(Truncation):
         array_like
             Truncation weight in ``[0, 1]``, same shape as *r*.
         """
-        num = 1.00 - jp.exp((r - rt) / wt)
-        den = 1.00 - jp.exp(-rt / wt)
-        return jp.clip(num / den, 0.00, None)
+        num = -jp.expm1(jp.minimum((r - rt) / wt, 0.00))
+        den = -jp.expm1(-rt / wt)
+        return num / den
 
 
 class HyperTangent(Truncation):

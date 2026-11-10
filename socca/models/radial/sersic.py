@@ -8,7 +8,7 @@ from scipy.special import gammaincinv
 
 from .. import config
 from ..base import _warn_range
-from .base import Profile
+from .base import Profile, _safe_power
 
 
 # Precompute Sersic bn values for interpolation
@@ -138,5 +138,5 @@ class Sersic(Profile):
         >>> I = Sersic.profile(r, Ie=50.0, re=0.02, ns=4.0)
         """
         bn = jp.interp(ns, n_, b_)
-        se = jp.power(r / re, 1.00 / ns) - 1.00
+        se = _safe_power(r / re, 1.00 / ns) - 1.00
         return Ie * jp.exp(-bn * se)
