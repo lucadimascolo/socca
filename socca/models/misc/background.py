@@ -216,27 +216,9 @@ class Background(Component):
         """
         return (grid.x - xc) * jp.cos(jp.deg2rad(yc)), grid.y - yc
 
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate.
-        """
-        return {
-            key.replace(f"{comp_prefix}_", ""): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_")
-        }
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        return {key: key for key in self.units}
 
     def _evaluate(self, img, **kwarg):
         """
@@ -311,6 +293,6 @@ class Background(Component):
                 "Ignoring `convolve` argument."
             )
 
-        kwarg = self._getpars(list(self.units.keys()))
+        kwarg = self._getpars(self._keymap())
 
         return self._evaluate(img, **kwarg)

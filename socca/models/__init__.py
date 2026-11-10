@@ -1,6 +1,4 @@
-import matplotlib.pyplot as plt
 import copy
-import functools
 import inspect
 import types
 import warnings
@@ -21,6 +19,7 @@ from .base import (
     _check_name,
     _format_rows,
     _format_value,
+    _getdotted,
     _warn_span,
     _whole,
 )
@@ -181,9 +180,8 @@ def _period(prof, name):
     """Return the native period of a (possibly dotted) parameter, or None."""
     if name in prof.periodic:
         return prof.periodic[name]
-    space, _, local = name.partition(".")
-    sub = getattr(prof, "_namespaces", {}).get(space)
-    if local and sub is not None:
+    sub, local = prof._sub(name)
+    if sub is not None:
         return sub.periodic.get(local)
     return None
 
@@ -455,7 +453,7 @@ class Model:
                 prof.positive if positive is None else positive
             )
             for p in prof.parlist():
-                par = functools.reduce(getattr, p.split("."), prof)
+                par = _getdotted(prof, p)
                 key = f"{prefix}_{p}"
                 if key in tables["priors"]:
                     raise ValueError(
@@ -687,20 +685,17 @@ class Model:
         >>> convolved_map = model.getmap(img, convolve=True)
         """
         self._sync()
-        pars = {}
-        for ki, key in enumerate(self.params):
+        for key in self.params:
             if isinstance(
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 raise ValueError(
                     f"Parameter {key} is a distribution. "
-                    f"Use getmap() with sampled values instead."
+                    f"Use getmodel() with sampled values instead."
                 )
-            elif not self.tied[ki]:
-                pars[key] = self.priors[key]
 
         mraw, msmo, mbkg, _ = self._getmodel(
-            img, pars, doresp=False, doexp=False
+            img, [], doresp=False, doexp=False
         )
 
         if not addbackground:

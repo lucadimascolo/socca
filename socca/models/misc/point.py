@@ -1,7 +1,5 @@
 """Point source model component."""
 
-import jax.numpy as jp
-
 from .. import config
 from ..base import Component
 
@@ -114,27 +112,9 @@ class Point(Component):
         """
         pass
 
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate.
-        """
-        return {
-            key.replace(f"{comp_prefix}_", ""): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_")
-        }
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        return {key: key for key in self.units}
 
     def _evaluate(self, img, **kwarg):
         """
@@ -212,7 +192,7 @@ class Point(Component):
         >>> img = Image('observation.fits')
         >>> psf_convolved = point.getmap(img, convolve=True)
         """
-        kwarg = self._getpars(["xc", "yc", "Ic"])
+        kwarg = self._getpars(self._keymap())
 
         mgrid = self._evaluate(img, **kwarg)
 

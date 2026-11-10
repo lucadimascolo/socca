@@ -1,7 +1,6 @@
 """Ellipsoid model with 3D line-of-sight integration."""
 
 from functools import partial
-import inspect
 
 import warnings
 
@@ -10,7 +9,14 @@ import jax.numpy as jp
 
 
 from .. import config
-from ..base import Component, _claim, _strip, _subkeys, _warn_range
+from ..base import (
+    Component,
+    _claim,
+    _strip,
+    _subkeymap,
+    _subprofile,
+    _warn_range,
+)
 from ..radial import Sersic
 from ..radial.base import Profile, _safe_power
 
@@ -161,16 +167,9 @@ class Ellipsoid(Component):
         self._namespaces = {"radial": self.radial}
         self._wrap()
 
-        for param in ["losdepth", "losbins"]:
-            if param not in self.hyper:
-                self.hyper.append(param)
+        self.hyper += ["losdepth", "losbins"]
 
-        self.units.update(
-            {
-                f"radial.{key}": self.radial.units[key]
-                for key in self.radial.units.keys()
-            }
-        )
+        self._adopt()
         self.units.update(
             dict(
                 xc="deg",
@@ -185,12 +184,6 @@ class Ellipsoid(Component):
             )
         )
 
-        self.description.update(
-            {
-                f"radial.{key}": self.radial.description[key]
-                for key in self.radial.description.keys()
-            }
-        )
         self.description.update(
             dict(
                 xc="Right ascension of centroid",
@@ -301,13 +294,12 @@ class Ellipsoid(Component):
         >>> img = Image('observation.fits')
         >>> ellipsoid_map = ellipsoid.getmap(img, convolve=True)
         """
-        keys = {
-            key: f"radial.{key}"
-            for key in inspect.signature(self.radial.profile).parameters
-            if key != "r"
-        }
-        if self.radial.truncation is not None:
-            keys.update(rt="radial.rt", wt="radial.wt")
+        kwarg = self._getpars(self._keymap())
+        return self._convolve(img, self._evaluate(img, **kwarg), convolve)
+
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        keys = _subkeymap(self.radial, "r", "radial")
         keys.update(
             {
                 key: key
@@ -324,68 +316,14 @@ class Ellipsoid(Component):
                 ]
             }
         )
-        kwarg = self._getpars(keys)
+        return keys
 
-        mgrid = self._evaluate(img, **kwarg)
-
-        if convolve:
-            if img.psf is None:
-                warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
-                )
-            else:
-                mgrid = img.convolve(mgrid)
-        return mgrid
-
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate: radial's shape parameters
-            (re, Ie, ns) plus xc, yc, theta, e, eratio, inc, rot, losdepth,
-            losbins.
-        """
-        # radial profile shape parameters (re, Ie, ns)
-        keys = {key[2:] for key in _subkeys(self.radial, "r")}
-        kwarg = {
-            key: pars[f"{comp_prefix}_radial.{key}"]
-            for key in keys
-            if f"{comp_prefix}_radial.{key}" in pars
-        }
-        # Ellipsoid's own position, orientation, and 3D geometry
-        for key in [
-            "xc",
-            "yc",
-            "theta",
-            "e",
-            "eratio",
-            "inc",
-            "rot",
-            "losdepth",
-            "losbins",
-        ]:
-            kwarg[key] = pars[f"{comp_prefix}_{key}"]
-        return kwarg
-
-    def profile(self, xt, yt, zt, e, eratio, rt=None, wt=None, **kw):
+    def profile(self, xt, yt, zt, e, eratio, **kw):
         """Evaluate the radial profile on the ellipsoidal radius."""
         r = _safe_power(
             xt**2 + (yt / (1 - e)) ** 2 + (zt / (1 - eratio * e)) ** 2, 0.50
         )
-        mgrid = self.radial.profile(r, **kw)
-        if rt is not None:
-            mgrid = mgrid * self.radial.truncation.profile(r, rt, wt)
-        return mgrid
+        return _subprofile(self.radial, r, kw, "r")
 
     def _evaluate(self, img, **kwarg):
         """
@@ -521,30 +459,3 @@ class Ellipsoid(Component):
         xt, yt = xt * cosr + yt * sinr, -xt * sinr + yt * cosr
 
         return xt, yt, zt
-
-    def parlist(self):
-        """
-        Return list of parameter names from the radial component and Ellipsoid itself.
-
-        Returns
-        -------
-        list of str
-            Combined list of parameter names: radial's shape parameters
-            (prefixed 'radial.') plus Ellipsoid's own xc, yc, theta, e,
-            eratio, inc, rot, losdepth, losbins.
-
-        Notes
-        -----
-        This method is used internally by Model.addcomponent() when adding
-        an Ellipsoid component to a composite model, ensuring all
-        parameters are registered.
-
-        Examples
-        --------
-        >>> from socca.models import Ellipsoid, Sersic
-        >>> ellipsoid = Ellipsoid(radial=Sersic(re=2e-4, Ie=10.0, ns=0.25))
-        >>> ellipsoid.parlist()
-        ['radial.re', 'radial.Ie', 'radial.ns', 'xc', 'yc', 'theta', 'e',
-         'eratio', 'inc', 'rot', 'losdepth', 'losbins']
-        """
-        return list(self.units.keys())

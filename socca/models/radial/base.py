@@ -11,7 +11,7 @@ import jax.numpy as jp
 import numpy as np
 
 from .. import config
-from ..base import Component, _warn_range
+from ..base import Component, _subkeys, _subprofile, _warn_range
 from .truncation import Truncation, HyperTangent
 
 
@@ -296,61 +296,13 @@ class Profile(Component):
         >>> img = Image('observation.fits')
         >>> model_map = beta.getmap(img, convolve=True)
         """
-        _keys = list(inspect.signature(self.profile).parameters.keys()) + [
-            "xc",
-            "yc",
-            "theta",
-            "e",
-            "cbox",
-        ]
-        if self.truncation is not None:
-            _keys += ["rt", "wt"]
+        kwarg = self._getpars(self._keymap())
+        return self._convolve(img, self._evaluate(img, **kwarg), convolve)
 
-        kwarg = self._getpars([key for key in _keys if key != "r"])
-
-        mgrid = self._evaluate(img, **kwarg)
-
-        if convolve:
-            if img.psf is None:
-                warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
-                )
-            else:
-                mgrid = img.convolve(mgrid)
-        return mgrid
-
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate.
-        """
-        _keys = list(inspect.signature(self.profile).parameters.keys()) + [
-            "xc",
-            "yc",
-            "theta",
-            "e",
-            "cbox",
-        ]
-        if self.truncation is not None:
-            _keys += ["rt", "wt"]
-
-        return {
-            key.replace(f"{comp_prefix}_", ""): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_")
-            and key.replace(f"{comp_prefix}_", "") in _keys
-        }
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        keys = _subkeys(self) + ["xc", "yc", "theta", "e", "cbox"]
+        return {key: key for key in keys}
 
     def _evaluate(self, img, **kwarg):
         """
@@ -379,17 +331,8 @@ class Profile(Component):
         e = kwarg.pop("e")
         cbox = kwarg.pop("cbox")
 
-        if self.truncation is not None:
-            rt = kwarg.pop("rt")
-            wt = kwarg.pop("wt")
-
         rgrid = self.getgrid(img.grid, xc, yc, theta, e, cbox)
-        mgrid = self.profile(rgrid, **kwarg)
-
-        if self.truncation is not None:
-            mgrid = mgrid * self.truncation.profile(rgrid, rt, wt)
-
-        return jp.mean(mgrid, axis=0)
+        return jp.mean(_subprofile(self, rgrid, kwarg), axis=0)
 
     @staticmethod
     @partial(jax.jit, static_argnames=["grid"])

@@ -339,30 +339,46 @@ def _strip(sub, keys):
             table.pop(key, None)
 
 
-def _subkeys(prof, prefix):
-    """Prefixed keyword names of a wrapped sub-profile, truncation included."""
+def _subkeys(prof, prefix=None):
+    """Keyword names of a profile, truncation included, optionally prefixed."""
     keys = [
-        f"{prefix}_{key}"
+        key
         for key in inspect.signature(prof.profile).parameters
         if key not in ["r", "z"]
     ]
     if getattr(prof, "truncation", None) is not None:
-        keys += [f"{prefix}_rt", f"{prefix}_wt"]
-    return keys
+        keys += ["rt", "wt"]
+    if prefix is None:
+        return keys
+    return [f"{prefix}_{key}" for key in keys]
 
 
-def _subprofile(prof, x, kw, prefix):
-    """Evaluate a wrapped sub-profile on its prefixed keywords."""
-    pars = {
-        key[len(prefix) + 1 :]: val
-        for key, val in kw.items()
-        if key.startswith(f"{prefix}_")
-    }
+def _subprofile(prof, x, kw, prefix=None):
+    """Evaluate a profile on its keywords, optionally prefixed."""
+    if prefix is None:
+        pars = dict(kw)
+    else:
+        pars = {
+            key[len(prefix) + 1 :]: val
+            for key, val in kw.items()
+            if key.startswith(f"{prefix}_")
+        }
     rt, wt = pars.pop("rt", None), pars.pop("wt", None)
     out = prof.profile(x, **pars)
     if rt is not None:
         out = out * prof.truncation.profile(x, rt, wt)
     return out
+
+
+def _getdotted(obj, name):
+    """Attribute of obj named by a dotted path, e.g. radial.xc."""
+    return functools.reduce(getattr, name.split("."), obj)
+
+
+def _subkeymap(prof, prefix, namespace):
+    """Map a sub-profile's prefixed keywords to its parameter names."""
+    n = len(prefix) + 1
+    return {key: f"{namespace}.{key[n:]}" for key in _subkeys(prof, prefix)}
 
 
 class Component:
@@ -511,6 +527,31 @@ class Component:
         for sub in self._namespaces.values():
             sub._wrapper = self
 
+    def _sub(self, key):
+        """Sub-profile holding a namespaced key and the key within it."""
+        space, _, local = key.partition(".")
+        sub = getattr(self, "_namespaces", {}).get(space)
+        return (sub, local) if local and sub is not None else (None, key)
+
+    def _adopt(self, hidden=()):
+        """
+        Add the sub-profiles' hyperparameters, units and descriptions.
+
+        Keys are prefixed with their namespace; hidden names the sub-profile
+        attributes holding keys to leave out.
+        """
+        for name, sub in self._namespaces.items():
+            skip = [getattr(sub, attr) for attr in hidden]
+            self.hyper += [f"{name}.{key}" for key in sub.hyper]
+            for table in ("units", "description"):
+                getattr(self, table).update(
+                    {
+                        f"{name}.{key}": value
+                        for key, value in getattr(sub, table).items()
+                        if key not in skip
+                    }
+                )
+
     def _retruncate(self, sub):
         """Follow a truncation added to or removed from a sub-profile."""
         for name, prof in self._namespaces.items():
@@ -594,9 +635,7 @@ class Component:
                 (
                     key,
                     self._input_unit(key),
-                    _format_value(
-                        functools.reduce(getattr, key.split("."), self)
-                    ),
+                    _format_value(_getdotted(self, key)),
                     self.description.get(key, ""),
                 )
                 for key in keyout + self.hyper
@@ -643,10 +682,7 @@ class Component:
         functions take and return declared units, and boundto copies the
         physical value.
         """
-        obj = self
-        for part in attr.split(".")[:-1]:
-            obj = getattr(obj, part)
-        value = getattr(obj, attr.split(".")[-1])
+        value = _getdotted(self, attr)
         if not isinstance(value, _TIED):
             return value
 
@@ -701,6 +737,30 @@ class Component:
             "components to a Model and use Model.getmap() instead."
         )
 
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        raise NotImplementedError
+
+    def _build_kwargs(self, pars, comp_prefix):
+        """Keywords for _evaluate from the model's parameter values."""
+        return {
+            out: pars[f"{comp_prefix}_{key}"]
+            for out, key in self._keymap().items()
+        }
+
+    @staticmethod
+    def _convolve(img, mgrid, convolve):
+        """Convolve with the image PSF if asked and if there is one."""
+        if not convolve:
+            return mgrid
+        if img.psf is None:
+            warnings.warn(
+                "No PSF defined, so no convolution will be performed.",
+                stacklevel=3,
+            )
+            return mgrid
+        return img.convolve(mgrid)
+
     def _getpars(self, keys):
         """
         Resolve parameters and check they are all fixed.
@@ -754,9 +814,9 @@ class Component:
         """Return the declared unit of a (dotted) parameter, else native."""
         if key in self._input_units:
             return self._input_units[key]
-        space, _, local = key.partition(".")
-        if local and space in getattr(self, "_namespaces", {}):
-            return getattr(self, space)._input_unit(local)
+        sub, local = self._sub(key)
+        if sub is not None:
+            return sub._input_unit(local)
         return self.units.get(key, "")
 
     def _factor(self, key):
@@ -804,9 +864,9 @@ class Component:
                 raise ValueError(
                     f"Unknown parameter '{name}' on {self.__class__.__name__}."
                 )
-            space, _, local = name.partition(".")
-            if local and space in getattr(self, "_namespaces", {}):
-                getattr(self, space).set_units(**{local: unit_str})
+            sub, local = self._sub(name)
+            if sub is not None:
+                sub.set_units(**{local: unit_str})
                 continue
             native = self.units[name]
             if native in _NON_CONVERTIBLE:

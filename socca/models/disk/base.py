@@ -2,13 +2,12 @@
 
 from functools import partial
 
-import warnings
 
 import jax
 import jax.numpy as jp
 
 
-from ..base import Component, _claim, _strip, _subkeys, _subprofile
+from ..base import Component, _claim, _strip, _subkeymap, _subprofile
 from ..radial import Sersic
 from ..radial.base import Profile, _safe_power
 from .vertical import Height, HyperSecantHeight
@@ -111,47 +110,22 @@ class Disk(Component):
 
         self._namespaces = {"radial": self.radial, "vertical": self.vertical}
         self._wrap()
-
-        for key in self.radial.hyper:
-            self.hyper.append(f"radial.{key}")
-
-        for key in self.vertical.hyper:
-            self.hyper.append(f"vertical.{key}")
-
-        self.units.update(
-            {
-                f"radial.{key}": self.radial.units[key]
-                for key in self.radial.units.keys()
-            }
-        )
-        self.units.update(
-            {
-                f"vertical.{key}": self.vertical.units[key]
-                for key in self.vertical.units.keys()
-            }
-        )
-
-        self.description.update(
-            {
-                f"radial.{key}": self.radial.description[key]
-                for key in self.radial.description.keys()
-            }
-        )
-        self.description.update(
-            {
-                f"vertical.{key}": self.vertical.description[key]
-                for key in self.vertical.description.keys()
-            }
-        )
+        self._adopt()
         self._initialized = True
 
-    @property
-    def _rkw(self):
-        return _subkeys(self.radial, "r")
-
-    @property
-    def _zkw(self):
-        return _subkeys(self.vertical, "z")
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        keys = _subkeymap(self.radial, "r", "radial")
+        keys.update(_subkeymap(self.vertical, "z", "vertical"))
+        keys.update(
+            xc="radial.xc",
+            yc="radial.yc",
+            theta="radial.theta",
+            inc="vertical.inc",
+            losdepth="vertical.losdepth",
+            losbins="vertical.losbins",
+        )
+        return keys
 
     def profile(self, r, z, **kw):
         """Evaluate the density radial(r) * vertical(z)."""
@@ -216,73 +190,8 @@ class Disk(Component):
         >>> img = Image('observation.fits')
         >>> disk_map = disk.getmap(img, convolve=True)
         """
-        keys = {k: f"radial.{k[2:]}" for k in self._rkw}
-        keys.update({k: f"vertical.{k[2:]}" for k in self._zkw})
-        keys.update(
-            xc="radial.xc",
-            yc="radial.yc",
-            theta="radial.theta",
-            inc="vertical.inc",
-            losdepth="vertical.losdepth",
-            losbins="vertical.losbins",
-        )
-        kwarg = self._getpars(keys)
-
-        mgrid = self._evaluate(img, **kwarg)
-
-        if convolve:
-            if img.psf is None:
-                warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
-                )
-            else:
-                mgrid = img.convolve(mgrid)
-        return mgrid
-
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate including geometric and profile
-            parameters with r_ and z_ prefixes.
-        """
-        # Build profile parameters with r_ and z_ prefixes
-        # Use self._rkw and self._zkw instead of inspect.signature since
-        # the profile is a jax.jit(partial(...)) which doesn't preserve signature
-        kwarg = {
-            key.replace(f"{comp_prefix}_radial.", "r_"): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_radial.")
-            and key.replace(f"{comp_prefix}_radial.", "r_") in self._rkw
-        }
-        kwarg.update(
-            {
-                key.replace(f"{comp_prefix}_vertical.", "z_"): pars[key]
-                for key in pars
-                if key.startswith(f"{comp_prefix}_vertical.")
-                and key.replace(f"{comp_prefix}_vertical.", "z_") in self._zkw
-            }
-        )
-
-        # Add geometric parameters
-        kwarg["xc"] = pars[f"{comp_prefix}_radial.xc"]
-        kwarg["yc"] = pars[f"{comp_prefix}_radial.yc"]
-        kwarg["theta"] = pars[f"{comp_prefix}_radial.theta"]
-        kwarg["inc"] = pars[f"{comp_prefix}_vertical.inc"]
-        kwarg["losdepth"] = pars[f"{comp_prefix}_vertical.losdepth"]
-        kwarg["losbins"] = pars[f"{comp_prefix}_vertical.losbins"]
-
-        return kwarg
+        kwarg = self._getpars(self._keymap())
+        return self._convolve(img, self._evaluate(img, **kwarg), convolve)
 
     def _evaluate(self, img, **kwarg):
         """
@@ -406,35 +315,3 @@ class Disk(Component):
         zt, yt = yt * cosi - zt * sini, yt * sini + zt * cosi
 
         return _safe_power(xt**2 + yt**2, 0.50), zt
-
-    def parlist(self):
-        """
-        Return list of parameter names from radial and vertical components.
-
-        Collects all parameters from both the radial and vertical profile
-        components, with names prefixed as 'radial.' and 'vertical.'.
-
-        Returns
-        -------
-        list of str
-            Combined list of parameter names from radial and vertical components.
-            Names are prefixed with component type (e.g., 'radial.xc', 'vertical.zs').
-
-        Notes
-        -----
-        This method is used internally by Model.addcomponent() when adding
-        a Disk component to a composite model, ensuring all parameters from
-        both sub-components are registered.
-
-        Examples
-        --------
-        >>> from socca.models import Disk, Exponential
-        >>> from socca.models.disk.vertical import ExponentialHeight
-        >>> radial = Exponential(xc=180.5, yc=45.2, rs=0.02, Is=100)
-        >>> vertical = ExponentialHeight(zs=0.002, inc=0.5)
-        >>> disk = Disk(radial=radial, vertical=vertical)
-        >>> disk.parlist()
-        ['radial.xc', 'radial.yc', 'radial.theta', 'radial.rs', 'radial.Is',
-        'vertical.losdepth', 'vertical.losbins', 'vertical.inc', 'vertical.zs']
-        """
-        return list(self.units.keys())

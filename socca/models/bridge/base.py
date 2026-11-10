@@ -7,7 +7,6 @@ such as intracluster bridges and filaments connecting galaxy clusters.
 import numbers
 from functools import partial
 
-import warnings
 
 import jax
 import jax.numpy as jp
@@ -17,7 +16,7 @@ from ..base import (
     Component,
     _claim,
     _strip,
-    _subkeys,
+    _subkeymap,
     _subprofile,
     _warn_range,
 )
@@ -173,54 +172,14 @@ class Bridge(Component):
         self._scale_ties()
         self._namespaces = {"radial": self.radial, "parallel": self.parallel}
         self._wrap()
+        self._adopt(hidden=["_scale_radius", "_scale_amp"])
 
-        for key in self.radial.hyper:
-            self.hyper.append(f"radial.{key}")
-
-        for key in self.parallel.hyper:
-            self.hyper.append(f"parallel.{key}")
-
-        self.units.update(
-            {
-                f"radial.{key}": self.radial.units[key]
-                for key in self.radial.units.keys()
-                if key
-                not in [self.radial._scale_radius, self.radial._scale_amp]
-            }
-        )
-        self.units.update(
-            {
-                f"parallel.{key}": self.parallel.units[key]
-                for key in self.parallel.units.keys()
-                if key
-                not in [self.parallel._scale_radius, self.parallel._scale_amp]
-            }
-        )
-
-        self.description.update(
-            {
-                f"radial.{key}": self.radial.description[key]
-                for key in self.radial.description.keys()
-                if key
-                not in [self.radial._scale_radius, self.radial._scale_amp]
-            }
-        )
-        self.description.update(
-            {
-                f"parallel.{key}": self.parallel.description[key]
-                for key in self.parallel.description.keys()
-                if key
-                not in [self.parallel._scale_radius, self.parallel._scale_amp]
-            }
-        )
-
-    @property
-    def _rkw(self):
-        return _subkeys(self.radial, "r")
-
-    @property
-    def _zkw(self):
-        return _subkeys(self.parallel, "z")
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        keys = _subkeymap(self.radial, "r", "radial")
+        keys.update(_subkeymap(self.parallel, "z", "parallel"))
+        keys.update({key: key for key in ["xc", "yc", "Is", "theta"]})
+        return keys
 
     @property
     def rs(self):  # noqa: D102
@@ -289,21 +248,8 @@ class Bridge(Component):
         profiles on a rotated coordinate grid centered on the bridge position.
         """
         self._check_internal()
-        keys = {k: f"radial.{k[2:]}" for k in self._rkw}
-        keys.update({k: f"parallel.{k[2:]}" for k in self._zkw})
-        keys.update({k: k for k in ["xc", "yc", "Is", "theta"]})
-        kwarg = self._getpars(keys)
-
-        mgrid = self._evaluate(img, **kwarg)
-
-        if convolve:
-            if img.psf is None:
-                warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
-                )
-            else:
-                mgrid = img.convolve(mgrid)
-        return mgrid
+        kwarg = self._getpars(self._keymap())
+        return self._convolve(img, self._evaluate(img, **kwarg), convolve)
 
     def _check_internal(self):
         """Reject values set on the sub-profiles' scale radius or amplitude."""
@@ -401,31 +347,14 @@ class Bridge(Component):
         """
         self._check_internal()
         kwarg = {}
-        for key in self._rkw:
-            attr_name = key[2:]
-            pars_key = f"{comp_prefix}_radial.{attr_name}"
-            if pars_key in pars:
-                kwarg[key] = pars[pars_key]
+        for out, key in self._keymap().items():
+            if f"{comp_prefix}_{key}" in pars:
+                kwarg[out] = pars[f"{comp_prefix}_{key}"]
             else:
-                kwarg[key] = self._internal(
-                    self.radial, attr_name, pars, comp_prefix
+                sub, name = key.split(".")
+                kwarg[out] = self._internal(
+                    getattr(self, sub), name, pars, comp_prefix
                 )
-
-        for key in self._zkw:
-            attr_name = key[2:]
-            pars_key = f"{comp_prefix}_parallel.{attr_name}"
-            if pars_key in pars:
-                kwarg[key] = pars[pars_key]
-            else:
-                kwarg[key] = self._internal(
-                    self.parallel, attr_name, pars, comp_prefix
-                )
-
-        kwarg["xc"] = pars[f"{comp_prefix}_xc"]
-        kwarg["yc"] = pars[f"{comp_prefix}_yc"]
-        kwarg["theta"] = pars[f"{comp_prefix}_theta"]
-        kwarg["Is"] = pars[f"{comp_prefix}_Is"]
-
         return kwarg
 
     def _evaluate(self, img, **kwarg):
@@ -456,17 +385,6 @@ class Bridge(Component):
         rgrid, zgrid = self.getgrid(img.grid, xc, yc, theta)
         mgrid = self._compiled()(rgrid, zgrid, **kwarg)
         return jp.mean(mgrid, axis=0)
-
-    def parlist(self):
-        """
-        Return a list of all parameter names.
-
-        Returns
-        -------
-        list of str
-            Parameter names including base, radial, and parallel parameters.
-        """
-        return list(self.units.keys())
 
 
 class SimpleBridge(Bridge):

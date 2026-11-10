@@ -10,6 +10,11 @@ import socca.models as models
 import socca.priors as priors
 
 
+def _beta():
+    """Create a fixed Beta profile."""
+    return models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
+
+
 class TestUniform:
     """Tests for uniform prior distribution."""
 
@@ -182,20 +187,15 @@ class TestSplitNormalClass:
 class TestBoundto:
     """Tests for boundto."""
 
-    @staticmethod
-    def beta():
-        """Create a fixed Beta profile."""
-        return models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
-
     def test_returns_identity(self):
         """The binding returns its input unchanged."""
-        bound = priors.boundto(self.beta(), "xc")
+        bound = priors.boundto(_beta(), "xc")
         assert bound(42.0) == 42.0
 
     def test_reads_current_value(self):
         """The bound value is read when resolved, not when bound."""
-        comp = self.beta()
-        other = self.beta()
+        comp = _beta()
+        other = _beta()
         other.xc = priors.boundto(comp, "xc")
         comp.xc = 200.0
         assert other._resolve("xc") == 200.0
@@ -240,7 +240,7 @@ class TestBoundto:
     def test_unknown_name(self):
         """An unknown parameter raises."""
         with pytest.raises(ValueError, match="no parameter 'foo'"):
-            priors.boundto(self.beta(), "foo")
+            priors.boundto(_beta(), "foo")
 
     @pytest.mark.parametrize("comp", ["comp_00", None, models.Beta])
     def test_not_a_component(self, comp):
@@ -252,14 +252,9 @@ class TestBoundto:
 class TestFunction:
     """Tests for function."""
 
-    @staticmethod
-    def beta():
-        """Create a fixed Beta profile."""
-        return models.Beta(xc=180.0, yc=45.0, rc=0.01, Ic=1.0)
-
     def test_sources_in_order(self):
         """Sources are passed to func positionally, in order."""
-        a, b = self.beta(), self.beta()
+        a, b = _beta(), _beta()
         b.rc = 0.03
         a.Ic = priors.function(lambda x, y: x - y, (b, "rc"), (a, "rc"))
         assert a._resolve("Ic") == pytest.approx(0.02)
@@ -268,7 +263,7 @@ class TestFunction:
         """Named functions and partials are accepted."""
         import functools
 
-        a = self.beta()
+        a = _beta()
 
         def double(x):
             return 2 * x
@@ -280,20 +275,20 @@ class TestFunction:
 
     def test_wrong_argument_count(self):
         """A func that cannot take one argument per source raises."""
-        a = self.beta()
+        a = _beta()
         with pytest.raises(TypeError, match="2 positional"):
             priors.function(lambda x: x, (a, "rc"), (a, "xc"))
 
     def test_bad_source(self):
         """A source that is not a (component, name) pair raises."""
-        a = self.beta()
+        a = _beta()
         with pytest.raises(TypeError, match="pair"):
             priors.function(lambda x: x, a)
 
     def test_not_callable(self):
         """A non-callable func raises."""
         with pytest.raises(TypeError, match="callable"):
-            priors.function(1.0, (self.beta(), "rc"))
+            priors.function(1.0, (_beta(), "rc"))
 
 
 class TestPocomcPrior:
