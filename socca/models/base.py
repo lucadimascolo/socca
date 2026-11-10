@@ -77,18 +77,31 @@ def _support_bounds(prior):
     )
 
 
+def _whole_periods(low, high, period):
+    """Whether [low, high] spans a whole number of periods (at least one)."""
+    extent = high - low
+    turns = np.round(extent / period)
+    return bool(
+        np.isfinite(extent)
+        and turns >= 1
+        and abs(extent - turns * period) <= 1e-9 * extent
+    )
+
+
 def _warn_span(value, name, period, unit, stacklevel):
     """
     Warn about a prior on a periodic parameter spanning its period.
 
     A prior wider than the period repeats the same solutions. A prior
-    at least one period wide is sampled as periodic by nautilus, dynesty
-    and pocomc (see fitter.run's periodic argument).
+    spanning a whole number of periods is sampled as periodic by
+    nautilus, dynesty and pocomc (see fitter.run's periodic argument).
     """
     if not isinstance(value, numpyro.distributions.Distribution):
         return
     low, high = _support_bounds(value)
     extent = high - low
+    if not np.isfinite(extent):
+        return
     text = f"{period:.6g} {unit}".strip()
     if extent > period * (1 + 1e-9):
         warnings.warn(
@@ -98,9 +111,9 @@ def _warn_span(value, name, period, unit, stacklevel):
             UserWarning,
             stacklevel=stacklevel,
         )
-    if extent >= period * (1 - 1e-9):
+    if _whole_periods(low, high, period):
         warnings.warn(
-            f"The {name} prior spans a full period ({text}), so it will "
+            f"The {name} prior spans whole periods ({text}), so it will "
             "be treated as periodic by the nautilus, dynesty and pocomc "
             "backends. Pass periodic=[...] to run() to choose a different "
             "set, or periodic=[] to disable this.",
@@ -185,6 +198,16 @@ def _repoint(value, old, new):
     return value
 
 
+def _own_tables(state):
+    """Return state with its dicts, lists and sets copied."""
+    return {
+        key: copy.copy(value)
+        if isinstance(value, (dict, list, set))
+        else value
+        for key, value in state.items()
+    }
+
+
 def _fixed(value):
     """Return whether a parameter value is fixed (not a prior or tie)."""
     return not isinstance(value, (numpyro.distributions.Distribution, _TIED))
@@ -212,6 +235,17 @@ def _check_name(name):
     if number < 0:
         raise ValueError(f"Invalid component name {name!r}: negative.")
     return f"comp_{number:02d}"
+
+
+def _whole(prof, free=()):
+    """Reject a profile missing parameters stripped by a wrapper, or a copy."""
+    lost = sorted(set(getattr(prof, "_stripped", ())) - set(free))
+    if lost:
+        raise ValueError(
+            f"This {type(prof).__name__} lost {', '.join(lost)} to a wrapper "
+            "(Disk, Ellipsoid or Bridge), possibly as a copy of a wrapped "
+            "profile: create a new one."
+        )
 
 
 _REFIT = (
@@ -259,17 +293,50 @@ def _too_old(kind):
     )
 
 
-def _claim(*subs):
-    """Check that sub-profiles are free to be wrapped by a new component."""
+def _a(name):
+    """Name with its indefinite article."""
+    return f"{'an' if name[0] in 'AEIOU' else 'a'} {name}"
+
+
+def _claim(*subs, free=()):
+    """
+    Check that sub-profiles are free to be wrapped by a new component.
+
+    free names the parameters the wrapper strips, so a sub-profile may
+    already lack them.
+    """
     for sub in subs:
+        if sub.id is not None:
+            raise ValueError(
+                f"This {type(sub).__name__} is in a model ({sub.id}), which "
+                "wrapping it would break: use a separate profile, e.g. "
+                "copy.copy() of it."
+            )
         if sub._wrapper is not None:
             raise ValueError(
-                f"This {type(sub).__name__} is already part of a "
-                f"{type(sub._wrapper).__name__}: use a separate profile "
-                "(e.g. copy.deepcopy) for each component."
+                f"This {type(sub).__name__} is already part of "
+                f"{_a(type(sub._wrapper).__name__)}: use a separate profile "
+                "for each component, e.g. a copy made before wrapping."
             )
+        _whole(sub, free)
     if len({id(sub) for sub in subs}) < len(subs):
         raise ValueError("The same profile cannot be used twice.")
+
+
+def _strip(sub, keys):
+    """Remove parameters that a wrapper owns or ignores from a sub-profile."""
+    sub.__dict__["_stripped"] = set(getattr(sub, "_stripped", ())) | set(keys)
+    for key in keys:
+        attr = f"_{key}" if f"_{key}" in sub.__dict__ else key
+        if attr in sub.__dict__:
+            delattr(sub, attr)
+        for table in (
+            sub.units,
+            sub._input_units,
+            sub.description,
+            sub.periodic,
+        ):
+            table.pop(key, None)
 
 
 def _subkeys(prof, prefix):
@@ -330,8 +397,8 @@ class Component:
     id = None
     name = None
     _wrapper = None
-    _periods = {}
     _format = 1  # of pickles; those of socca 1.4.0 have none
+    _periods = {}
 
     def __init__(self, **kwargs):
         """
@@ -379,6 +446,40 @@ class Component:
             if sub._wrapper is None:
                 sub._wrapper = self
 
+    def __copy__(self):
+        """
+        Return a shallow copy with its own parameter tables.
+
+        Ties to the component point to the copy, which has no id until it
+        is added to a model. A wrapper's sub-profiles are copied with it,
+        so they belong to the copy alone. copy.deepcopy keeps the id, as
+        whole models need: wrap a copy.copy of a model member instead.
+        """
+        new = type(self).__new__(type(self))
+        new.__setstate__(_own_tables(self.__getstate__()))
+        new.__dict__["id"] = None
+        subs = self.__dict__.get("_namespaces", {})
+        twins = {id(sub): copy.copy(sub) for sub in subs.values()}
+        swap = {id(self): new, **twins}
+        for obj in (new, *twins.values()):
+            for key, value in obj.__dict__.items():
+                if isinstance(value, _Function):
+                    value = copy.copy(value)
+                    value.sources = [
+                        (swap.get(id(comp), comp), name)
+                        for comp, name in value.sources
+                    ]
+                elif isinstance(value, Component):
+                    value = swap.get(id(value), value)
+                obj.__dict__[key] = value
+        new.__dict__.pop("_jit", None)
+        if subs:
+            new.__dict__["_namespaces"] = {
+                name: twins[id(sub)] for name, sub in subs.items()
+            }
+            new._wrap()
+        return new
+
     def _compiled(self):
         """
         Return the compiled profile of a wrapper.
@@ -425,6 +526,13 @@ class Component:
 
     def __setattr__(self, name, value):
         """Prevent adding undefined attributes after initialization."""
+        if getattr(self, "_initialized", False) and name in self.__dict__.get(
+            "_namespaces", ()
+        ):
+            raise AttributeError(
+                f"The {name} profile of a {type(self).__name__} cannot be "
+                f"replaced: create a new {type(self).__name__} instead."
+            )
         if getattr(self, "_initialized", False) and not hasattr(self, name):
             raise AttributeError(
                 f"Cannot add new attribute '{name}' to "
@@ -520,6 +628,7 @@ class Component:
         }
         state["id"] = None
         state.pop("_wrapper", None)
+        state.pop("_truncation", None)  # the copy has its own
         new.__dict__.update(state)
         return new
 
@@ -749,6 +858,11 @@ class Component:
         >>> comp.units['amplitude']
         'Jy'
         """
+        if not name.isidentifier():
+            raise ValueError(
+                f"Invalid parameter name {name!r}: use a Python identifier "
+                "(dotted names are reserved for sub-profiles)."
+            )
         self._initialized = False
         setattr(self, name, value)
         self._initialized = True

@@ -13,9 +13,16 @@ import jax
 import jax.numpy as jp
 
 
-from ..base import Component, _claim, _subkeys, _subprofile, _warn_range
-from ..misc import Background, Point
+from ..base import (
+    Component,
+    _claim,
+    _strip,
+    _subkeys,
+    _subprofile,
+    _warn_range,
+)
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
+from ..radial.base import Profile
 from .. import config
 from ...priors import _Function, _identity, function
 
@@ -96,7 +103,29 @@ class Bridge(Component):
             radial = Beta()
         if parallel is None:
             parallel = TopHat()
-        _claim(radial, parallel)
+        for attr in [radial, parallel]:
+            if isinstance(attr, PolyExpoRefact):
+                raise TypeError(
+                    "PolyExpoRefact is not supported for Bridge. "
+                    "Use PolyExponential or another profile type instead."
+                )
+            if not isinstance(attr, Profile):
+                raise TypeError(
+                    f"{type(attr).__name__} is not supported for Bridge."
+                )
+            if attr._scale_radius is None or attr._scale_amp is None:
+                raise TypeError(
+                    f"{type(attr).__name__} has no scale radius and "
+                    "amplitude, so it is not supported for Bridge."
+                )
+
+        _claim(
+            radial,
+            parallel,
+            free=["xc", "yc", "theta", "e", "cbox"]
+            + [sub._scale_radius for sub in (radial, parallel)]
+            + [sub._scale_amp for sub in (radial, parallel)],
+        )
 
         self.xc = kwargs.get("xc", config.Bridge.xc)
         self.yc = kwargs.get("yc", config.Bridge.yc)
@@ -130,41 +159,11 @@ class Bridge(Component):
         self.parallel = parallel
 
         for attr in [self.radial, self.parallel]:
-            if isinstance(attr, PolyExpoRefact):
-                raise TypeError(
-                    "PolyExpoRefact is not supported for Bridge. "
-                    "Use PolyExponential or another profile type instead."
-                )
-            if isinstance(attr, (Background, Point)):
-                raise TypeError(
-                    f"{type(attr).__name__} is not supported for Bridge."
-                )
-
-        for key in ["xc", "yc", "theta", "e", "cbox"]:
-            bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
-            if bkey in self.radial.__dict__:
-                delattr(self.radial, bkey)
-            self.radial.units.pop(key, None)
-            bkey = f"_{key}" if f"_{key}" in self.parallel.__dict__ else key
-            if bkey in self.parallel.__dict__:
-                delattr(self.parallel, bkey)
-            self.parallel.units.pop(key, None)
-
-        for key in ["_scale_amp", "_scale_radius"]:
-            rname = getattr(self.radial, key)
-            pname = getattr(self.parallel, key)
-            bkey = (
-                f"_{rname}" if f"_{rname}" in self.radial.__dict__ else rname
+            _strip(
+                attr,
+                ["xc", "yc", "theta", "e", "cbox"]
+                + [attr._scale_amp, attr._scale_radius],
             )
-            if bkey in self.radial.__dict__:
-                delattr(self.radial, bkey)
-            self.radial.units.pop(rname, None)
-            bkey = (
-                f"_{pname}" if f"_{pname}" in self.parallel.__dict__ else pname
-            )
-            if bkey in self.parallel.__dict__:
-                delattr(self.parallel, bkey)
-            self.parallel.units.pop(pname, None)
 
         for attr in [self.parallel, self.radial]:
             attr.addparameter(attr._scale_amp, 1.00)

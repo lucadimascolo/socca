@@ -194,6 +194,21 @@ class HyperSecantHeight(Height):
         )
         self._zs = value
 
+    @property
+    def alpha(self):  # noqa: D102
+        return self._alpha
+
+    @alpha.setter
+    def alpha(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "alpha",
+            lower=0,
+            lower_strict=True,
+            note="The exponent must be strictly positive.",
+        )
+        self._alpha = value
+
     @staticmethod
     @jax.jit
     def profile(z, zs, alpha):

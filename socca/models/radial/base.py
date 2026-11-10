@@ -1,6 +1,7 @@
 """Base class for 2D radial surface brightness profiles."""
 
 from abc import abstractmethod
+import copy
 from functools import partial
 import inspect
 import warnings
@@ -133,6 +134,12 @@ class Profile(Component):
                 raise ValueError(
                     "Truncation must be an instance of the Truncation class."
                 )
+            if value._owner is not None and value._owner is not self:
+                raise ValueError(
+                    "This truncation is attached to another profile: attach "
+                    "a copy.copy of it instead."
+                )
+            self._detach(value)
             _init = self._initialized
             self._initialized = False
             self.rt = value.rt
@@ -149,14 +156,40 @@ class Profile(Component):
                 )
             )
         else:
+            self._detach(value)
             self._truncation = None
             if hasattr(self, "rt"):
                 self.removeparameter("rt")
             if hasattr(self, "wt"):
                 self.removeparameter("wt")
         self._truncation = value
+        if value is not None:
+            value.__dict__["_owner"] = self
         if self._wrapper is not None:
             self._wrapper._retruncate(self)
+
+    def _detach(self, value):
+        """Give a replaced truncation back its rt and wt."""
+        old = self.__dict__.get("_truncation")
+        if old is not None and old is not value:
+            old.__dict__.update(_owner=None, _rt=self.rt, _wt=self.wt)
+
+    def __copy__(self):  # noqa: D105
+        new = super().__copy__()
+        if self._truncation is not None:
+            twin = copy.copy(self._truncation)
+            twin.__dict__["_owner"] = new
+            new.__dict__["_truncation"] = twin
+        return new
+
+    __copy__.__doc__ = Component.__copy__.__doc__
+
+    def __setstate__(self, state):
+        """Restore state and reattach the truncation."""
+        super().__setstate__(state)
+        twin = self.__dict__.get("_truncation")
+        if twin is not None and twin._owner is None:
+            twin.__dict__["_owner"] = self
 
     @property
     def theta(self):  # noqa: D102

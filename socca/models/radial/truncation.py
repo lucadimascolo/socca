@@ -42,6 +42,8 @@ class Truncation:
         Human-readable description for each parameter.
     """
 
+    _owner = None  # the profile it is attached to, which holds rt and wt
+
     def __init__(self, **kwargs):
         self.rt = kwargs.get("rt", config.Truncation.rt)
         self.wt = kwargs.get("wt", config.Truncation.wt)
@@ -49,12 +51,30 @@ class Truncation:
         self.units = dict(rt="deg", wt="deg")
         self.description = dict(rt="Truncation radius", wt="Truncation width")
 
+    def __copy__(self):
+        """Copy with the current rt and wt, attached to no profile."""
+        new = type(self).__new__(type(self))
+        new.__dict__.update(self.__dict__)
+        new.__dict__.update(
+            _owner=None,
+            _rt=self.rt,
+            _wt=self.wt,
+            units=dict(self.units),
+            description=dict(self.description),
+        )
+        return new
+
     @property
     def rt(self):  # noqa: D102
+        if self._owner is not None:
+            return self._owner.rt
         return self._rt
 
     @rt.setter
     def rt(self, value):  # noqa: D102
+        if self._owner is not None:
+            self._owner.rt = value
+            return
         _warn_range(
             value,
             "rt",
@@ -70,10 +90,15 @@ class Truncation:
 
     @property
     def wt(self):  # noqa: D102
+        if self._owner is not None:
+            return self._owner.wt
         return self._wt
 
     @wt.setter
     def wt(self, value):  # noqa: D102
+        if self._owner is not None:
+            self._owner.wt = value
+            return
         _warn_range(
             value,
             "wt",

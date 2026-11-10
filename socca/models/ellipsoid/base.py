@@ -10,9 +10,9 @@ import jax.numpy as jp
 
 
 from .. import config
-from ..base import Component, _claim, _subkeys, _warn_range
+from ..base import Component, _claim, _strip, _subkeys, _warn_range
 from ..radial import Sersic
-from ..radial.base import _safe_power
+from ..radial.base import Profile, _safe_power
 
 
 class Ellipsoid(Component):
@@ -116,7 +116,18 @@ class Ellipsoid(Component):
         # module-level-evaluated default shared across every Ellipsoid()
         # call that doesn't pass its own radial.
         radial = Sersic() if radial is None else radial
-        _claim(radial)
+        if not isinstance(radial, Profile):
+            raise TypeError(
+                f"{type(radial).__name__} is not supported for Ellipsoid: "
+                "use a radial profile (e.g. Sersic)."
+            )
+        _claim(radial, free=["cbox"])
+        # checked before the radial profile is changed
+        self.eratio = kwargs.get("eratio", config.Ellipsoid.eratio)
+        self.inc = kwargs.get("inc", config.Ellipsoid.inc)
+        self.rot = kwargs.get("rot", config.Ellipsoid.rot)
+        self.losdepth = kwargs.get("losdepth", config.Ellipsoid.losdepth)
+        self.losbins = kwargs.get("losbins", config.Ellipsoid.losbins)
         self.radial = radial
 
         # xc/yc/theta/e live on Ellipsoid itself, not on radial. If the
@@ -140,28 +151,15 @@ class Ellipsoid(Component):
                 setattr(self, key, kwargs[key])
             elif radial_isset:
                 setattr(self, key, radial_val)
+                if key in self.radial._input_units:
+                    self._input_units[key] = self.radial._input_units[key]
             else:
                 setattr(self, key, getattr(config.Ellipsoid, key))
 
-        # cbox isn't used by Ellipsoid's profile at all; xc/yc/theta/e are
-        # gone too now that Ellipsoid owns them -- strip all five off the
-        # sub-component so it doesn't carry unused, confusing duplicates.
-        # Mirrors Bridge.__init__ for its own radial/parallel components.
-        for key in ["xc", "yc", "theta", "e", "cbox"]:
-            bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
-            if bkey in self.radial.__dict__:
-                delattr(self.radial, bkey)
-            self.radial.units.pop(key, None)
-            self.radial.description.pop(key, None)
+        _strip(self.radial, ["xc", "yc", "theta", "e", "cbox"])
 
         self._namespaces = {"radial": self.radial}
         self._wrap()
-
-        self.eratio = kwargs.get("eratio", config.Ellipsoid.eratio)
-        self.inc = kwargs.get("inc", config.Ellipsoid.inc)
-        self.rot = kwargs.get("rot", config.Ellipsoid.rot)
-        self.losdepth = kwargs.get("losdepth", config.Ellipsoid.losdepth)
-        self.losbins = kwargs.get("losbins", config.Ellipsoid.losbins)
 
         for param in ["losdepth", "losbins"]:
             if param not in self.hyper:

@@ -8,10 +8,10 @@ import jax
 import jax.numpy as jp
 
 
-from ..base import Component, _claim, _subkeys, _subprofile
+from ..base import Component, _claim, _strip, _subkeys, _subprofile
 from ..radial import Sersic
-from ..radial.base import _safe_power
-from .vertical import HyperSecantHeight
+from ..radial.base import Profile, _safe_power
+from .vertical import Height, HyperSecantHeight
 
 
 class Disk(Component):
@@ -98,9 +98,13 @@ class Disk(Component):
             radial = Sersic()
         if vertical is None:
             vertical = HyperSecantHeight()
-        _claim(radial, vertical)
-
-        _radial_exclude = ["e", "cbox"]
+        if not isinstance(radial, Profile) or not isinstance(vertical, Height):
+            raise TypeError(
+                "Disk needs a radial profile (e.g. Sersic) and a vertical "
+                "Height profile."
+            )
+        _claim(radial, vertical, free=["e", "cbox"])
+        _strip(radial, ["e", "cbox"])
 
         self.radial = radial
         self.vertical = vertical
@@ -118,7 +122,6 @@ class Disk(Component):
             {
                 f"radial.{key}": self.radial.units[key]
                 for key in self.radial.units.keys()
-                if key not in _radial_exclude
             }
         )
         self.units.update(
@@ -132,7 +135,6 @@ class Disk(Component):
             {
                 f"radial.{key}": self.radial.description[key]
                 for key in self.radial.description.keys()
-                if key not in _radial_exclude
             }
         )
         self.description.update(

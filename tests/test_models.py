@@ -302,8 +302,15 @@ class TestProfile:
         assert mod.periodic["comp_00_theta"] == pytest.approx(180.0)
         beta = self._beta(priors.uniform(0.0, 180.0))
         beta.set_units(theta="deg")
-        with pytest.warns(UserWarning, match="full period"):
+        with pytest.warns(UserWarning, match="whole periods"):
             models.Model(beta)
+
+    def test_partial_period_not_periodic(self, recwarn):
+        """A prior spanning 1.5 periods is not announced as periodic."""
+        models.Model(self._beta(priors.uniform(0.0, 1.5 * np.pi)))
+        messages = [str(w.message) for w in recwarn]
+        assert any("multimodal" in m for m in messages)
+        assert not any("treated as periodic" in m for m in messages)
 
 
 class TestBeta:
@@ -846,6 +853,14 @@ class TestEllipsoid:
         assert ell.rot == 0.0
         assert ell.losdepth == pytest.approx(10.0 / 60.0 / 60.0)
         assert ell.losbins == 200
+
+    def test_inherits_declared_unit(self):
+        """A value inherited from radial keeps its declared unit."""
+        radial = models.Sersic(xc=648000.0)
+        radial.set_units(xc="arcsec")
+        ell = models.Ellipsoid(radial=radial)
+        assert ell._input_unit("xc") == "arcsec"
+        assert "xc" not in radial._input_units
 
     def test_custom_radial(self):
         """Test Ellipsoid with an explicit radial profile."""
@@ -1661,6 +1676,34 @@ class TestTies:
         with pytest.raises(ValueError, match="Circular tie"):
             mod.getmap(img)
 
+    def test_shallow_copy_owns_sub_profiles(self, simple_hdu):
+        """copy.copy of a wrapper copies its sub-profiles and their ties."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        disk = models.Disk(
+            radial=models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0),
+            vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4, inc=0.5),
+        )
+        twin = copy.copy(disk)
+        assert twin.radial is not disk.radial
+        assert twin.radial._wrapper is twin and disk.radial._wrapper is disk
+        mod = models.Model(disk)
+        mod.addcomponent(twin)
+        np.testing.assert_allclose(mod.getmap(img), 2 * disk.getmap(img))
+        bridge = models.SimpleBridge(xc=180.0, yc=45.0, rs=0.005, Is=1.0)
+        ref = np.asarray(bridge.getmap(img))
+        twin = copy.copy(bridge)
+        twin.rs = 0.01
+        np.testing.assert_allclose(
+            twin.getmap(img), models.Model(twin).getmap(img)
+        )
+        np.testing.assert_allclose(bridge.getmap(img), ref)
+        beta = self.beta()
+        beta.yc = priors.function(lambda x: x - 135.0, (beta, "xc"))
+        other = copy.copy(beta)
+        other.set_units(xc="arcsec")
+        assert beta.units["xc"] == "deg"
+        assert other.yc.sources[0][0] is other
+
     def test_bridge_internals_fixed(self, img):
         """The sub-profiles' scale radius and amplitude cannot be set."""
         for name, value in [("rc", 0.003), ("Ic", 2.0)]:
@@ -1783,6 +1826,9 @@ class TestIds:
         models.Model(a)
         with pytest.raises(ValueError, match="in a model as 'halo'"):
             a.name = "core"
+        twin = copy.copy(a)
+        twin.name = "core"
+        assert (a.name, twin.name) == ("halo", "core")
 
     def test_second_model(self):
         """A component in a second model takes that model's id."""
@@ -2274,6 +2320,35 @@ class TestWrappedProfiles:
         assert "comp_00_rt" not in mod.conversions
         assert beta.rt == 0.002
 
+    def test_attached_truncation_follows_profile(self, img):
+        """An attached truncation's rt and wt are the profile's."""
+        trunc = models.radial.truncation.HyperTangent(rt=0.005, wt=0.001)
+        beta = models.Beta(
+            xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6, truncation=trunc
+        )
+        before = np.asarray(beta.getmap(img))
+        beta.truncation.wt = 0.0001
+        assert beta.wt == 0.0001
+        assert not np.allclose(before, beta.getmap(img))
+        beta.rt = 0.006
+        assert trunc.rt == 0.006
+        with pytest.raises(ValueError, match="another profile"):
+            models.Beta(
+                xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6, truncation=trunc
+            )
+        twin = copy.copy(beta)
+        twin.truncation.wt = 0.0002
+        assert (beta.wt, twin.wt) == (0.0001, 0.0002)
+        assert copy.deepcopy(beta).truncation.rt == 0.006
+        beta.truncation = None
+        assert (trunc.rt, trunc.wt) == (0.006, 0.0001)
+        assert (
+            models.Beta(
+                xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6, truncation=trunc
+            ).rt
+            == 0.006
+        )
+
     @pytest.mark.parametrize("value", [np.inf, np.nan])
     @pytest.mark.parametrize("name", ["rt", "wt"])
     def test_truncation_parameters_finite(self, name, value):
@@ -2561,6 +2636,51 @@ class TestOwnership:
         other = copy.deepcopy(disk)
         assert other.radial._wrapper is other
 
+    def test_copy_of_a_stripped_profile(self):
+        """A copy lacking parameters is rejected where they are needed."""
+        ell = models.Ellipsoid(radial=models.Sersic())
+        free = copy.deepcopy(ell.radial)
+        with pytest.raises(ValueError, match="lost cbox, e, theta, xc, yc"):
+            models.Model(free)
+        with pytest.raises(ValueError, match="lost e, theta, xc, yc"):
+            models.Ellipsoid(radial=free)
+        with pytest.raises(ValueError, match="lost"):
+            models.Disk(radial=copy.deepcopy(ell.radial))
+
+    def test_ellipsoid_checks_before_stripping(self):
+        """A rejected Ellipsoid leaves its radial profile untouched."""
+        radial = models.Sersic(xc=180.0, re=0.005, Ie=1.0)
+        with pytest.raises(Exception):
+            models.Ellipsoid(radial=radial, eratio="x")
+        assert radial.xc == 180.0 and radial._wrapper is None
+        ell = models.Ellipsoid(radial=radial)
+        with pytest.raises(ValueError, match="part of an Ellipsoid"):
+            models.Ellipsoid(radial=ell.radial)
+
+    def test_wrapping_a_model_member_refused(self):
+        """A profile already in a model cannot be wrapped."""
+        g = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+        models.Model(g)
+        with pytest.raises(ValueError, match="is in a model"):
+            models.Ellipsoid(radial=g)
+        assert g.xc == 180.0
+
+    def test_dotted_parameter_names_refused(self):
+        """Parameter names that are not identifiers are refused."""
+        with pytest.raises(ValueError, match="Invalid parameter name"):
+            models.Gaussian().addparameter("radial.xc", 1.0)
+
+    def test_shallow_copy_has_no_id(self):
+        """A shallow copy of a model member is a new, unadded component."""
+        g = models.Gaussian(xc=180.0, yc=45.0, rs=0.005, Is=1.0)
+        models.Model(g)
+        assert g.id == "comp_00" and copy.copy(g).id is None
+
+    def test_bridge_type_checked_first(self):
+        """A non-profile sub-profile raises TypeError."""
+        with pytest.raises(TypeError, match="not supported for Bridge"):
+            models.SimpleBridge(radial=1.0)
+
     def test_model_rejects_sub_profiles(self):
         """A sub-profile cannot also be a model entry."""
         disk = models.Disk(
@@ -2572,12 +2692,12 @@ class TestOwnership:
             mod.addcomponent(disk.radial)
         s = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
         mod = models.Model(s)
-        models.Disk(
-            radial=s, vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4)
-        )
-        mod.parameters()
-        with pytest.raises(ValueError, match="now part of a Disk"):
-            mod.getmap(None)
+        with pytest.raises(ValueError, match="is in a model"):
+            models.Disk(
+                radial=s,
+                vertical=models.disk.vertical.HyperSecantHeight(zs=5e-4),
+            )
+        mod.parameters()  # untouched
 
     def test_reserved_truncation_names(self):
         """Profiles cannot define their own rt or wt."""
@@ -2751,3 +2871,61 @@ def test_compiled_profile_keeps_its_truncation(simple_hdu):
     radial.truncation = trunc.Exponential(rt=1e-3, wt=1e-4)
     gc.collect()
     assert old() is not None
+
+
+class TestSubProfileChecks:
+    """Wrappers check and protect their sub-profiles."""
+
+    @staticmethod
+    def _disk():
+        radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+        vertical = models.disk.vertical.HyperSecantHeight(zs=5e-4, inc=0.5)
+        return models.Disk(radial=radial, vertical=vertical)
+
+    def test_sub_profiles_cannot_be_replaced(self):
+        """Assigning a new sub-profile raises."""
+        disk = self._disk()
+        with pytest.raises(AttributeError, match="cannot be replaced"):
+            disk.radial = models.Exponential()
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda: models.Disk(radial=models.Point()),
+            lambda: models.Disk(
+                radial=models.disk.vertical.ExponentialHeight()
+            ),
+            lambda: models.Disk(vertical=models.Sersic()),
+            lambda: models.Ellipsoid(radial=models.Point()),
+            lambda: models.SimpleBridge(radial=models.Background()),
+        ],
+    )
+    def test_sub_profile_types(self, make):
+        """Wrappers reject sub-profiles of the wrong kind."""
+        with pytest.raises(TypeError):
+            make()
+
+    def test_bridge_needs_scale_parameters(self):
+        """A Bridge rejects a profile without scale radius and amplitude."""
+        prof = models.CustomProfile([], lambda r: r)
+        with pytest.raises(TypeError, match="no scale radius"):
+            models.SimpleBridge(radial=prof)
+        assert hasattr(prof, "xc")
+
+    def test_disk_strips_unused_radial_parameters(self):
+        """A Disk does not keep e and cbox on its radial profile."""
+        disk = self._disk()
+        assert not hasattr(disk.radial, "e")
+        assert not hasattr(disk.radial, "cbox")
+
+    def test_alpha_must_be_positive(self):
+        """A non-positive sech exponent warns."""
+        with pytest.warns(UserWarning, match="alpha"):
+            models.disk.vertical.HyperSecantHeight(alpha=0.0)
+
+    def test_unbounded_periodic_prior_does_not_warn(self, recwarn):
+        """An unbounded prior on theta is not taken to span a period."""
+        prof = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0)
+        prof.theta = priors.normal(0.0, 0.1)
+        models.Model(prof)
+        assert not [w for w in recwarn if "period" in str(w.message)]

@@ -15,12 +15,14 @@ import numpyro.distributions
 from ..priors import _TIED, _BoundTo, _Function
 from . import config
 from .base import (
+    _a,
     _too_old,
     Component,
     _check_name,
     _format_rows,
     _format_value,
     _warn_span,
+    _whole,
 )
 from .misc import Point, Background
 from .disk import Disk
@@ -358,10 +360,11 @@ class Model:
             )
         if prof._wrapper is not None:
             raise ValueError(
-                f"This {type(prof).__name__} is part of a "
-                f"{type(prof._wrapper).__name__}: add the "
+                f"This {type(prof).__name__} is part of "
+                f"{_a(type(prof._wrapper).__name__)}: add the "
                 f"{type(prof._wrapper).__name__} instead."
             )
+        _whole(prof)
         subs = getattr(prof, "_namespaces", {}).values()
         if any(sub is c for sub in subs for c in self.components):
             raise ValueError(

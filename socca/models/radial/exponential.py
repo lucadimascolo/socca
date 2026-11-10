@@ -1,5 +1,6 @@
 """Exponential disk profiles and variants."""
 
+import copy
 import jax
 import jax.numpy as jp
 
@@ -357,7 +358,7 @@ class PolyExpoRefact(Exponential):
         >>> # prof_equiv is PolyExponential with c1=0.1, c2=0.05, c3=0, c4=0
         """
         new = PolyExponential(positive=self.positive, name=self.name)
-        new.truncation = self.truncation
+        new.truncation = copy.copy(self.truncation)
         coeffs = [f"c{ci}" for ci in range(1, 5)]
         intensities = [f"I{ci}" for ci in range(1, 5)]
         for key in self.parlist():
