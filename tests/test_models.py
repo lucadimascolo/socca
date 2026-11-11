@@ -6,6 +6,7 @@ import importlib.util
 import pickle
 import weakref
 
+import jax
 import jax.numpy as jp
 import numpy as np
 import numpyro.distributions
@@ -856,6 +857,21 @@ class TestOldPickles:
 class TestEllipsoid:
     """Tests for Ellipsoid model."""
 
+    def test_linear_in_amplitude(self, img):
+        """Test that the map scales with the amplitude, down to and at 0."""
+        ell = models.Ellipsoid(
+            radial=models.Exponential(rs=3e-3, Is=1.0), xc=180.0, yc=45.0
+        )
+        kw = ell._getpars(ell._keymap())
+
+        def total(amp):
+            return jp.sum(ell._evaluate(img, **{**kw, "r_Is": amp}))
+
+        unit = float(total(1.0))
+        assert float(total(1e-200)) == pytest.approx(1e-200 * unit, rel=1e-10)
+        assert float(total(-2.0)) == pytest.approx(-2.0 * unit, rel=1e-10)
+        assert float(jax.grad(total)(0.0)) == pytest.approx(unit, rel=1e-10)
+
     def test_default_initialization(self):
         """Test Ellipsoid default initialization."""
         ell = models.Ellipsoid()
@@ -867,8 +883,8 @@ class TestEllipsoid:
         assert ell.eratio == 1.0
         assert ell.inc == 0.0
         assert ell.rot == 0.0
-        assert ell.losdepth == pytest.approx(10.0 / 60.0 / 60.0)
-        assert ell.losbins == 200
+        assert ell.losdepth == float("inf")
+        assert ell.losbins == 128
 
     def test_inherits_declared_unit(self):
         """A value inherited from radial keeps its declared unit."""
@@ -2314,6 +2330,279 @@ class TestWrappedProfiles:
             x, y, z, e=0.4, eratio=0.5, r_Ie=2.0, r_re=0.005, r_ns=1.5
         )
         np.testing.assert_allclose(got, expected, rtol=1e-12)
+
+    @staticmethod
+    def _small(header, n=16):
+        """Image of n x n pixels with the centre on a pixel corner."""
+        header = header.copy()
+        header.update(
+            NAXIS1=n, NAXIS2=n, CRPIX1=n / 2 + 0.5, CRPIX2=n / 2 + 0.5
+        )
+        hdu = fits.PrimaryHDU(np.zeros((n, n)), header=header)
+        return data.Image(hdu, noise=noise.Normal(sigma=0.1))
+
+    @staticmethod
+    def _los(ell, img, depth, nz=20001, rmax=np.inf):
+        """Trapezoid reference over |z| <= depth and radii <= rmax."""
+        kw = ell._getpars(ell._keymap())
+        xc, yc, theta, inc, rot = (
+            kw.pop(k) for k in ("xc", "yc", "theta", "inc", "rot")
+        )
+        kw.pop("losdepth"), kw.pop("losbins")
+        e, eratio = kw.pop("e"), kw.pop("eratio")
+        # ellipsoid frame on a 3D line-of-sight grid, built independently
+        z = jp.linspace(-depth, depth, nz)[None, :, None, None]
+        xt = ((img.grid.x - xc) * np.cos(np.deg2rad(yc)))[:, None]
+        yt = (img.grid.y - yc)[:, None]
+        sint, cost = np.sin(theta - np.pi / 2), np.cos(theta - np.pi / 2)
+        xt, yt = -xt * sint - yt * cost, xt * cost - yt * sint
+        sini, cosi = np.sin(inc - np.pi / 2), np.cos(inc - np.pi / 2)
+        zt, xt = xt * cosi - z * sini, xt * sini + z * cosi
+        sinr, cosr = np.sin(rot + np.pi / 2), np.cos(rot + np.pi / 2)
+        xt, yt = xt * cosr + yt * sinr, -xt * sinr + yt * cosr
+        r2 = xt**2 + (yt / (1 - e)) ** 2 + (zt / (1 - eratio * e)) ** 2
+        m = ell.profile(xt, yt, zt, e, eratio, **kw) * (r2 <= rmax**2)
+        m = jp.trapezoid(m, dx=2 * depth / (nz - 1), axis=1)
+        return np.asarray(jp.mean(m, axis=0))
+
+    @staticmethod
+    def _tilted(radial, **kw):
+        ell = models.Ellipsoid(radial=radial, xc=180.0, yc=45.0, **kw)
+        ell.theta, ell.e, ell.eratio, ell.inc, ell.rot = (
+            0.4,
+            0.5,
+            0.6,
+            1.0,
+            0.3,
+        )
+        return ell
+
+    @pytest.mark.parametrize(
+        "radial",
+        [
+            lambda: models.Exponential(rs=0.003, Is=1.0),
+            lambda: models.Sersic(re=0.003, Ie=1.0, ns=2.0),
+            lambda: models.gNFW(
+                rc=0.003, Ic=1.0, alpha=1.0, beta=4.0, gamma=0.5
+            ),
+        ],
+        ids=["Exponential", "Sersic", "gNFW"],
+    )
+    def test_ellipsoid_abel_matches_los(self, simple_wcs_header, radial):
+        """The Abel projection matches a fine line-of-sight trapezoid."""
+        img = self._small(simple_wcs_header)
+        ell = self._tilted(radial())
+        np.testing.assert_allclose(
+            ell.getmap(img), self._los(ell, img, 2.0), rtol=1e-4
+        )
+
+    def test_ellipsoid_losdepth_caps_radius(self, simple_wcs_header):
+        """A finite losdepth caps the ellipsoidal radius."""
+        img = self._small(simple_wcs_header)
+        ell = self._tilted(models.Exponential(rs=0.003, Is=1.0), losdepth=0.01)
+        ref = self._los(ell, img, 0.05, nz=80001, rmax=0.01)
+        np.testing.assert_allclose(ell.getmap(img), ref, rtol=1e-3, atol=1e-12)
+
+    def test_ellipsoid_divergent_projection(self, simple_wcs_header):
+        """Profiles falling no faster than 1/r need a finite losdepth."""
+        img = self._small(simple_wcs_header)
+        ell = self._tilted(models.Power(rc=0.003, Ic=1.0, alpha=0.5))
+        assert np.all(np.isinf(ell.getmap(img)))
+        ell.losdepth = 0.02
+        ref = self._los(ell, img, 0.1, nz=80001, rmax=0.02)
+        np.testing.assert_allclose(ell.getmap(img), ref, rtol=1e-3, atol=1e-12)
+
+    @pytest.mark.parametrize("losdepth", [np.inf, 0.002])
+    def test_ellipsoid_tophat_exact(self, simple_wcs_header, losdepth):
+        """A TopHat projects to its exact chord, without the table."""
+        img = self._small(simple_wcs_header)
+        ell = self._tilted(models.TopHat(rc=0.003, Ic=1.0), losdepth=losdepth)
+        ref = self._los(ell, img, 0.004, nz=40001, rmax=losdepth)
+        np.testing.assert_allclose(
+            ell.getmap(img), ref, rtol=1e-3, atol=1e-3 * ref.max()
+        )
+
+    def test_ellipsoid_sign_change(self, simple_wcs_header):
+        """A density changing sign keeps both signs in projection."""
+        img = self._small(simple_wcs_header)
+        radial = models.PolyExponential(
+            rs=0.004, Is=1.0, c1=-0.5, c2=0.0, c3=0.0, c4=0.0, rc=0.003
+        )
+        ell = self._tilted(radial)
+        ref = self._los(ell, img, 0.08)
+        assert ref.min() < 0 < ref.max()
+        np.testing.assert_allclose(
+            ell.getmap(img), ref, rtol=1e-4, atol=1e-4 * np.abs(ref).max()
+        )
+        kw = ell._getpars(ell._keymap())
+
+        def total(v):
+            return jp.sum(ell._evaluate(img, **{**kw, "r_Is": v}))
+
+        # linear in Is, with values well beyond exp's range
+        np.testing.assert_allclose(
+            jax.grad(total)(1e5), total(1e5) / 1e5, rtol=1e-8
+        )
+
+    def test_ellipsoid_scale_beyond_image(self, simple_wcs_header):
+        """A source far larger than the image is closed beyond its scale."""
+        img = self._small(simple_wcs_header)
+        ell = self._tilted(models.Exponential(rs=5.0, Is=1.0))
+        ref = self._los(ell, img, 150.0)
+        np.testing.assert_allclose(ell.getmap(img), ref, rtol=1e-5)
+
+    def test_ellipsoid_compact_gradients(self, simple_wcs_header):
+        """A compact source in a large image keeps finite gradients."""
+        img = self._small(simple_wcs_header, n=64)
+        ell = self._tilted(models.Gaussian(rs=0.001, Is=1.0))
+        kw = ell._getpars(ell._keymap())
+        for key in ("r_rs", "r_Is", "e", "eratio"):
+
+            def loss(v):
+                return jp.sum(ell._evaluate(img, **{**kw, key: v}) ** 2)
+
+            h = 1e-5 * kw[key]
+            fd = (loss(kw[key] + h) - loss(kw[key] - h)) / (2 * h)
+            np.testing.assert_allclose(jax.grad(loss)(kw[key]), fd, rtol=1e-5)
+            assert np.isfinite(jax.hessian(loss)(kw[key]))
+
+    def test_ellipsoid_truncated_large_scale(self, simple_wcs_header):
+        """A truncation well inside the scale radius stays resolved."""
+        img = self._small(simple_wcs_header)
+        ell = self._tilted(models.Beta(rc=3.0, Ic=1.0, beta=1.0))
+        ell.radial.truncation = models.radial.truncation.HyperTangent(
+            rt=0.006, wt=0.0005
+        )
+        ref = self._los(ell, img, 0.02, nz=40001)
+        np.testing.assert_allclose(
+            ell.getmap(img), ref, rtol=0, atol=5e-5 * ref.max()
+        )
+
+    def test_ellipsoid_exponential_truncation(self, simple_wcs_header):
+        """An exponential truncation is resolved, with no overshoot at rt."""
+        from scipy.integrate import quad
+
+        img = self._small(simple_wcs_header, n=64)
+        rt, wt, rs = 0.015, 0.005, 0.008
+        radial = models.Exponential(rs=rs, Is=1.0)
+        radial.truncation = models.radial.truncation.Exponential(rt=rt, wt=wt)
+        # the node phase that made the log-log table overshoot to ~1e170
+        ell = models.Ellipsoid(radial=radial, xc=180.0009495, yc=45.0)
+        ell.e, ell.inc = 0.2, 0.5
+        m = np.asarray(ell.getmap(img))
+        assert np.isfinite(m).all() and m.max() < 1.1 * m[31, 31]
+        ell.e, ell.inc = 0.0, 0.0
+        m = np.asarray(ell.getmap(img))
+        rmin = np.asarray(ell.getgrid(img.grid, 180.0009495, 45.0)[0])[0]
+
+        def density(r):
+            cut = -np.expm1(min((r - rt) / wt, 0.0)) / -np.expm1(-rt / wt)
+            return np.exp(-r / rs) * cut / (2.0 * rs)
+
+        assert m.min() >= 0.0
+        for j in range(31, 56):
+            r0 = rmin[31, j]
+            chord = np.sqrt(max(rt**2 - r0**2, 0.0))
+            ref = 2.0 * quad(lambda z: density(np.hypot(r0, z)), 0.0, chord)[0]
+            assert abs(m[31, j] - ref) < 1e-8 * m.max()
+
+    @pytest.mark.parametrize("rt", [0.002, 0.006])
+    def test_ellipsoid_truncated_tophat(self, simple_wcs_header, rt):
+        """A truncated TopHat is integrated with its own step resolved."""
+        img = self._small(simple_wcs_header)
+        radial = models.TopHat(rc=0.003, Ic=1.0)
+        radial.truncation = models.radial.truncation.HyperTangent(
+            rt=rt, wt=0.0002
+        )
+        ell = self._tilted(radial)
+        ref = self._los(ell, img, 0.006, nz=40001)
+        np.testing.assert_allclose(
+            ell.getmap(img), ref, rtol=0, atol=1e-3 * ref.max()
+        )
+
+    # rc away from the splits, on rt, and on rt - 5 wt
+    @pytest.mark.parametrize("rt", [0.005, 0.003, 0.0055])
+    def test_ellipsoid_truncated_tophat_rc_gradient(
+        self, simple_wcs_header, rt
+    ):
+        """The rc gradient of a truncated TopHat includes its moving step."""
+        img = self._small(simple_wcs_header)
+        radial = models.TopHat(rc=0.003, Ic=1.0)
+        radial.truncation = models.radial.truncation.HyperTangent(
+            rt=rt, wt=0.0005
+        )
+        ell = self._tilted(radial)
+        kw = ell._getpars(ell._keymap())
+        w = jp.asarray(np.random.default_rng(1).normal(size=(16, 16)))
+
+        def loss(v):
+            return jp.sum(w * ell._evaluate(img, **{**kw, "r_rc": v}))
+
+        # small step: pixels grazing rc make the loss steep in it
+        h = 3e-8
+        fd = (loss(0.003 + h) - loss(0.003 - h)) / (2 * h)
+        np.testing.assert_allclose(jax.grad(loss)(0.003), fd, rtol=1e-5)
+
+    def test_ellipsoid_truncated_integer_values(self, img):
+        """Integer fixed values do not break gradients of the direct path."""
+        import socca
+
+        radial = models.Sersic(re=0.005, Ie=1.0, ns=4)
+        radial.truncation = models.radial.truncation.HyperTangent(
+            rt=0.01, wt=0.001
+        )
+        ell = models.Ellipsoid(radial=radial, xc=180.0, yc=45.0, e=0)
+        ell.inc = priors.uniform(0.5, 1.5)
+        fit = socca.fitter(img, models.Model(ell))
+        grad = jax.grad(fit._log_likelihood)(jp.array([1.0]))
+        assert np.isfinite(np.asarray(grad)).all()
+
+    def test_ellipsoid_slow_tail(self):
+        """A density falling just faster than 1/r is closed accurately."""
+        from scipy.special import gammaln
+        from socca.models.ellipsoid.base import _abel_table, _interp
+
+        R = np.geomspace(1e-6, 0.999, 200)
+        for k in (0.51, 0.55):
+            lr, pr, dp = _abel_table(
+                lambda r: (1.0 + r**2) ** -k, 1.0, np.inf, 128, 1.0
+            )
+            got = _interp(jp.log(jp.maximum(R, jp.exp(lr[0]))), lr, pr, dp)
+            ref = np.sqrt(np.pi) * np.exp(gammaln(k - 0.5) - gammaln(k))
+            ref = ref * (1.0 + R**2) ** (0.5 - k)
+            np.testing.assert_allclose(got, ref, rtol=1e-6)
+
+    def test_ellipsoid_compact_support(self):
+        """A smooth profile reaching exactly 0 does not overshoot."""
+        from socca.models.ellipsoid.base import _abel_table, _interp
+        from socca.models.radial.base import _safe_power
+
+        def density(r):
+            # vanishes at 0.8 with finite derivatives, unlike x * sqrt(x)
+            return _safe_power(jp.maximum(1.0 - (r / 0.8) ** 2, 0.0), 1.5)
+
+        for rhi in np.linspace(0.85, 0.9, 25):
+            lr, pr, dp = _abel_table(density, rhi, np.inf, 128)
+            R = np.linspace(0.5, 0.8, 400)
+            got = _interp(jp.log(R), lr, pr, dp)
+            assert float(jp.max(got)) <= float(pr.max()) * 1.000001
+
+    @pytest.mark.parametrize("losdepth", [np.inf, 0.01])
+    def test_ellipsoid_abel_gradients(self, simple_wcs_header, losdepth):
+        """Geometry gradients match finite differences, edge pixel included."""
+        img = self._small(simple_wcs_header)
+        ell = self._tilted(models.Sersic(re=0.003, Ie=1.0, ns=2.0))
+        ell.losdepth = losdepth
+        kw = ell._getpars(ell._keymap())
+        w = jp.asarray(np.random.default_rng(0).normal(size=(16, 16)))
+        for key in ("e", "eratio", "inc", "rot"):
+
+            def loss(v):
+                return jp.sum(w * ell._evaluate(img, **{**kw, key: v}))
+
+            h = 1e-5 * kw[key]
+            fd = (loss(kw[key] + h) - loss(kw[key] - h)) / (2 * h)
+            np.testing.assert_allclose(jax.grad(loss)(kw[key]), fd, rtol=1e-5)
 
     def test_truncation_swap_resets_units(self):
         """A new truncation's values are native, whatever the old units."""
