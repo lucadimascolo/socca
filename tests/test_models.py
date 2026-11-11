@@ -802,6 +802,69 @@ class TestDisk:
         exp = np.asarray(models.Exponential(**kw).getmap(img))
         np.testing.assert_allclose(got, exp, rtol=1e-8)
 
+    @pytest.mark.parametrize("chunk", [16, 7, 1000])
+    def test_los_integrate_gradient(self, chunk):
+        """Chunked gradients equal plain ones, padded last chunk included."""
+        from socca.models.disk.base import _los_integrate
+
+        def density(pars, z):
+            x = pars["x"][:, None]
+            return pars["a"] * jp.exp(-((x - z[None, :, None, None]) ** 2))
+
+        rng = np.random.default_rng(0)
+        pars = dict(x=jp.asarray(rng.normal(size=(2, 3, 4))), a=1.3)
+        z, w = jp.linspace(-3, 3, 50), jp.asarray(rng.uniform(size=50))
+        g = jp.asarray(rng.normal(size=(2, 3, 4)))
+
+        def loss(integrate):
+            return lambda p, z, w: jp.sum(g * integrate(density, p, z, w))
+
+        def plain(density, p, z, w):
+            return jp.einsum("slyx,l->syx", density(p, z), w)
+
+        def chunked(density, p, z, w):
+            return _los_integrate(density, p, z, w, chunk)
+
+        got = jax.grad(loss(chunked), argnums=(0, 1, 2))(pars, z, w)
+        ref = jax.grad(loss(plain), argnums=(0, 1, 2))(pars, z, w)
+        for a, b in zip(jax.tree.leaves(got), jax.tree.leaves(ref)):
+            np.testing.assert_allclose(a, b, rtol=1e-12, atol=1e-14)
+
+    def test_disk_gradients(self, simple_hdu):
+        """Disk gradients match finite differences."""
+        img = data.Image(simple_hdu)
+        radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0, ns=2.0)
+        radial.theta = 0.4
+        vertical = models.disk.vertical.HyperSecantHeight(zs=5e-4, inc=1.0)
+        disk = models.Disk(radial=radial, vertical=vertical)
+        kw = disk._getpars(disk._keymap())
+        w = jp.asarray(np.random.default_rng(0).normal(size=(64, 64)))
+        for key in ("inc", "theta", "r_re", "r_ns", "z_zs"):
+
+            def loss(v):
+                return jp.sum(w * disk._evaluate(img, **{**kw, key: v}))
+
+            h = 1e-5 * kw[key]
+            fd = (loss(kw[key] + h) - loss(kw[key] - h)) / (2 * h)
+            np.testing.assert_allclose(jax.grad(loss)(kw[key]), fd, rtol=1e-6)
+
+    def test_disk_gradient_memory(self, simple_hdu):
+        """The compiled gradient does not store the line-of-sight cube."""
+        img = data.Image(simple_hdu)
+        radial = models.Sersic(xc=180.0, yc=45.0, re=0.005, Ie=1.0, ns=2.0)
+        vertical = models.disk.vertical.HyperSecantHeight(zs=5e-4, inc=1.0)
+        disk = models.Disk(radial=radial, vertical=vertical)
+        kw = disk._getpars(disk._keymap())
+
+        def loss(v):
+            return jp.sum(disk._evaluate(img, **{**kw, "inc": v}))
+
+        mem = jax.jit(jax.grad(loss)).lower(1.0).compile().memory_analysis()
+        if mem is None:
+            pytest.skip("no memory analysis on this backend")
+        cube = 64 * 64 * kw["losbins"] * 8
+        assert mem.temp_size_in_bytes < 0.5 * cube
+
 
 class TestOldPickles:
     """Pickles of socca 1.4.0 are refused with a clear error."""

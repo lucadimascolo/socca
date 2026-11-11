@@ -12,6 +12,49 @@ from ..radial import Sersic
 from ..radial.base import Profile, _safe_power
 from .vertical import Height, HyperSecantHeight
 
+_LOS_CHUNK = 16
+
+
+def _los_integrate(density, pars, z, w, chunk=_LOS_CHUNK):
+    """
+    Integrate density(pars, z) along z with the weights w.
+
+    The density has shape (subgrid, len(z), ny, nx). The value is one
+    fused weighted sum; its gradient recomputes the density in chunks of
+    z nodes, so the full cube is never stored.
+    """
+
+    def total(pars, z, w):
+        return jp.einsum("slyx,l->syx", density(pars, z), w)
+
+    @jax.custom_vjp
+    def integrate(pars, z, w):
+        return total(pars, z, w)
+
+    def fwd(pars, z, w):
+        return total(pars, z, w), (pars, z, w)
+
+    def bwd(res, g):
+        pars, z, w = res
+        n = z.size
+        size = min(chunk, n)
+        nchunk = -(-n // size)
+        pad = nchunk * size - n
+        zc = jp.concatenate([z, jp.full(pad, z[-1])]).reshape(nchunk, size)
+        wc = jp.concatenate([w, jp.zeros(pad)]).reshape(nchunk, size)
+
+        def body(acc, zw):
+            _, vjp = jax.vjp(total, pars, *zw)
+            dp, dz, dw = vjp(g)
+            return jax.tree.map(jp.add, acc, dp), (dz, dw)
+
+        zero = jax.tree.map(jp.zeros_like, pars)
+        dp, (dz, dw) = jax.lax.scan(body, zero, (zc, wc))
+        return dp, dz.reshape(-1)[:n], dw.reshape(-1)[:n]
+
+    integrate.defvjp(fwd, bwd)
+    return integrate(pars, z, w)
+
 
 class Disk(Component):
     """
@@ -222,23 +265,31 @@ class Disk(Component):
         losdepth = kwarg.pop("losdepth")
         losbins = kwarg.pop("losbins")
 
-        rcube, zcube = self.getgrid(
-            img.grid, xc, yc, losdepth, losbins, theta, inc
-        )
+        # one weighted sum fuses with the density; trapezoid would slice it
+        z = jp.linspace(-losdepth, losdepth, losbins)
         dx = 2.00 * losdepth / (losbins - 1)
-        mgrid = self._compiled()(rcube, zcube, **kwarg)
-        mgrid = jp.trapezoid(mgrid, dx=dx, axis=1)
+        wlos = jp.full(losbins, dx).at[jp.array([0, -1])].multiply(0.50)
+        pars = dict(xc=xc, yc=yc, theta=theta, inc=inc, kw=kwarg)
+        pars = jax.tree.map(lambda v: jp.asarray(v, dtype=float), pars)
+
+        def density(pars, z):
+            r, zt = self.getgrid(
+                img.grid, pars["xc"], pars["yc"], z, pars["theta"], pars["inc"]
+            )
+            return self._compiled()(r, zt, **pars["kw"])
+
+        mgrid = _los_integrate(density, pars, z, wlos)
         return jp.mean(mgrid, axis=0)
 
     @staticmethod
-    @partial(jax.jit, static_argnames=["grid", "losbins"])
-    def getgrid(grid, xc, yc, losdepth, losbins=200, theta=0.00, inc=0.00):
+    @partial(jax.jit, static_argnames=["grid"])
+    def getgrid(grid, xc, yc, z, theta=0.00, inc=0.00):
         """
         Compute 3D disk coordinates with rotation and inclination.
 
-        Generates 3D coordinate grids (r, z) for disk model evaluation, accounting
-        for position angle and inclination transformations needed for line-of-sight
-        integration through an inclined disk.
+        Generates the cylindrical radius and height of every pixel at the
+        line-of-sight positions z, accounting for the position angle and
+        the inclination of the disk.
 
         Parameters
         ----------
@@ -248,10 +299,9 @@ class Disk(Component):
             Right ascension of disk center (deg).
         yc : float
             Declination of disk center (deg).
-        losdepth : float
-            Half-extent of line-of-sight integration (deg).
-        losbins : int, optional
-            Number of integration points along line of sight. Default is 200.
+        z : ndarray
+            Line-of-sight positions, from the sky plane through the center
+            (deg).
         theta : float, optional
             Position angle of disk major axis, east from north (rad). Default is 0.
         inc : float, optional
@@ -260,11 +310,11 @@ class Disk(Component):
         Returns
         -------
         rcube : ndarray
-            4D array of radial distances from disk center (deg).
-            Shape: (ssize, losbins, ysize, xsize).
+            Radial distances from the disk axis (deg).
+            Shape: (ssize, len(z), ysize, xsize).
         zcube : ndarray
-            4D array of heights above/below disk midplane (deg).
-            Shape: (ssize, losbins, ysize, xsize).
+            Heights above/below disk midplane (deg).
+            Shape: (ssize, len(z), ysize, xsize).
 
         Notes
         -----
@@ -272,7 +322,7 @@ class Disk(Component):
         1. Center coordinates on (xc, yc)
         2. Apply spherical geometry correction (cos(dec))
         3. Rotate by position angle theta
-        4. Create line-of-sight grid from -losdepth to +losdepth
+        4. Place each pixel at the line-of-sight positions z
         5. Apply inclination rotation
         6. Compute cylindrical radius r and height z
 
@@ -280,38 +330,18 @@ class Disk(Component):
 
         - inc = 0: face-on, z-axis points toward observer
         - inc = pi/2: edge-on, disk in plane of sky
-
-        The 4D arrays allow vectorized evaluation of the 3D density function
-        across the entire image with sub-pixel sampling and line-of-sight
-        integration.
-
-        This function is JIT-compiled with static losbins for performance.
         """
-        ssize, ysize, xsize = grid.x.shape
-
-        zt = jp.linspace(-losdepth, losdepth, losbins)
-
         sint = jp.sin(theta)
         cost = jp.cos(theta)
 
         xt = (grid.x - xc) * jp.cos(jp.deg2rad(yc))
         yt = grid.y - yc
-
         xt, yt = -xt * sint - yt * cost, xt * cost - yt * sint
-
-        xt = jp.broadcast_to(
-            xt[:, None, :, :], (ssize, losbins, ysize, xsize)
-        ).copy()
-        yt = jp.broadcast_to(
-            yt[:, None, :, :], (ssize, losbins, ysize, xsize)
-        ).copy()
-        zt = jp.broadcast_to(
-            zt[None, :, None, None], (ssize, losbins, ysize, xsize)
-        ).copy()
+        xt, yt = xt[:, None], yt[:, None]
+        z = z[None, :, None, None]
 
         sini = jp.sin(inc - 0.50 * jp.pi)
         cosi = jp.cos(inc - 0.50 * jp.pi)
-
-        zt, yt = yt * cosi - zt * sini, yt * sini + zt * cosi
+        zt, yt = yt * cosi - z * sini, yt * sini + z * cosi
 
         return _safe_power(xt**2 + yt**2, 0.50), zt

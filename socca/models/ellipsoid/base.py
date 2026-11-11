@@ -18,6 +18,7 @@ from ..base import (
     _subprofile,
     _warn_range,
 )
+from ..disk.base import _los_integrate
 from ..radial import Sersic
 from ..radial.base import Profile, _safe_power
 
@@ -150,7 +151,7 @@ def _abel_direct(density, pars, radii, losbins):
     split exactly at the increasing radii (the last is the cap): losbins
     Gauss-Legendre nodes up to the first and _ABEL_BREAK in each next
     segment, shared by all pixels as a segment index plus a position in
-    [0, 1].
+    [0, 1], so _los_integrate keeps the gradient memory low.
     """
     counts = [int(losbins)] + [_ABEL_BREAK] * (len(radii) - 1)
     z, w = [], []
@@ -176,8 +177,12 @@ def _abel_direct(density, pars, radii, losbins):
         r = r[:, None]
         return 2.00 * density(pars, r * c) * r * c * (hi - lo)
 
-    z, w = jp.asarray(np.concatenate(z)), jp.asarray(np.concatenate(w))
-    return jp.einsum("slyx,l->syx", chunk(pars, z), w)
+    return _los_integrate(
+        chunk,
+        pars,
+        jp.asarray(np.concatenate(z)),
+        jp.asarray(np.concatenate(w)),
+    )
 
 
 class Ellipsoid(Component):
