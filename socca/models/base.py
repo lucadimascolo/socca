@@ -353,8 +353,12 @@ def _subkeys(prof, prefix=None):
     return [f"{prefix}_{key}" for key in keys]
 
 
-def _subprofile(prof, x, kw, prefix=None):
-    """Evaluate a profile on its keywords, optionally prefixed."""
+def _subprofile(prof, x, kw, prefix=None, density=False):
+    """
+    Evaluate a profile on its keywords, optionally prefixed.
+
+    With density=True, use the profile's 3D density if it has one.
+    """
     if prefix is None:
         pars = dict(kw)
     else:
@@ -364,7 +368,8 @@ def _subprofile(prof, x, kw, prefix=None):
             if key.startswith(f"{prefix}_")
         }
     rt, wt = pars.pop("rt", None), pars.pop("wt", None)
-    out = prof.profile(x, **pars)
+    func = getattr(prof, "_density", None) if density else None
+    out = (func or prof.profile)(x, **pars)
     if rt is not None:
         out = out * prof.truncation.profile(x, rt, wt)
     return out

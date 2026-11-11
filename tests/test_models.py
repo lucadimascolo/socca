@@ -1024,30 +1024,33 @@ class TestEllipsoid:
         assert len(recwarn) == 0
 
     def test_profile_major_axis_surface(self):
-        """Test that the profile equals Ie on the major (x) axis surface."""
+        """The density is Ie / (2 q_z re) on the major (x) axis surface."""
         re, e, eratio, Ie, ns = 0.001, 0.5, 1.0, 3.0, 1.0
         val = models.Ellipsoid().profile(
             re, 0.0, 0.0, e=e, eratio=eratio, r_Ie=Ie, r_re=re, r_ns=ns
         )
-        assert float(val) == pytest.approx(Ie, rel=1e-3)
+        norm = 2 * (1 - eratio * e) * re
+        assert float(val) * norm == pytest.approx(Ie, rel=1e-3)
 
     def test_profile_first_minor_axis_surface(self):
-        """Test that the profile equals Ie on the first minor (y) axis surface."""
+        """The density is Ie / (2 q_z re) on the first minor (y) axis surface."""
         re, e, eratio, Ie, ns = 0.001, 0.5, 1.0, 3.0, 1.0
         rs1 = re * (1 - e)
         val = models.Ellipsoid().profile(
             0.0, rs1, 0.0, e=e, eratio=eratio, r_Ie=Ie, r_re=re, r_ns=ns
         )
-        assert float(val) == pytest.approx(Ie, rel=1e-3)
+        norm = 2 * (1 - eratio * e) * re
+        assert float(val) * norm == pytest.approx(Ie, rel=1e-3)
 
     def test_profile_second_minor_axis_uses_eratio(self):
-        """Test that the profile equals Ie on the eratio-scaled z-axis surface."""
+        """The density is Ie / (2 q_z re) on the eratio-scaled z surface."""
         re, e, eratio, Ie, ns = 0.001, 0.6, 0.5, 3.0, 1.0
         rs2 = re * (1 - eratio * e)
         val = models.Ellipsoid().profile(
             0.0, 0.0, rs2, e=e, eratio=eratio, r_Ie=Ie, r_re=re, r_ns=ns
         )
-        assert float(val) == pytest.approx(Ie, rel=1e-3)
+        norm = 2 * (1 - eratio * e) * re
+        assert float(val) * norm == pytest.approx(Ie, rel=1e-3)
 
     def test_eratio_default_makes_minor_axes_equal(self):
         """With the default eratio, both minor axes have the same scale."""
@@ -2268,6 +2271,34 @@ class TestWrappedProfiles:
         mraw = models.Model(ell).getmodel(img, [])[0]
         np.testing.assert_allclose(mraw, mgrid)
 
+    @pytest.mark.parametrize("cls", [models.Exponential, models.TopHat])
+    @pytest.mark.parametrize("e, eratio", [(0.0, 1.0), (0.5, 1.0), (0.6, 0.3)])
+    def test_ellipsoid_face_on_amplitude(self, cls, e, eratio):
+        """Face-on, the central surface brightness is the amplitude."""
+        radial = cls()
+        kw = {
+            f"r_{radial._scale_radius}": 0.002,
+            f"r_{radial._scale_amp}": 3.0,
+        }
+        ell = models.Ellipsoid(radial=radial, e=e, eratio=eratio)
+        z = np.linspace(-0.05, 0.05, 400001)
+        rho = ell.profile(0.0, 0.0, z, e=e, eratio=eratio, **kw)
+        assert float(jp.trapezoid(rho, z)) == pytest.approx(3.0, rel=1e-4)
+
+    def test_wrapped_gnfw_is_unprojected(self):
+        """Disk and Ellipsoid use the 3D gNFW density, equal to Ic at rc."""
+        from socca.models.base import _subprofile
+        from socca.models.radial.gnfw import model as gmodel
+
+        g = models.gNFW(rc=0.01, Ic=2.0, alpha=1.5, beta=4.0, gamma=0.5)
+        kw = dict(r_Ic=2.0, r_rc=0.01, r_alpha=1.5, r_beta=4.0, r_gamma=0.5)
+        r = np.array([0.001, 0.01, 0.1])
+        got = _subprofile(g, r, kw, "r", True)
+        shape = gmodel.profile(r / 0.01, 1.5, 4.0, 0.5)
+        expected = 2.0 * shape / gmodel.profile(1.0, 1.5, 4.0, 0.5)
+        np.testing.assert_allclose(got, expected, rtol=1e-12)
+        assert not np.allclose(_subprofile(g, r, kw, "r"), got)
+
     def test_ellipsoid_sersic_density(self):
         """The Sersic density matches the ellipsoidal-radius formula."""
         ell = models.Ellipsoid(
@@ -2278,6 +2309,7 @@ class TestWrappedProfiles:
         rs1, rs2 = 0.005 * (1 - 0.4), 0.005 * (1 - 0.2)
         m = np.sqrt((x / 0.005) ** 2 + (y / rs1) ** 2 + (z / rs2) ** 2)
         expected = models.Sersic.profile(m, 2.0, 1.0, 1.5)
+        expected = expected / (2 * (1 - 0.2) * 0.005)
         got = ell.profile(
             x, y, z, e=0.4, eratio=0.5, r_Ie=2.0, r_re=0.005, r_ns=1.5
         )

@@ -129,7 +129,7 @@ class Disk(Component):
 
     def profile(self, r, z, **kw):
         """Evaluate the density radial(r) * vertical(z)."""
-        return _subprofile(self.radial, r, kw, "r") * _subprofile(
+        return _subprofile(self.radial, r, kw, "r", True) * _subprofile(
             self.vertical, z, kw, "z"
         )
 

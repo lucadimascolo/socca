@@ -304,6 +304,16 @@ class gNFW(Profile):
         self._gamma = value
 
     @staticmethod
+    def _density(r, Ic, rc, alpha, beta, gamma):
+        """3D gNFW density, equal to Ic at r = rc; used by Disk and Ellipsoid."""
+        x = r / rc
+        lx = jp.log(jp.where(x > 0, x, 1.00))
+        k = (beta - gamma) / alpha
+        log = -gamma * lx - k * (jp.log1p(jp.exp(alpha * lx)) - jp.log(2.00))
+        zero = jp.where(gamma > 0, jp.inf, jp.where(gamma < 0, 0.00, 2.00**k))
+        return Ic * jp.where(x > 0, jp.exp(log), zero)
+
+    @staticmethod
     def _profile_switch(
         r, Ic, rc, alpha, beta, gamma, emul_model=None, eps=1.00e-08
     ):

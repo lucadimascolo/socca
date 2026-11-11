@@ -17,3 +17,13 @@ To convert an amplitude from an earlier fit, multiply it by the integral of the 
 ## `Ellipsoid`: rotation
 
 With $\mathrm{rot} = 0$, the major axis of an `Ellipsoid` now lies along the line of nodes, so $\theta$ is also its position angle, as for the other profiles. Before, it was perpendicular to it. To convert a rotation from an earlier fit, subtract $\pi/2$ from it: the maps agree exactly.
+
+## `Ellipsoid`: amplitude
+
+The density of an `Ellipsoid` is now its radial profile divided by $2\,(1 - e_{\mathrm{ratio}}\,e)\,r_s$, twice its shortest semi-axis at the scale radius $r_s$ of the profile (e.g. `re` for `Sersic`, `rs` for `Exponential`), in the same way a `Disk` divides its radial profile by the thickness of its vertical profile. The amplitude (e.g. `Ie`) is thus a surface brightness: seen face-on, an `Exponential` or `TopHat` ellipsoid has exactly that central surface brightness, and other profiles a value of the same order. Before, the radial profile was the density itself. A `CustomProfile`, having no scale radius, is still used as the density.
+
+To convert an amplitude from an earlier fit, multiply it by $2\,(1 - e_{\mathrm{ratio}}\,e)\,r_s$, with $r_s$ in degrees.
+
+## `gNFW` in `Disk` and `Ellipsoid`
+
+Inside a `Disk` or an `Ellipsoid`, a `gNFW` profile now contributes its 3D density, normalized to `Ic` at $r = r_c$, instead of its projection. Fits of these models with an earlier version have no exact conversion.

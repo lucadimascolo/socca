@@ -319,11 +319,21 @@ class Ellipsoid(Component):
         return keys
 
     def profile(self, xt, yt, zt, e, eratio, **kw):
-        """Evaluate the radial profile on the ellipsoidal radius."""
+        """
+        Evaluate the density on the ellipsoidal radius.
+
+        The radial profile is divided by twice the shortest semi-axis at
+        its scale radius, 2 (1 - eratio * e) r_s, as a Disk divides it by
+        the thickness of its vertical profile.
+        """
         r = _safe_power(
             xt**2 + (yt / (1 - e)) ** 2 + (zt / (1 - eratio * e)) ** 2, 0.50
         )
-        return _subprofile(self.radial, r, kw, "r")
+        m = _subprofile(self.radial, r, kw, "r", True)
+        if self.radial._scale_radius is not None:
+            rs = kw[f"r_{self.radial._scale_radius}"]
+            m = m / (2.00 * (1.00 - eratio * e) * rs)
+        return m
 
     def _evaluate(self, img, **kwarg):
         """
