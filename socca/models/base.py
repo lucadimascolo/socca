@@ -214,6 +214,12 @@ def _check_name(name):
     return f"comp_{number:02d}"
 
 
+_REFIT = (
+    "re-run the fit with this version, or load it with socca 1.4.0 "
+    "(pip install socca==1.4.0)."
+)
+
+
 def _check_losdepth(value):
     """Reject a non-positive line-of-sight depth (inf is allowed)."""
     if isinstance(value, (bool, np.bool_)):
@@ -243,6 +249,14 @@ def _check_losbins(value):
 
 
 _LOS_CHECKS = {"losdepth": _check_losdepth, "losbins": _check_losbins}
+
+
+def _too_old(kind):
+    """Error for a pickle saved by socca 1.4.0 or earlier."""
+    return ValueError(
+        f"This {kind} was saved by socca 1.4.0 or earlier, which this "
+        f"version cannot load: {_REFIT}"
+    )
 
 
 def _claim(*subs):
@@ -316,6 +330,8 @@ class Component:
     id = None
     name = None
     _wrapper = None
+    _periods = {}
+    _format = 1  # of pickles; those of socca 1.4.0 have none
 
     def __init__(self, **kwargs):
         """
@@ -342,7 +358,7 @@ class Component:
         self.units = {}
         self._input_units = {}
         self.description = {}
-        self.periodic = {}
+        self.periodic = dict(self._periods)
         self._initialized = False
 
     def __getstate__(self):
@@ -350,10 +366,14 @@ class Component:
         state = self.__dict__.copy()
         state.pop("_jit", None)
         state.pop("_wrapper", None)  # set again by the wrapper's __setstate__
+        state["_format"] = self._format
         return state
 
     def __setstate__(self, state):
-        """Restore a pickled component."""
+        """Restore a pickled component, refusing those of socca 1.4.0."""
+        state = dict(state)
+        if state.pop("_format", 0) < 1:
+            raise _too_old(type(self).__name__)
         self.__dict__.update(state)
         for sub in state.get("_namespaces", {}).values():
             if sub._wrapper is None:

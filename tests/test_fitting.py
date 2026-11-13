@@ -189,6 +189,58 @@ class TestFitter:
         with pytest.raises(ValueError, match="model changed"):
             fit._checkmodel()
 
+    def test_old_fit_refused(self, simple_fitter, tmp_path, monkeypatch):
+        """Fits from socca 1.4.0 raise a clear error when loaded."""
+        getstate = models.base.Component.__getstate__
+
+        def old(self):
+            state = getstate(self)
+            del state["_format"]  # as socca 1.4.0 pickled it
+            return state
+
+        monkeypatch.setattr(models.base.Component, "__getstate__", old)
+        simple_fitter.dump(tmp_path / "old.pickle")
+        monkeypatch.undo()
+        with pytest.raises(ValueError, match="socca 1.4.0 or earlier"):
+            fitting.load(tmp_path / "old.pickle")
+
+    def test_unreadable_fit_message(self, tmp_path, monkeypatch):
+        """Fits that fail to unpickle point to socca 1.4.0."""
+        import dill
+
+        def gone():
+            pass
+
+        gone.__module__, gone.__qualname__ = "socca.models", "Model._gone"
+        monkeypatch.setattr(models.Model, "_gone", gone, raising=False)
+        with open(tmp_path / "old.pickle", "wb") as f:
+            dill.dump({"f": gone}, f, byref=True)
+        monkeypatch.undo()
+        with pytest.raises(ValueError, match="pip install socca==1.4.0"):
+            fitting.load(tmp_path / "old.pickle")
+
+    def test_unrelated_load_errors_unchanged(self, simple_fitter, tmp_path):
+        """A corrupt file raises its own error, without the 1.4.0 hint."""
+        import pickle
+
+        simple_fitter.dump(tmp_path / "fit.pickle")
+        data = (tmp_path / "fit.pickle").read_bytes()
+        (tmp_path / "cut.pickle").write_bytes(data[: len(data) // 2])
+        with pytest.raises(Exception) as err:
+            fitting.load(tmp_path / "cut.pickle")
+        assert "1.4.0" not in str(err.value)
+        assert isinstance(err.value, (EOFError, pickle.UnpicklingError))
+
+    def test_truncation_swap_detected(self, simple_fitter):
+        """Swapping a truncation for another type is a model change."""
+        trunc = models.radial.truncation
+        comp = simple_fitter.mod.components[0]
+        comp.truncation = trunc.HyperTangent(rt=0.01, wt=0.001)
+        fit = fitting.fitter(simple_fitter.img, simple_fitter.mod)
+        comp.truncation = trunc.Exponential(rt=0.01, wt=0.001)
+        with pytest.raises(ValueError, match="model changed"):
+            fit._checkmodel()
+
     def test_loaded_fitter_matches_its_model(self, simple_fitter, tmp_path):
         """A dumped and loaded fitter does not see its model as changed."""
         simple_fitter.dump(tmp_path / "fit.pickle")

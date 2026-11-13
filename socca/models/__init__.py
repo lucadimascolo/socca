@@ -15,6 +15,7 @@ import numpyro.distributions
 from ..priors import _TIED, _BoundTo, _Function
 from . import config
 from .base import (
+    _too_old,
     Component,
     _check_name,
     _format_rows,
@@ -279,7 +280,9 @@ class Model:
             self._addcomponent(prof, positive, stacklevel=3)
 
     def __setstate__(self, state):
-        """Restore a pickled model."""
+        """Restore a pickled model, refusing those saved by socca 1.4.0."""
+        if "_prefix" not in state:
+            raise _too_old("model")
         self.__dict__.update(state)
         for key in ("components", "_prefix", "_positive"):
             self.__dict__[key] = tuple(self.__dict__[key])

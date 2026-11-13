@@ -49,6 +49,16 @@ def uniform(low, high):
 
 # Log-uniform
 # --------------------------------------------------------
+class LogPowerLaw:
+    """Removed prior, kept so that its pickles raise a clear error."""
+
+    def __setstate__(self, state):
+        """Refuse the pickle, saved by socca 1.4.0 or earlier."""
+        from .models.base import _too_old
+
+        raise _too_old("LogPowerLaw prior")
+
+
 def loguniform(low, high):
     """
     Create a log-uniform prior distribution with validation.

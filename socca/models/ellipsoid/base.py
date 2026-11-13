@@ -105,6 +105,8 @@ class Ellipsoid(Component):
     >>> bar.inc = boundto(disk, "inc")
     """
 
+    _periods = {"theta": jp.pi, "rot": jp.pi}
+
     def __init__(self, radial=None, **kwargs):
         super().__init__(**kwargs)
 
@@ -184,7 +186,6 @@ class Ellipsoid(Component):
                 losbins="",
             )
         )
-        self.periodic.update(dict(theta=jp.pi, rot=jp.pi))
 
         self.description.update(
             {

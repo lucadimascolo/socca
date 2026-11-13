@@ -7,7 +7,7 @@ import jax.numpy as jp
 import numpy as np
 import numpyro.distributions
 
-from ..models.base import _support_bounds
+from ..models.base import _REFIT, _support_bounds
 from ..plotting import Plotter
 
 import inspect
@@ -964,7 +964,16 @@ def load(filename):
     >>> mraw, msmo, mbkg = fit.getmodel()
     """
     with open(filename, "rb") as f:
-        odict = dill.load(f)
+        try:
+            odict = dill.load(f)
+        except (AttributeError, ImportError) as err:
+            if "socca" not in str(err):
+                raise
+            # pickles of socca 1.4.0 can name what this version removed
+            raise ValueError(
+                f"Could not load {filename} ({type(err).__name__}: {err}). "
+                f"If it was saved by socca 1.4.0 or earlier, {_REFIT}"
+            ) from err
     fit = fitter(img=odict["img"], mod=odict["mod"])
     for key in odict.keys():
         fit.__dict__[key] = odict[key]

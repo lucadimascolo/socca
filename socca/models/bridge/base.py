@@ -82,6 +82,8 @@ class Bridge(Component):
     MesaBridge : Harmonic mean combination for mesa-like profiles.
     """
 
+    _periods = {"theta": jp.pi}
+
     def __init__(self, radial=None, parallel=None, **kwargs):
         super().__init__(**kwargs)
 
@@ -113,7 +115,6 @@ class Bridge(Component):
                 e="",
             )
         )
-        self.periodic.update(dict(theta=jp.pi))
         self.description.update(
             dict(
                 xc="Right ascension of the bridge centroid",

@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jp
 import numpy as np
+import numpyro.distributions
 import pytest
 
 import socca.models as models
@@ -454,7 +455,10 @@ class TestPowerLaw:
     def test_logpowerlaw_removed(self):
         """The log-sampled power law is gone."""
         assert not hasattr(priors, "logpowerlaw")
-        assert not hasattr(priors, "LogPowerLaw")
+        # only a stub is left, for pickles of socca 1.4.0 to raise clearly
+        assert not issubclass(
+            priors.LogPowerLaw, numpyro.distributions.Distribution
+        )
 
 
 class TestPowerLawPytree:

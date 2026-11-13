@@ -777,6 +777,59 @@ class TestDisk:
         np.testing.assert_allclose(got, exp, rtol=1e-8)
 
 
+class TestOldPickles:
+    """Pickles of socca 1.4.0 are refused with a clear error."""
+
+    @staticmethod
+    def _components():
+        return [
+            models.Disk(
+                radial=models.Exponential(xc=0.0, yc=0.0, rs=1e-3, Is=1.0),
+                vertical=models.disk.vertical.HyperSecantHeight(zs=1e-4),
+            ),
+            models.Ellipsoid(
+                radial=models.Sersic(re=1e-3, Ie=1.0), xc=0.0, yc=0.0
+            ),
+            models.SimpleBridge(xc=0.0, yc=0.0, rs=1e-3, Is=1.0),
+            models.Beta(xc=0.0, yc=0.0, rc=1e-3, Ic=1.0, beta=0.6),
+        ]
+
+    def test_current_pickles_load(self, recwarn):
+        """Pickles and copies made now load, without warnings."""
+        mod = models.Model()
+        for comp in self._components():
+            mod.addcomponent(comp)
+        pickle.loads(pickle.dumps(mod))
+        copy.deepcopy(mod)
+        assert not recwarn.list
+
+    def test_logpowerlaw_refused(self):
+        """A LogPowerLaw prior pickled by socca 1.4.0 raises clearly."""
+        old = priors.LogPowerLaw.__new__(priors.LogPowerLaw)
+        with pytest.raises(ValueError, match="socca 1.4.0 or earlier"):
+            old.__setstate__({"alpha": -2.0, "low": 1.0, "high": 10.0})
+
+    @pytest.mark.parametrize("index", range(4))
+    def test_component_refused(self, index):
+        """A component pickled without a format is from socca 1.4.0."""
+        comp = self._components()[index]
+        state = comp.__getstate__()
+        del state["_format"]
+        new = type(comp).__new__(type(comp))
+        with pytest.raises(ValueError, match="socca 1.4.0 or earlier"):
+            new.__setstate__(state)
+
+    def test_model_refused(self):
+        """A model pickled without component ids is from socca 1.4.0."""
+        state = dict(
+            models.Model(models.Beta(xc=0.0, yc=0.0, rc=1e-3, Ic=1.0)).__dict__
+        )
+        del state["_prefix"]
+        new = models.Model.__new__(models.Model)
+        with pytest.raises(ValueError, match="pip install socca==1.4.0"):
+            new.__setstate__(state)
+
+
 class TestEllipsoid:
     """Tests for Ellipsoid model."""
 

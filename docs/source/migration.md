@@ -1,6 +1,6 @@
 # Migration notes
 
-Some model conventions changed after **``socca``** 1.4.0. To reuse parameter values from an earlier fit, convert them as below.
+Some model conventions changed after **``socca``** 1.4.0. Models and fits saved with 1.4.0 or earlier cannot be loaded by this version: re-run the fit, or load them with 1.4.0 (`pip install socca==1.4.0`). To reuse parameter values from an earlier fit, convert them as below.
 
 ## `Disk`: radial amplitude
 
