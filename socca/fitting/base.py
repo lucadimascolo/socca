@@ -87,6 +87,18 @@ class fitter:
             Physical units for each fitted parameter.
         plot : Plotter
             Plotting interface for visualization of results.
+
+        Raises
+        ------
+        ValueError
+            If the model is incomplete (e.g. a parameter set to None) or
+            its ties are invalid (unknown sources, cycles).
+
+        Notes
+        -----
+        The model is recorded when the fitter is created: if it changes
+        afterwards, run, getmodel, parameters and plot.corner raise
+        ValueError ("The model changed after this fitter was created").
         """
         self.img = img
         self.mod = mod
@@ -325,8 +337,8 @@ class fitter:
         Parameters
         ----------
         method : str, optional
-            Sampling method: 'nautilus', 'dynesty', or 'numpyro'.
-            Default is 'nautilus'.
+            Sampling method: 'nautilus', 'dynesty', 'pocomc', 'numpyro',
+            'emcee' or 'optimizer'. Default is 'nautilus'.
         checkpoint : str, optional
             Path to checkpoint file for saving/loading sampler state.
         resume : bool, optional
@@ -336,6 +348,12 @@ class fitter:
             Default is False.
         **kwargs : dict
             Additional keyword arguments passed to the sampler.
+
+        Raises
+        ------
+        ValueError
+            If the method is unknown, or the model changed after this
+            fitter was created.
         """
         self._checkmodel()
         self.method = method
@@ -610,17 +628,17 @@ class fitter:
             - "bkg"/"background" : background component
 
             Default is "all".
-        component : None, str, int, list, or Profile, optional
-            Model component(s) to include in the computation. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Model component(s) to include in the computation:
 
-            - None: Include all model components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for the first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
             This is useful for generating images of individual model
-            components. Default is None (all components).
+            components.
         usebest : bool, optional
             If True, compute model at weighted median parameters.
             If False, compute median model by marginalizing over all
@@ -647,7 +665,9 @@ class fitter:
         Raises
         ------
         ValueError
-            If an unknown model component name is provided in `what`.
+            If an unknown model component name is provided in `what`, if
+            `component` matches no component of the model or names one
+            twice, or if the model changed after this fitter was created.
 
         Notes
         -----
@@ -762,17 +782,17 @@ class fitter:
         name : str or Path
             Output FITS filename. The '.fits' extension is added
             automatically if not present.
-        component : None, str, int, list, or Profile, optional
-            Model component(s) to include in the saved image. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Model component(s) to include in the saved image:
 
-            - None: Include all model components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for the first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
             This is useful for saving images of individual model
-            components. Default is None (all components).
+            components.
         **kwargs : dict
             Additional keyword arguments passed to `getmodel()`.
             Common options include:
@@ -787,6 +807,12 @@ class fitter:
                 Apply response correction. Default is False.
             - doexp : bool, optional
                 Apply exposure map. Default is False.
+
+        Raises
+        ------
+        ValueError
+            If `component` matches no component of the model or names one
+            twice, or if the model changed after this fitter was created.
 
         See Also
         --------
@@ -942,6 +968,13 @@ def load(filename):
     -------
     fit : fitter
         Restored fitter object with all attributes and state.
+
+    Raises
+    ------
+    ValueError
+        If the pickle was saved by socca 1.4.0 or earlier (e.g. its model,
+        or a removed LogPowerLaw prior), which this version cannot load.
+        Other unpickling errors are raised as they are.
 
     Notes
     -----

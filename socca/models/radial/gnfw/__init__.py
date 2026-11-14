@@ -32,8 +32,8 @@ class gNFW(Profile):
         Controls whether to use the MLP emulator instead of numerical
         integration. Pass ``True`` to use the bundled pre-trained model,
         a file-system path (``str`` or :class:`~pathlib.Path`) to load a
-        custom checkpoint, or ``None`` (default) to use numerical
-        integration. Requires ``flax`` to be installed.
+        custom checkpoint, or ``None`` (default) or ``False`` to use
+        numerical integration. The emulator requires ``flax``.
     interpolate : bool, optional
         Selects the evaluation strategy. If ``True`` (default) the profile
         is computed on a 1D radial grid and the result is interpolated to
@@ -43,9 +43,17 @@ class gNFW(Profile):
     rz : array-like, optional
         Radial grid (in units of rc) for the interpolation path. Only used
         when ``interpolate`` is True. Default is logspace(-7, 2, 1000).
+        It is stored read-only: assign a new grid to change it.
     eps : float, optional
-        Absolute and relative quadrature tolerance. Only used when
-        ``emulator`` is None. Default is 1e-8.
+        Absolute and relative quadrature tolerance. Only used when there
+        is no emulator. Default is 1e-8.
+
+    Notes
+    -----
+    emulator, interpolate, rz and eps can also be set after creation,
+    which recompiles the profile. Inside a Disk or Ellipsoid the 3D gNFW
+    density, equal to Ic at rc, is used instead of its projection, so
+    these settings do not apply there.
     """
 
     _scale_radius = "rc"

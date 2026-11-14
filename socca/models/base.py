@@ -426,6 +426,9 @@ class Component:
         Mapping from parameter names to their period, for parameters that
         are periodic (e.g. an elliptical profile's ``theta``, symmetric
         under ``theta -> theta + pi``). Absent keys are not periodic.
+        Periods are in native units; a Model converts them to declared
+        units. Periods of sub-profile parameters are listed on the
+        sub-profile.
     """
 
     id = None
@@ -824,7 +827,7 @@ class Component:
         >>> from socca.models import Beta
         >>> beta = Beta(xc=180.5, yc=45.2)
         >>> beta.parlist()
-        ['xc', 'yc', 'theta', 'e', 'cbox', 'rc', 'Ic', 'beta']
+        ['xc', 'yc', 'theta', 'e', 'cbox', 'rc', 'alpha', 'beta', 'Ic']
         """
         return list(self.units.keys())
 
@@ -850,13 +853,17 @@ class Component:
 
         This tells the model that your parameter values (or prior bounds) are
         expressed in the given units.  The model will transparently convert them
-        to its internal units before evaluation.
+        to its internal units before evaluation. Ties (priors.function and
+        lambdas) take and return declared units, and periods (see
+        ``periodic``) follow them.
 
         Parameters
         ----------
         **kwargs : str
             Keyword arguments mapping parameter names to unit strings
-            (any string recognised by :mod:`astropy.units`).
+            (any string recognised by :mod:`astropy.units`). On a wrapper
+            a dotted name (e.g. ``"radial.re"``) sets the unit on the
+            sub-profile.
 
         Warns
         -----
@@ -874,8 +881,12 @@ class Component:
 
         Examples
         --------
+        >>> from socca import priors
+        >>> from socca.models import Disk, Gaussian
         >>> comp = Gaussian(xc=priors.uniform(100, 200), rs=priors.uniform(1, 10))
         >>> comp.set_units(xc="arcsec", rs="arcmin")
+        >>> disk = Disk()
+        >>> disk.set_units(**{"radial.re": "arcsec"})
         """
         for name, unit_str in kwargs.items():
             if name not in self.units:
@@ -912,14 +923,20 @@ class Component:
         ----------
         name : str
             Name of the parameter to add.
-        value : float, int, Distribution, or callable, optional
-            Parameter value. Can be a fixed value, a numpyro prior distribution,
-            or a function for tied parameters. Default is None.
+        value : number, Distribution, or tie, optional
+            Parameter value: a fixed value, a prior distribution, or a tie
+            (socca.priors.function or boundto). Default is None.
         units : str, optional
             Physical units of the parameter (e.g., 'deg', 'rad', 'image').
             Default is empty string.
         description : str, optional
             Human-readable description of the parameter. Default is empty string.
+
+        Raises
+        ------
+        ValueError
+            If name is not a Python identifier, or (on profiles) is rt or
+            wt, which are reserved for truncations.
 
         Notes
         -----
@@ -960,6 +977,9 @@ class Component:
         ------
         AttributeError
             If the parameter does not exist on this component.
+        ValueError
+            If name is rt or wt while a truncation is set (set truncation
+            to None instead).
 
         Examples
         --------

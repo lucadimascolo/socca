@@ -68,7 +68,8 @@ class Disk(Component):
     ----------
     radial : Profile, optional
         Radial profile defining in-plane surface brightness distribution.
-        Default is Sersic(). Can be any 2D profile (Beta, Exponential, etc.).
+        Default is Sersic(). Can be any 2D profile (Beta, Exponential, etc.);
+        its e and cbox are dropped, as the Disk does not use them.
     vertical : Height, optional
         Vertical profile defining scale height and vertical structure.
         Default is HyperSecantHeight(). Can be HyperSecantHeight or ExponentialHeight.
@@ -81,8 +82,14 @@ class Disk(Component):
         Radial profile component.
     vertical : Height
         Vertical profile component.
-    profile : callable
-        Combined 3D density profile rho(r, z) = radial(r) * vertical(z).
+
+    Raises
+    ------
+    ValueError
+        If a profile is already in a model or part of another Disk,
+        Ellipsoid or Bridge, or the same profile is passed twice.
+    TypeError
+        If radial is not a Profile or vertical not a Height.
 
     Notes
     -----
@@ -92,6 +99,11 @@ class Disk(Component):
     3. Accounts for inclination by rotating the disk before integration
     4. Uses numerical integration (trapezoidal rule) along z-direction
 
+    The vertical profile has unit integral along z, so the radial
+    amplitude is the face-on surface brightness. A truncation of the
+    radial profile is applied on the in-plane (cylindrical) radius of the
+    disk, not on the projected one.
+
     The inclination angle is stored in vertical.inc:
 
     - inc = 0: face-on (looking down on the disk)
@@ -99,10 +111,22 @@ class Disk(Component):
 
     Line-of-sight integration parameters (vertical.losdepth, vertical.losbins)
     control accuracy and computation time. Larger losdepth and more losbins
-    improve accuracy for highly inclined disks.
+    improve accuracy for highly inclined disks. They are hyperparameters,
+    which cannot have priors: losdepth must be finite and positive, losbins
+    an integer >= 2.
+
+    Parameters are namespaced by sub-profile: ``radial.xc``,
+    ``vertical.inc``, with model keys such as ``comp_00_radial.xc``. The
+    sub-profiles have no id and cannot be replaced: create a new Disk.
+
+    ``profile(r, z, **kw)`` is a method evaluating radial(r) * vertical(z).
+    The line-of-sight integral has a custom reverse-mode gradient:
+    jax.grad and jax.hessian work, forward-mode differentiation
+    (jax.jvp, jax.jacfwd) does not.
 
     Examples
     --------
+    >>> import numpy as np
     >>> from socca.models import Disk, Exponential
     >>> from socca.models.disk.vertical import ExponentialHeight
     >>> # Create edge-on exponential disk
@@ -123,11 +147,6 @@ class Disk(Component):
             Vertical profile component. Default is HyperSecantHeight().
         **kwargs : dict
             Additional keyword arguments.
-
-        Notes
-        -----
-        The component ID is synchronized between the Disk, radial, and vertical
-        components to ensure consistent parameter naming in composite models.
         """
         super().__init__(**kwargs)
 
@@ -198,7 +217,10 @@ class Disk(Component):
         Raises
         ------
         ValueError
-            If any parameter is a prior distribution or set to None.
+            If any parameter is a prior distribution or set to None, a
+            lambda tie names a parameter of another component, or a tie's
+            source has a prior. Use Model.getmap() for lambda ties to
+            other components.
 
         Warns
         -----

@@ -40,6 +40,18 @@ class Truncation:
         ``"deg"``).
     description : dict
         Human-readable description for each parameter.
+
+    Raises
+    ------
+    ValueError
+        If rt or wt is not strictly positive and finite.
+
+    Notes
+    -----
+    Set ``truncation=None`` on the profile to remove a truncation. On a
+    sub-profile the weight acts on the radius the profile is evaluated
+    at, not the projected one: the in-plane radius in a Disk, the
+    ellipsoidal radius in an Ellipsoid, the absolute distance in a Bridge.
     """
 
     _owner = None  # the profile it is attached to, which holds rt and wt

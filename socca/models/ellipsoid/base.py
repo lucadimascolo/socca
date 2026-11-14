@@ -218,7 +218,9 @@ class Ellipsoid(Component):
     radial : Profile, optional
         Radial profile defining the ellipsoid's density and its shape
         parameters (e.g. re, Ie, ns for Sersic). Any radial profile can be
-        used, with its truncation if any. Default is Sersic(). Any
+        used, with its truncation if any, but not one already in a model
+        or part of another Disk, Ellipsoid or Bridge. Its cbox is dropped.
+        Default is Sersic(). Any
         xc/yc/theta/e already set on it are inherited by Ellipsoid unless
         also passed as an Ellipsoid keyword argument, in which case
         Ellipsoid's value wins and a warning is raised.
@@ -259,9 +261,23 @@ class Ellipsoid(Component):
     Attributes
     ----------
     radial : Profile
-        Radial brightness-shape profile component.
-    profile : callable
-        JIT-compiled 3D density profile evaluated on the (x, y, z) grid.
+        Radial brightness-shape profile component. It cannot be replaced:
+        create a new Ellipsoid.
+
+    Notes
+    -----
+    The density is the radial profile divided by 2 (1 - eratio e) r_s,
+    twice the shortest semi-axis at the profile's scale radius r_s, so
+    the radial amplitude is a surface brightness, as for Disk (the exact
+    face-on central one for Exponential and TopHat). A profile with no
+    scale radius (e.g. a CustomProfile) is used as is. A gNFW uses its 3D
+    density, not its projection. ``profile(xt, yt, zt, e, eratio, **kw)``
+    is a method evaluating this normalised density.
+
+    The projection is tabulated once per evaluation as a 1D Abel integral,
+    so its cost does not scale with the image size. TopHat uses its exact
+    projection instead. Truncated profiles (TopHat included) are
+    integrated per pixel along the line of sight, at a higher cost.
 
     Examples
     --------
@@ -443,7 +459,9 @@ class Ellipsoid(Component):
         Raises
         ------
         ValueError
-            If any parameter is a prior distribution or set to None.
+            If any parameter is a prior distribution or set to None, a
+            lambda tie names a parameter of another component, or a tie's
+            source has a prior.
 
         Warns
         -----
@@ -454,7 +472,8 @@ class Ellipsoid(Component):
         -----
         The line-of-sight integral is computed once as a 1D Abel projection
         of the radial profile, so its cost does not scale with the image
-        size; losbins sets the number of quadrature nodes.
+        size, except for truncated profiles, integrated per pixel; losbins
+        sets the number of quadrature nodes.
 
         Examples
         --------

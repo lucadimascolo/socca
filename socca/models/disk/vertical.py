@@ -28,9 +28,11 @@ class Height(Component):
         inc : float, optional
             Inclination angle in radians (0 = face-on, pi/2 = edge-on).
         losdepth : float, optional
-            Half-extent of line-of-sight integration in degrees.
+            Half-extent of line-of-sight integration in degrees; finite
+            and positive.
         losbins : int, optional
-            Number of integration points along the line of sight.
+            Number of integration points along the line of sight; an
+            integer >= 2.
         positive : bool, optional
             Whether to enforce positivity constraint.
 
@@ -39,14 +41,23 @@ class Height(Component):
     inc : float
         Inclination angle (rad).
     losdepth : float
-        Half line-of-sight depth for numerical integration (deg).
+        Half line-of-sight depth for numerical integration (deg,
+        hyperparameter).
     losbins : int
         Number of points for line-of-sight integration (hyperparameter).
+
+    Raises
+    ------
+    ValueError
+        If losdepth is not finite and positive, or losbins is not an
+        integer >= 2.
 
     Notes
     -----
     - Subclasses must implement the abstract profile(z) method
-    - The profile should return the density as a function of height z
+    - The profile should return the density as a function of height z,
+      with unit integral along z
+    - losdepth and losbins are hyperparameters: fixed values, no priors
     - losdepth and losbins control the numerical integration accuracy
     - Larger losdepth needed for extended vertical distributions
     - More losbins increase accuracy but decrease speed
@@ -105,7 +116,7 @@ class Height(Component):
         Returns
         -------
         ndarray
-            Density at height z (normalized).
+            Density at height z, with unit integral along z.
 
         Notes
         -----
@@ -148,9 +159,10 @@ class HyperSecantHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = sech(abs(z)/zs)^alpha
+    rho(z) = sech(abs(z)/zs)^alpha / (zs B(alpha/2, 1/2))
 
-    Common cases:
+    with B the beta function, so that it has unit integral along z.
+    alpha <= 0 warns. Common cases:
 
     - alpha = 1: Simple sech profile
     - alpha = 2: sech^2 profile (isothermal disk)
@@ -272,11 +284,12 @@ class ExponentialHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = exp(-abs(z)/zs)
+    rho(z) = exp(-abs(z)/zs) / (2 zs)
 
-    This simple exponential profile is appropriate for thin stellar disks
-    and is the vertical analog of the exponential radial profile. The scale
-    height zs is typically much smaller than the radial scale length.
+    so that it has unit integral along z. This simple exponential profile
+    is appropriate for thin stellar disks and is the vertical analog of
+    the exponential radial profile. The scale height zs is typically much
+    smaller than the radial scale length.
 
     The exponential profile has a sharp peak at the midplane and falls off
     more rapidly than sech profiles, making it suitable for thin disks.

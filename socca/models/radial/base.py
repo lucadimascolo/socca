@@ -59,6 +59,10 @@ class Profile(Component):
             Boxiness parameter (0 = elliptical, >0 = boxy, <0 = disky).
         positive : bool, optional
             Whether to enforce positivity constraint.
+        truncation : Truncation, bool or None, optional
+            Truncation multiplying the profile: True for a default
+            HyperTangent, a Truncation instance, or None/False (default)
+            for none. It adds the parameters rt and wt.
 
     Attributes
     ----------
@@ -71,10 +75,20 @@ class Profile(Component):
     cbox : float
         Boxiness/diskyness parameter.
 
+    Raises
+    ------
+    ValueError
+        If rt or wt is not strictly positive and finite, or the
+        truncation is not a Truncation, True, False or None.
+
     Notes
     -----
     All Profile subclasses must implement the abstract profile() method that
     defines the radial surface brightness distribution.
+
+    rt and wt are reserved for the truncation. Setting a new truncation
+    takes its rt and wt as native values: units declared for them with
+    set_units are reset.
     """
 
     _periods = {"theta": jp.pi}
@@ -450,6 +464,8 @@ class CustomProfile(Profile):
     - All parameters in the parameters list are initialized to None and must
       be set before use.
     - The profile function should be compatible with JAX (use jax.numpy operations).
+    - rt and wt cannot be parameter names: they are reserved for the
+      truncation (ValueError).
 
     Examples
     --------

@@ -165,13 +165,14 @@ class Plotter:
         name : str, optional
             Output filename (without extension). If None, displays plot
             interactively instead of saving. Default is None.
-        component : str, int, list, or None, optional
-            Component(s) to plot. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Component(s) whose parameters to plot:
 
-            - None: Plot all components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index
-            - list: Multiple components (names, indices, or objects)
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
         fmt : str, optional
             Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
         sigma : float, optional
@@ -188,6 +189,14 @@ class Plotter:
         **kwargs : dict, optional
             Additional keyword arguments passed to corner.corner().
             See corner package documentation for available options.
+
+        Raises
+        ------
+        AttributeError
+            If the fit has no posterior samples (e.g. method='optimizer').
+        ValueError
+            If `component` matches no component of the model or names one
+            twice, or if the model changed after the fitter was created.
 
         Notes
         -----
@@ -320,17 +329,17 @@ class Plotter:
         name : str, optional
             Output filename (with or without extension). Required for saving;
             if None, plot is saved with a default name.
-        component : None, str, int, list, or Profile, optional
-            Model component(s) to include in the comparison. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Model component(s) to include in the comparison:
 
-            - None: Include all model components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for the first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
             This is useful for comparing data against individual model
-            components. Default is None (all components).
+            components.
         fmt : str, optional
             Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
         fx : float, optional

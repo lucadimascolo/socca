@@ -102,6 +102,7 @@ def zoo():
     - ModExponential: Modified exponential profile
     - Point: Point source model
     - Background: Polynomial background model
+    - SimpleBridge, MesaBridge: Bridge/filament models
     - Disk: 3D disk model with finite thickness
     - Ellipsoid: 3D triaxial-ellipsoid model evaluated via line-of-sight
       integration (e.g. a galactic bar)
@@ -110,6 +111,9 @@ def zoo():
     --------
     >>> import socca.models as models
     >>> models.zoo()
+    <BLANKLINE>
+    Radial models
+    =============
     Beta
     gNFW
     Power
@@ -120,10 +124,24 @@ def zoo():
     PolyExponential
     PolyExpoRefact
     ModExponential
+    <BLANKLINE>
+    Filaments
+    =========
+    SimpleBridge
+    MesaBridge
+    <BLANKLINE>
+    Disk-like model
+    ===============
+    Disk
+    <BLANKLINE>
+    Ellipsoid-like model
+    ====================
+    Ellipsoid
+    <BLANKLINE>
+    Other models
+    ============
     Point
     Background
-    Disk
-    Ellipsoid
     """
     print("\nRadial models")
     print("=============")
@@ -247,18 +265,22 @@ class Model:
         units : dict
             Dictionary mapping parameter names to their physical units.
         periodic : dict
-            Dictionary mapping parameter names to their period, for
-            parameters that are periodic (e.g. an elliptical profile's
-            ``theta``). Keys absent from this dict are not periodic.
+            Dictionary mapping parameter names to their period, in their
+            declared units (see Component.set_units), for parameters that
+            are periodic (e.g. an elliptical profile's ``theta``). Keys
+            absent from this dict are not periodic.
 
         Examples
         --------
         >>> from socca.models import Model, Beta
         >>> # Create empty model and add component later
         >>> model = Model()
-        >>> model.addcomponent(Beta())
+        >>> model.addcomponent(Beta(xc=180.5, yc=45.2, rc=0.01, Ic=1.0))
         >>> # Or initialize with a profile directly
-        >>> model = Model(Beta())
+        >>> model = Model(Beta(xc=180.5, yc=45.2, rc=0.01, Ic=1.0))
+        >>> model
+        Model
+          Beta (comp_00)
         """
         self.ncomp = 0
         self.priors = {}
@@ -309,8 +331,9 @@ class Model:
 
         This method incorporates a new profile component into the model, handling
         parameter registration, prior assignments, and constraint management.
-        Components are indexed sequentially and their parameters are prefixed
-        with the component index.
+        Parameters are prefixed with the component id: its ``name=`` if
+        given, else ``comp_NN`` with the lowest free number from the
+        model's current count.
 
         Parameters
         ----------
@@ -325,7 +348,22 @@ class Model:
         ValueError
             If any parameter in the profile is set to None without a valid
             value or prior distribution, if the component is already in the
-            model, or if its id is already used.
+            model or is a sub-profile wrapped by a Disk, Ellipsoid or
+            Bridge, if one of its sub-profiles is already in the model, if
+            its id is already used, if two parameters share a model key, or
+            if a hyperparameter is not fixed.
+        KeyError
+            If a lambda tie argument matches no parameter of the model, or
+            several (when the model is used: getmap, getmodel, fitter).
+
+        Warns
+        -----
+        UserWarning
+            If a prior on a periodic parameter spans a whole number of
+            periods (sampled as periodic by nautilus, dynesty and pocomc)
+            or more than one period.
+        FutureWarning
+            If a parameter is tied with a lambda (use priors.function).
 
         Notes
         -----
@@ -343,11 +381,15 @@ class Model:
         >>> from socca.models import Model, Beta, Point
         >>> model = Model()
         >>> # Add a Beta profile
-        >>> model.addcomponent(Beta(xc=180.5, yc=45.2, rc=0.01))
+        >>> model.addcomponent(Beta(xc=180.5, yc=45.2, rc=0.01, Ic=1.0))
         >>> # Add a point source
-        >>> model.addcomponent(Point(xc=180.6, yc=45.3), positive=True)
+        >>> model.addcomponent(Point(xc=180.6, yc=45.3, Ic=1.0), positive=True)
         >>> print(model.ncomp)
         2
+        >>> model
+        Model
+          Beta (comp_00)
+          Point (comp_01)
         """
         self._addcomponent(prof, positive)
 
@@ -563,14 +605,23 @@ class Model:
 
         Examples
         --------
-        >>> model = Model(Beta(xc=priors.uniform(180, 181), yc=45.2))
+        >>> from socca import priors
+        >>> from socca.models import Model, Beta
+        >>> beta = Beta(xc=priors.uniform(180, 181), yc=45.2, rc=0.01, Ic=1.0)
+        >>> model = Model(beta)
         >>> model.parameters()
         <BLANKLINE>
         Beta (comp_00)
         ==============
-        xc [deg] : Uniform [180, 181] | Right ascension of centroid
-        yc [deg] : 4.5200E+01         | Declination of centroid
-        ...
+        xc    [deg] : Uniform [180, 181] | Right ascension of centroid
+        yc    [deg] : 4.5200E+01         | Declination of centroid
+        theta [rad] : 0.0000E+00         | Position angle (east from north)
+        e        [] : 0.0000E+00         | Projected ellipticity (1 - axis ratio)
+        cbox     [] : 0.0000E+00         | Projected boxiness
+        rc    [deg] : 1.0000E-02         | Core radius
+        alpha    [] : 2.0000E+00         | Radial exponent
+        beta     [] : 5.5000E-01         | Slope parameter
+        Ic  [image] : 1.0000E+00         | Central surface brightness
         """
         self._sync(strict=False)
         blocks = []
@@ -670,7 +721,7 @@ class Model:
 
         Notes
         -----
-        - All model parameters must be fixed values (float or int).
+        - All model parameters must be fixed values (any numeric type).
         - Tied parameters are automatically evaluated from their dependencies.
         - For use during fitting with sampled parameters, use getmodel() instead.
 
@@ -887,16 +938,14 @@ class Model:
             Default is False.
         doexp : bool, optional
             If True, multiply by the exposure map (img.exposure). Default is False.
-        component : None, str, int, list, or Profile, optional
-            Component(s) to include in the model computation. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Component(s) to include in the model computation:
 
-            - None: Include all components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
-
-            Default is None (all components).
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
         Returns
         -------
@@ -923,13 +972,26 @@ class Model:
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from astropy.io import fits
+        >>> from astropy.wcs import WCS
+        >>> from socca import priors
+        >>> from socca.data import Image
         >>> from socca.models import Model, Beta
-        >>> import numpyro.distributions as dist
-        >>> model = Model(Beta(xc=dist.Uniform(180, 181), yc=45.2))
-        >>> img = Image('observation.fits')
+        >>> wcs = WCS(naxis=2)
+        >>> wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+        >>> wcs.wcs.crval = [180.5, 45.2]
+        >>> wcs.wcs.crpix = [16.5, 16.5]
+        >>> wcs.wcs.cdelt = [-1e-3, 1e-3]
+        >>> hdu = fits.PrimaryHDU(np.zeros((32, 32)), header=wcs.to_header())
+        >>> img = Image(hdu)
+        >>> beta = Beta(xc=priors.uniform(180, 181), yc=45.2, rc=0.01, Ic=1.0)
+        >>> model = Model(beta)
         >>> # During fitting, pp contains sampled parameter values
         >>> pp = [180.5]  # value for xc
-        >>> mraw, msmo, mbkg, mneg = model.getmodel(img, pp, doresp=True, doexp=True)
+        >>> mraw, msmo, mbkg, mneg = model.getmodel(img, pp)
+        >>> mraw.shape
+        (32, 32)
         """
         self._sync()
         return self._getmodel(img, pp, doresp, doexp, component)

@@ -13,7 +13,8 @@ class Power(Profile):
     Power law profile for surface brightness modeling.
 
     The Power profile describes a simple power-law distribution of the form
-    I(r) = Ic * (r/rc)^alpha.
+    I(r) = Ic * (r/rc)^(-alpha), evaluated at r = 1e-7 rc for smaller
+    radii (r = 0 included).
     """
 
     _scale_radius = "rc"
@@ -79,6 +80,7 @@ class Power(Profile):
         I(r) = Ic * (r/rc)^(-alpha)
 
         For positive alpha values, the profile decreases with radius.
+        Radii below 1e-7 rc (r = 0 included) are evaluated at 1e-7 rc.
 
         Examples
         --------

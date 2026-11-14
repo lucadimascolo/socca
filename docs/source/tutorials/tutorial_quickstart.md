@@ -22,6 +22,7 @@ Before getting into the nuts and bolts of using **``socca``** to model your favo
 
 ```python
 >>> import socca
+>>> import numpy as np
 ```
 
 Ready, set, go!
@@ -63,9 +64,12 @@ The `point` object now represents a point-like model component that can be used 
 
 ```python
 >>> point.parameters()
-xc   [deg] : None       | Right ascension
-yc   [deg] : None       | Declination
-Ic [image] : None       | Peak surface brightness
+
+Point
+=====
+xc   [deg] : None | Right ascension
+yc   [deg] : None | Declination
+Ic [image] : None | Peak surface brightness
 ```
 
 As shown above, the `Point` model is described by a total of three parameters. The respective units are reported in square brackets next to each name, while a short description of each parameter is provided on the right. The `None` values indicate that no priors or fixed values have been assigned yet. These can be specified either by defining probability distributions or by fixing parameters to constant values:
@@ -90,6 +94,9 @@ Setting up a Sérsic (or any other) component follows the same procedure as for 
 ```python
 >>> sersic = socca.models.Sersic()
 >>> sersic.parameters()
+
+Sersic
+======
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -97,7 +104,7 @@ e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 re    [deg] : None       | Effective radius
 Ie  [image] : None       | Surface brightness at re
-ns       [] : 5.0000E-01 | Sérsic index
+ns       [] : 5.0000E-01 | Sersic index
 ```
 
 Inspecting the image, we see that the diffuse component is centred on the bright point source. We therefore fix the `point` and `sersic` components to share the same centroid. This is achieved by binding the `xc` and `yc` parameters of the Sérsic component to those of the point source:
@@ -126,7 +133,7 @@ Since no prior or value is assigned to `cbox`, it remains fixed at its default v
 
 
 ```{seealso}
-Many other components are available in the `socca.models` module. Please refer to the "[Available model components](./tutorial_models.md)" documentation page for a complete overview of all the implemented models. The collection is continuously growing to accomodate all the potential use cases, and new components will be added in future releases of **``socca``**.
+Many other components are available in the `socca.models` module. Please refer to the "[Available model components](./tutorial_components.md)" documentation page for a complete overview of all the implemented models. The collection is continuously growing to accomodate all the potential use cases, and new components will be added in future releases of **``socca``**.
 ```
 
 ### Building a composite model
@@ -137,6 +144,30 @@ In **``socca``**, each component is treated as an additive term. Constructing a 
 >>> mod = socca.models.Model()
 >>> mod.addcomponent(point)
 >>> mod.addcomponent(sersic)
+UserWarning: The comp_01_theta prior spans whole periods (3.14159 rad), so it will be treated as periodic by the nautilus, dynesty and pocomc backends. Pass periodic=[...] to run() to choose a different set, or periodic=[] to disable this.
+```
+
+Each component gets an id from its position in the model (`comp_00` for `point`, `comp_01` for `sersic`), used in the parameter names of the fit; a custom id can be given with `name=` when creating the component (e.g. `socca.models.Sersic(name='disk')`). The warning tells us that the prior on the position angle spans its whole period, so the sampler will treat it as periodic (see {ref}`periodic parameters <periodic-parameters>`). The full model can be inspected with `mod.parameters()`:
+
+```python
+>>> mod.parameters()
+
+Point (comp_00)
+===============
+xc   [deg] : Uniform [19.997, 20.003] | Right ascension
+yc   [deg] : Uniform [-10, -9.997]    | Declination
+Ic [image] : LogUniform [0.01, 100]   | Peak surface brightness
+
+Sersic (comp_01)
+================
+xc    [deg] : = comp_00.xc             | Right ascension of centroid
+yc    [deg] : = comp_00.yc             | Declination of centroid
+theta [rad] : Uniform [0, 3.142]       | Position angle (east from north)
+e        [] : Uniform [0, 1]           | Projected ellipticity (1 - axis ratio)
+cbox     [] : 0.0000E+00               | Projected boxiness
+re    [deg] : LogUniform [1e-08, 0.01] | Effective radius
+Ie  [image] : LogUniform [0.01, 100]   | Surface brightness at re
+ns       [] : 1.0000E+00               | Sersic index
 ```
 
 The `mod` object now represents the full model and provides predictions to the likelihood defined by `noise` for comparison with the input data.
@@ -233,7 +264,7 @@ Additionally, it is possible to generate a corner plot of the posterior distribu
 :class: only-dark
 ```
 
-This is mostly a simple wrapper around [corner.py](https://github.com/dfm/corner.py) that automatically configures the labels and ranges based on the model parameters and prior distributions. It is also possible to use it for visualising only a subset of the model components by passing a list of component names to the `component` argument as a list of strings (e.g. `component=['comp_00']` to show only the first component added to the model), integer indices (e.g. `component=[0]`), or directly referring to the individual components (e.g. `component=[point]`).
+This is mostly a simple wrapper around [corner.py](https://github.com/dfm/corner.py) that automatically configures the labels and ranges based on the model parameters and prior distributions. It is also possible to use it for visualising only a subset of the model components by passing a list of component ids to the `component` argument as strings (e.g. `component=['comp_00']` to show only the first component added to the model), integer indices (e.g. `component=[0]`), or directly referring to the individual components (e.g. `component=[point]`).
 
 By default, both the `comparison` and `corner` plots are displayed on screen. Passing the argument `name="your/file/name/prefix"` however allows for saving the figures to disk.
 

@@ -47,6 +47,10 @@ class Bridge(Component):
     parallel : Profile, optional
         Profile describing the surface brightness distribution along the
         bridge major axis. Default is TopHat().
+
+        Both need a scale radius and an amplitude (e.g. rc and Ic for
+        Beta), which the Bridge sets from rs, e and Is; their geometric
+        parameters (xc, yc, theta, e, cbox) are dropped.
     **kwargs : dict
         Additional keyword arguments including:
 
@@ -62,8 +66,8 @@ class Bridge(Component):
             Position angle of the bridge major axis in radians
             (measured east from north).
         e : float, optional
-            Axis ratio controlling the relative extent of radial vs
-            parallel profiles. Default is 0.5.
+            Projected ellipticity of the bridge profiles: the radial
+            profile's scale radius is rs * (1 - e). Default is 0.5.
 
     Attributes
     ----------
@@ -71,6 +75,15 @@ class Bridge(Component):
         The radial profile component.
     parallel : Profile
         The parallel profile component.
+
+    Raises
+    ------
+    TypeError
+        If a profile is a PolyExpoRefact, is not a Profile, or has no
+        scale radius and amplitude.
+    ValueError
+        If a profile is already in a model or part of another Disk,
+        Ellipsoid or Bridge, or the same profile is passed twice.
 
     Notes
     -----
@@ -80,7 +93,12 @@ class Bridge(Component):
 
     The scale radius `rs` is shared between the parallel profile (where
     it is used directly) and the radial profile (where it is scaled by
-    the factor `1 - e` to control the axis ratio).
+    the factor `1 - e` to control the axis ratio). Setting a sub-profile's
+    scale radius or amplitude raises at getmap and when fitting.
+
+    The profiles are evaluated on the absolute distances from the bridge
+    axis and along it, and their truncations, if any, act on these
+    distances. The sub-profiles cannot be replaced: create a new Bridge.
 
     See Also
     --------
@@ -240,7 +258,8 @@ class Bridge(Component):
         ------
         ValueError
             If any model parameter is set to None or contains a prior
-            distribution instead of a fixed value.
+            distribution instead of a fixed value, or if a sub-profile's
+            scale radius or amplitude was set (set rs, e and Is instead).
 
         Notes
         -----
@@ -284,9 +303,10 @@ class Bridge(Component):
         Returns
         -------
         rgrid : ndarray
-            Coordinate grid along the radial (perpendicular) direction.
+            Absolute distance from the bridge axis, |r| (deg).
         zgrid : ndarray
-            Coordinate grid along the parallel (major axis) direction.
+            Absolute distance along the bridge axis from the centroid,
+            |z| (deg).
 
         Notes
         -----
@@ -421,17 +441,17 @@ class SimpleBridge(Bridge):
     >>> from socca.models import SimpleBridge
     >>> bridge = SimpleBridge()
     >>> bridge.parameters()
-
-    Model parameters
-    ================
-    xc              [deg] : None       | Right ascension of bridge centroid
-    yc              [deg] : None       | Declination of bridge centroid
-    rs              [deg] : None       | Scale radius of the bridge profiles
-    Is            [image] : None       | Scale intensity of the bridge
-    theta           [rad] : 0.0000E+00 | Position angle of bridge major axis
-    e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
-    radial.alpha       [] : 2.0000E+00 | Radial exponent
-    radial.beta        [] : 5.5000E-01 | Slope parameter
+    <BLANKLINE>
+    SimpleBridge
+    ============
+    xc        [deg] : None       | Right ascension of the bridge centroid
+    yc        [deg] : None       | Declination of the bridge centroid
+    rs        [deg] : None       | Scale radius of the bridge profiles
+    Is      [image] : None       | Scale intensity of the bridge profiles
+    theta     [rad] : 0.0000E+00 | Position angle of the bridge major axis
+    e            [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+    radial.alpha [] : 2.0000E+00 | Radial exponent
+    radial.beta  [] : 5.5000E-01 | Slope parameter
     """
 
     def __init__(self, radial=None, parallel=None, **kwargs):
@@ -482,28 +502,28 @@ class MesaBridge(Bridge):
     Bridge : Base class with parameter descriptions.
     SimpleBridge : Alternative with multiplicative profile combination.
 
+    References
+    ----------
+    Hincks, A. D., et al., MNRAS, 510, 3335 (2022)
+    https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract
+
     Examples
     --------
     >>> from socca.models import MesaBridge
     >>> bridge = MesaBridge()
     >>> bridge.parameters()
-
-    References
-    ----------
-    Hincks, A. D., et al., MRANS, 510, 3335 (2022)
-    https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract
-
-    Model parameters
-    ================
-    xc              [deg] : None       | Right ascension of bridge centroid
-    yc              [deg] : None       | Declination of bridge centroid
-    rs              [deg] : None       | Scale radius of the bridge profiles
-    Is            [image] : None       | Scale intensity of the bridge
-    theta           [rad] : 0.0000E+00 | Position angle of bridge major axis
-    e                  [] : 5.0000E-01 | Axis ratio of the bridge profiles
-    radial.alpha       [] : 8.0000E+00 | Radial exponent
-    radial.beta        [] : 1.0000E+00 | Slope parameter
-    parallel.alpha     [] : 8.0000E+00 | Power law slope
+    <BLANKLINE>
+    MesaBridge
+    ==========
+    xc          [deg] : None       | Right ascension of the bridge centroid
+    yc          [deg] : None       | Declination of the bridge centroid
+    rs          [deg] : None       | Scale radius of the bridge profiles
+    Is        [image] : None       | Scale intensity of the bridge profiles
+    theta       [rad] : 0.0000E+00 | Position angle of the bridge major axis
+    e              [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+    radial.alpha   [] : 8.0000E+00 | Radial exponent
+    radial.beta    [] : 1.0000E+00 | Slope parameter
+    parallel.alpha [] : 8.0000E+00 | Power law slope
     """
 
     def __init__(self, radial=None, parallel=None, **kwargs):

@@ -5,8 +5,9 @@ Before running the model inference, it is necessary to assign prior probabilitie
 ## Probability distributions
 
 **``socca``** provides an interface to a limited number of prior distributions. These include:
-- `uniform(low, high)`: uniform probability distribution over the range `[low, high]`
+- `uniform(low, high)`: uniform probability distribution over the range `[low, high]` (the limits must be finite)
 - `loguniform(low, high)`: log-uniform probability distribution over the range `[low, high]`
+- `powerlaw(alpha, low, high)`: power-law probability distribution $p(x) \propto x^\alpha$ over the range `[low, high]`, with `0 < low < high` and a finite `alpha`
 - `normal(loc, scale)`: normal probability distribution with mean `loc` and standard deviation `scale`
 - `splitnormal(loc, losig, hisig)`: split-normal probability distribution with mean `loc` and lower and upper standard deviations `losig` and `hisig`, respectively  
 
@@ -50,17 +51,17 @@ In some cases, it may be useful to tie parameters together. One common example i
 >>> comp2.yc = boundto(comp1, 'yc')
 ```
 
-At each step of the inference process, this instructs **``socca``** to use exactly the same values for `comp2.xc` and `comp2.yc` as those sampled for `comp1.xc` and `comp1.yc`. This approach can be used for any parameter pair, including parameters belonging to the same model component.
+At each step of the inference process, this instructs **``socca``** to use exactly the same values for `comp2.xc` and `comp2.yc` as those sampled for `comp1.xc` and `comp1.yc`. This approach can be used for any parameter pair, including parameters belonging to the same model component. `boundto` follows the component object, not its id, and copies the physical value, converting units if the two parameters have different declared units. On a `Disk`, an `Ellipsoid` or a bridge, a bare name is looked up in the sub-profiles (e.g. `boundto(disk, "xc")` is `disk.radial.xc`); a name matching more than one sub-profile raises an error.
 
 ## Functional priors
 
 A final class of priors is represented by functional expressions. This is useful when there is a complex interdependence between parameters or, for instance, when one parameter can be expressed as a scaled version of another.
 
-As an example, consider two {ref}`Sérsic components <sersic>`, with the effective radius of the first component constrained to be smaller than that of the second. This can be implemented as follows:
+As an example, consider two {ref}`Sérsic components <sersic>`, with the effective radius of the first component constrained to be smaller than that of the second. This can be implemented with `function`, which computes a parameter from other parameters:
 
 ```python
 >>> from socca.models import Sersic
->>> from socca.priors import uniform, loguniform
+>>> from socca.priors import uniform, loguniform, function
 >>>
 >>> comp1 = Sersic()
 >>> comp2 = Sersic()
@@ -68,7 +69,7 @@ As an example, consider two {ref}`Sérsic components <sersic>`, with the effecti
 >>> # ... define priors for comp1 parameters ...
 >>> comp1.addparameter('re_scale')
 >>> comp1.re_scale = uniform(low=0.00, high=1.00)
->>> comp1.re = lambda comp_01_re_scale, comp_02_re: comp_01_re_scale * comp_02_re
+>>> comp1.re = function(lambda s, r: s * r, (comp1, 're_scale'), (comp2, 're'))
 >>>
 >>> # ... define priors for comp2 parameters ...
 >>> comp2.re = loguniform(low=1.00E-08, high=1.00E-02)
@@ -76,14 +77,11 @@ As an example, consider two {ref}`Sérsic components <sersic>`, with the effecti
 
 First, we introduce a new parameter `re_scale`, which represents the ratio between the effective radii of the two components. In **``socca``**, additional parameters can be added to a model component using the `addparameter` method. Once added, the new parameter behaves exactly like any pre-defined model parameter.
 
-Next, we define how `comp1.re` and `comp2.re` are related via a `lambda` function. The arguments of the function have composite names: the first part (`comp_XX`) denotes the component identifier, which can be obtained by printing the `id` attribute of the model component:
+Next, `function(func, *sources)` defines `comp1.re` from the source parameters, given as `(component, name)` pairs and passed to `func` in that order. The sources can belong to any component of the model, including the one being defined, or to the sub-profiles of a `Disk`, an `Ellipsoid` or a bridge (e.g. `(disk.radial, 're')`, or `(disk, 're')`). The function takes and returns the parameters in their declared units (see `set_units`).
 
-```python
->>> print(comp1.id, comp2.id)
-comp_01, comp_02
+```{note}
+Earlier versions defined such ties with a bare `lambda`, whose argument names are model keys, e.g. `lambda comp_00_re_scale, comp_01_re: ...` (with `_` in place of the `.` of sub-profile keys). This still works, with a deprecation warning, but the names depend on the component ids, which are only assigned when the components are added to a model (see "[Composite models](./tutorial_models.md)"): use `function` instead.
 ```
-
-The second part of each argument corresponds to the specific parameter used in the expression. Component IDs are assigned automatically by **``socca``** upon component creation, following an incremental numbering scheme.
 
 ## Positive constraints
 In some cases, it may be useful to enforce positivity constraints on the surface brightness of a given model component throughout the image domain. This is particularly relevant in cases like the {ref}`PolyExponential <polyexponential>` or {ref}`PolyExpoRefact <polyexporefact>` models, where the polynomial terms can lead to negative surface brightness values. Such constraints can be implemented by setting the `positive` attribute of the model component to `True`, e.g.,:

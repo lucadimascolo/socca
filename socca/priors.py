@@ -540,13 +540,15 @@ def function(func, *sources):
     ----------
     func : callable
         Function of the source parameters, taking them positionally in
-        the order given.
+        the order given. Arguments and result are in declared units (see
+        Component.set_units).
     *sources : tuple of (Component, str)
         The parameters passed to func, as (component, name) pairs. The
         component can be the one being set, any other component, or a
-        Disk sub-profile (e.g. ``(disk.radial, "rs")``). On Disk,
-        Ellipsoid and Bridge a bare name is looked up in the
-        sub-profiles (``(disk, "rs")`` is ``disk.radial.rs``).
+        sub-profile of a Disk, Ellipsoid or Bridge (e.g.
+        ``(disk.radial, "re")``). On Disk, Ellipsoid and Bridge a bare
+        name is looked up in the sub-profiles (``(disk, "re")`` is
+        ``disk.radial.re``).
 
     Returns
     -------
@@ -563,6 +565,10 @@ def function(func, *sources):
 
     Examples
     --------
+    >>> from socca.models import Sersic
+    >>> from socca.priors import function
+    >>> comp1, comp2 = Sersic(), Sersic()
+    >>> comp2.addparameter("re_scale", 2.0)
     >>> comp2.re = function(
     ...     lambda s, r: s * r, (comp2, "re_scale"), (comp1, "re")
     ... )
@@ -591,14 +597,18 @@ def function(func, *sources):
 
 def boundto(comp, var):
     """
-    Set a parameter equal to another component's parameter.
+    Set a parameter equal to another parameter.
+
+    The physical value is copied: unit conversions between the declared
+    units of the two parameters are applied (see Component.set_units).
 
     Parameters
     ----------
     comp : Component
-        Component holding the parameter. On Disk, Ellipsoid and Bridge a
-        bare name is looked up in the sub-profiles, and a sub-profile
-        (e.g. ``disk.radial``) can be passed directly.
+        Component holding the parameter: another component or the one
+        being set. On Disk, Ellipsoid and Bridge a bare name is looked up
+        in the sub-profiles, and a sub-profile (e.g. ``disk.radial``) can
+        be passed directly.
     var : str
         Name of the parameter.
 
@@ -618,10 +628,14 @@ def boundto(comp, var):
 
     Examples
     --------
+    >>> import socca
+    >>> from socca.priors import boundto
+    >>> comp1, comp2 = socca.models.Sersic(), socca.models.Sersic()
     >>> comp2.xc = boundto(comp1, "xc")
 
     Tie a bar's orientation to its host disk:
 
+    >>> disk = socca.models.Disk()
     >>> bar = socca.models.Ellipsoid(radial=socca.models.Sersic())
     >>> bar.theta = socca.priors.boundto(disk, "theta")
     >>> bar.inc = socca.priors.boundto(disk, "inc")
