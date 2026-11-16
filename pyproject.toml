@@ -29,7 +29,8 @@ dependencies = [
     "reproject",
     "jax>=0.4.1,<0.10.0",
     "jaxlib>=0.4.1,<0.10.0",
-    "quadax",
+    "quadax<0.2.6; python_version<'3.10'",  # 0.2.6+ fails with jax 0.4.30
+    "quadax; python_version>='3.10'",
     "emcee",
     "numpyro",
     "dynesty",
