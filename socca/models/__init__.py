@@ -20,6 +20,7 @@ from .base import (
     _format_rows,
     _format_value,
     _getdotted,
+    _outside,
     _warn_span,
     _whole,
 )
@@ -186,13 +187,13 @@ def _period(prof, name):
     return None
 
 
-def _warn_lambda(key, stacklevel):
+def _warn_lambda(key):
     """Warn that a lambda tie is deprecated."""
     warnings.warn(
         f"Tying {key} with a lambda is deprecated and will be removed: "
         "use socca.priors.function() instead.",
         FutureWarning,
-        stacklevel=stacklevel,
+        stacklevel=_outside(),
     )
 
 
@@ -277,7 +278,7 @@ class Model:
         self._warned = set()
 
         if prof is not None:
-            self._addcomponent(prof, positive, stacklevel=3)
+            self._addcomponent(prof, positive)
 
     def __setstate__(self, state):
         """Restore a pickled model, refusing those saved by socca 1.4.0."""
@@ -348,9 +349,9 @@ class Model:
         >>> print(model.ncomp)
         2
         """
-        self._addcomponent(prof, positive, stacklevel=3)
+        self._addcomponent(prof, positive)
 
-    def _addcomponent(self, prof, positive, stacklevel):
+    def _addcomponent(self, prof, positive):
         """Add a component; see addcomponent()."""
         if any(c is prof for c in self.components):
             raise ValueError(
@@ -387,7 +388,7 @@ class Model:
         self._positive += (positive,)
         prof.id = prefix
         try:
-            self._sync(stacklevel + 1)
+            self._sync()
         except Exception:
             prof.id, self.components, self._prefix, self._positive = old
             raise
@@ -415,7 +416,7 @@ class Model:
         self._lambdas[id(par)] = (par, new)
         return new
 
-    def _sync(self, stacklevel=3, strict=True):
+    def _sync(self, strict=True):
         """
         Rebuild the parameter tables from the components.
 
@@ -505,9 +506,9 @@ class Model:
             tag = (warn.__name__, key, id(par), args)
             if tag not in self._warned:
                 if warn is _warn_span:
-                    warn(par, key, *args, stacklevel=stacklevel + 1)
+                    warn(par, key, *args)
                 else:
-                    warn(key, stacklevel=stacklevel + 1)
+                    warn(key)
                 self._warned.add(tag)
 
         self.__dict__.update(tables)
@@ -707,7 +708,8 @@ class Model:
             if addbackground:
                 warnings.warn(
                     "The background component is added only to the "
-                    "convolved map. Returning the raw map without background."
+                    "convolved map. Returning the raw map without background.",
+                    stacklevel=_outside(),
                 )
             return mraw
 

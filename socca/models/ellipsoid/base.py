@@ -11,6 +11,7 @@ import numpy as np
 
 from .. import config
 from ..base import (
+    _outside,
     Component,
     _claim,
     _strip,
@@ -324,7 +325,7 @@ class Ellipsoid(Component):
                         f"both set; radial's value will be ignored in "
                         f"favor of the value passed to Ellipsoid.",
                         UserWarning,
-                        stacklevel=2,
+                        stacklevel=_outside(),
                     )
                 setattr(self, key, kwargs[key])
             elif radial_isset:

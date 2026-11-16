@@ -1,7 +1,7 @@
 """Point source model component."""
 
 from .. import config
-from ..base import Component
+from ..base import Component, _outside
 
 import warnings
 
@@ -201,7 +201,8 @@ class Point(Component):
         if convolve:
             if img.psf is None:
                 warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
+                    "No PSF defined, so no convolution will be performed.",
+                    stacklevel=_outside(),
                 )
             else:
                 kernel = img.convolve.psf_fft

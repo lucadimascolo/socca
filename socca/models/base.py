@@ -4,7 +4,9 @@ import copy
 import functools
 import inspect
 import keyword
+import os
 import re
+import sys
 import warnings
 
 import jax
@@ -65,7 +67,7 @@ def _warn_range(
     for message in messages:
         if error:
             raise ValueError(message.strip())
-        warnings.warn(message.strip(), UserWarning, stacklevel=3)
+        warnings.warn(message.strip(), UserWarning, stacklevel=_outside())
 
 
 def _support_bounds(prior):
@@ -75,6 +77,17 @@ def _support_bounds(prior):
         float(getattr(support, "lower_bound", -np.inf)),
         float(getattr(support, "upper_bound", np.inf)),
     )
+
+
+_PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _outside():
+    """Return the warnings.warn stacklevel of the first caller outside socca."""
+    frame, level = sys._getframe(1), 1
+    while frame is not None and frame.f_code.co_filename.startswith(_PACKAGE):
+        frame, level = frame.f_back, level + 1
+    return level if frame is not None else 1
 
 
 def _whole_periods(low, high, period):
@@ -88,7 +101,7 @@ def _whole_periods(low, high, period):
     )
 
 
-def _warn_span(value, name, period, unit, stacklevel):
+def _warn_span(value, name, period, unit):
     """
     Warn about a prior on a periodic parameter spanning its period.
 
@@ -109,7 +122,7 @@ def _warn_span(value, name, period, unit, stacklevel):
             "it repeats the same solutions, which can make the posterior "
             "multimodal and harder to sample.",
             UserWarning,
-            stacklevel=stacklevel,
+            stacklevel=_outside(),
         )
     if _whole_periods(low, high, period):
         warnings.warn(
@@ -118,7 +131,7 @@ def _warn_span(value, name, period, unit, stacklevel):
             "backends. Pass periodic=[...] to run() to choose a different "
             "set, or periodic=[] to disable this.",
             UserWarning,
-            stacklevel=stacklevel,
+            stacklevel=_outside(),
         )
 
 
@@ -761,7 +774,7 @@ class Component:
         if img.psf is None:
             warnings.warn(
                 "No PSF defined, so no convolution will be performed.",
-                stacklevel=3,
+                stacklevel=_outside(),
             )
             return mgrid
         return img.convolve(mgrid)
@@ -884,7 +897,7 @@ class Component:
                     f"Parameter '{name}' is {kind} (internal unit: "
                     f"'{native}'). Unit '{unit_str}' will be neglected.",
                     UserWarning,
-                    stacklevel=2,
+                    stacklevel=_outside(),
                 )
                 continue
 

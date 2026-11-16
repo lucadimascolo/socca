@@ -11,7 +11,7 @@ import jax.numpy as jp
 import numpy as np
 
 from .. import config
-from ..base import Component, _subkeys, _subprofile, _warn_range
+from ..base import Component, _outside, _subkeys, _subprofile, _warn_range
 from .truncation import Truncation, HyperTangent
 
 
@@ -419,7 +419,7 @@ class Profile(Component):
         >>> beta = Beta(xc=180.5, yc=45.2)
         >>> beta_refactored = beta.refactor()
         """
-        warnings.warn("Nothing to refactor here.")
+        warnings.warn("Nothing to refactor here.", stacklevel=_outside())
         return self._copy()
 
 

@@ -2856,6 +2856,39 @@ def _custom():
     return prof
 
 
+class TestWarningLocation:
+    """Warnings point at the caller's line, not inside socca."""
+
+    def test_points_at_caller(self, img):
+        """Range, span, lambda and PSF warnings report this file."""
+
+        def span():
+            beta = _beta()
+            beta.theta = priors.uniform(0.0, np.pi)
+            models.Model(beta)
+
+        def lam():
+            beta = _beta()
+            beta.yc = lambda xc: xc - 135.0
+            models.Model(beta)
+
+        cases = [
+            lambda: models.gNFW(alpha=-1.0),
+            lambda: setattr(models.gNFW(), "alpha", -1.0),
+            lambda: models.Disk().radial.__setattr__("re", -1.0),
+            span,
+            lam,
+            lambda: models.Point(xc=180.0, yc=45.0, Ic=1.0).getmap(
+                img, convolve=True
+            ),
+            lambda: models.Beta().refactor(),
+        ]
+        for case in cases:
+            with pytest.warns((UserWarning, FutureWarning)) as record:
+                case()
+            assert {r.filename for r in record} == {__file__}
+
+
 class TestModelSync:
     """The model follows changes made to its components after adding them."""
 

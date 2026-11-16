@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jp
 
 from .. import config
-from ..base import Component, _warn_range
+from ..base import Component, _outside, _warn_range
 
 import warnings
 
@@ -290,7 +290,8 @@ class Background(Component):
         if "convolve" in kwargs:
             warnings.warn(
                 "Background component does not support convolution. "
-                "Ignoring `convolve` argument."
+                "Ignoring `convolve` argument.",
+                stacklevel=_outside(),
             )
 
         kwarg = self._getpars(self._keymap())
