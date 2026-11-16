@@ -4,23 +4,30 @@ This module provides models for describing elongated emission structures
 such as intracluster bridges and filaments connecting galaxy clusters.
 """
 
+import numbers
 from functools import partial
-import inspect
-import types
 
-import warnings
 
 import jax
 import jax.numpy as jp
-import numpyro.distributions
 
-import numpy as np
 
-from ..base import Component, _warn_range, _warn_span
-from ..misc import Background, Point
+from ..base import (
+    Component,
+    _claim,
+    _strip,
+    _subkeymap,
+    _subprofile,
+    _warn_range,
+)
 from ..radial import Beta, PolyExpoRefact, Power, TopHat
+from ..radial.base import Profile
 from .. import config
-from ...priors import _BoundTo
+from ...priors import _Function, _identity, function
+
+
+def _minor(rs, e):
+    return rs * (1.00 - e)
 
 
 class Bridge(Component):
@@ -40,6 +47,10 @@ class Bridge(Component):
     parallel : Profile, optional
         Profile describing the surface brightness distribution along the
         bridge major axis. Default is TopHat().
+
+        Both need a scale radius and an amplitude (e.g. rc and Ic for
+        Beta), which the Bridge sets from rs, e and Is; their geometric
+        parameters (xc, yc, theta, e, cbox) are dropped.
     **kwargs : dict
         Additional keyword arguments including:
 
@@ -55,8 +66,8 @@ class Bridge(Component):
             Position angle of the bridge major axis in radians
             (measured east from north).
         e : float, optional
-            Axis ratio controlling the relative extent of radial vs
-            parallel profiles. Default is 0.5.
+            Projected ellipticity of the bridge profiles: the radial
+            profile's scale radius is rs * (1 - e). Default is 0.5.
 
     Attributes
     ----------
@@ -64,6 +75,15 @@ class Bridge(Component):
         The radial profile component.
     parallel : Profile
         The parallel profile component.
+
+    Raises
+    ------
+    TypeError
+        If a profile is a PolyExpoRefact, is not a Profile, or has no
+        scale radius and amplitude.
+    ValueError
+        If a profile is already in a model or part of another Disk,
+        Ellipsoid or Bridge, or the same profile is passed twice.
 
     Notes
     -----
@@ -73,13 +93,20 @@ class Bridge(Component):
 
     The scale radius `rs` is shared between the parallel profile (where
     it is used directly) and the radial profile (where it is scaled by
-    the factor `1 - e` to control the axis ratio).
+    the factor `1 - e` to control the axis ratio). Setting a sub-profile's
+    scale radius or amplitude raises at getmap and when fitting.
+
+    The profiles are evaluated on the absolute distances from the bridge
+    axis and along it, and their truncations, if any, act on these
+    distances. The sub-profiles cannot be replaced: create a new Bridge.
 
     See Also
     --------
     SimpleBridge : Multiplicative combination of radial and parallel profiles.
     MesaBridge : Harmonic mean combination for mesa-like profiles.
     """
+
+    _periods = {"theta": jp.pi}
 
     def __init__(self, radial=None, parallel=None, **kwargs):
         super().__init__(**kwargs)
@@ -93,6 +120,29 @@ class Bridge(Component):
             radial = Beta()
         if parallel is None:
             parallel = TopHat()
+        for attr in [radial, parallel]:
+            if isinstance(attr, PolyExpoRefact):
+                raise TypeError(
+                    "PolyExpoRefact is not supported for Bridge. "
+                    "Use PolyExponential or another profile type instead."
+                )
+            if not isinstance(attr, Profile):
+                raise TypeError(
+                    f"{type(attr).__name__} is not supported for Bridge."
+                )
+            if attr._scale_radius is None or attr._scale_amp is None:
+                raise TypeError(
+                    f"{type(attr).__name__} has no scale radius and "
+                    "amplitude, so it is not supported for Bridge."
+                )
+
+        _claim(
+            radial,
+            parallel,
+            free=["xc", "yc", "theta", "e", "cbox"]
+            + [sub._scale_radius for sub in (radial, parallel)]
+            + [sub._scale_amp for sub in (radial, parallel)],
+        )
 
         self.xc = kwargs.get("xc", config.Bridge.xc)
         self.yc = kwargs.get("yc", config.Bridge.yc)
@@ -111,7 +161,6 @@ class Bridge(Component):
                 e="",
             )
         )
-        self.periodic.update(dict(theta=jp.pi))
         self.description.update(
             dict(
                 xc="Right ascension of the bridge centroid",
@@ -127,123 +176,28 @@ class Bridge(Component):
         self.parallel = parallel
 
         for attr in [self.radial, self.parallel]:
-            if isinstance(attr, PolyExpoRefact):
-                raise TypeError(
-                    "PolyExpoRefact is not supported for Bridge. "
-                    "Use PolyExponential or another profile type instead."
-                )
-            if isinstance(attr, (Background, Point)):
-                raise TypeError(
-                    f"{type(attr).__name__} is not supported for Bridge."
-                )
-
-        for key in ["xc", "yc", "theta", "e", "cbox"]:
-            bkey = f"_{key}" if f"_{key}" in self.radial.__dict__ else key
-            if bkey in self.radial.__dict__:
-                delattr(self.radial, bkey)
-            self.radial.units.pop(key, None)
-            bkey = f"_{key}" if f"_{key}" in self.parallel.__dict__ else key
-            if bkey in self.parallel.__dict__:
-                delattr(self.parallel, bkey)
-            self.parallel.units.pop(key, None)
-
-        for key in ["_scale_amp", "_scale_radius"]:
-            rname = getattr(self.radial, key)
-            pname = getattr(self.parallel, key)
-            bkey = (
-                f"_{rname}" if f"_{rname}" in self.radial.__dict__ else rname
+            _strip(
+                attr,
+                ["xc", "yc", "theta", "e", "cbox"]
+                + [attr._scale_amp, attr._scale_radius],
             )
-            if bkey in self.radial.__dict__:
-                delattr(self.radial, bkey)
-            self.radial.units.pop(rname, None)
-            bkey = (
-                f"_{pname}" if f"_{pname}" in self.parallel.__dict__ else pname
-            )
-            if bkey in self.parallel.__dict__:
-                delattr(self.parallel, bkey)
-            self.parallel.units.pop(pname, None)
-
-        if self.radial.id != self.id:
-            type(self).idcls -= 1
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
 
         for attr in [self.parallel, self.radial]:
             attr.addparameter(attr._scale_amp, 1.00)
 
-        self.parallel.addparameter(
-            self.parallel._scale_radius,
-            eval(f"lambda {self.id}_rs: {self.id}_rs"),
-        )
+        self.parallel.addparameter(self.parallel._scale_radius)
+        self.radial.addparameter(self.radial._scale_radius)
+        self._scale_ties()
+        self._namespaces = {"radial": self.radial, "parallel": self.parallel}
+        self._wrap()
+        self._adopt(hidden=["_scale_radius", "_scale_amp"])
 
-        self.radial.addparameter(
-            self.radial._scale_radius,
-            eval(
-                f"lambda {self.id}_rs, {self.id}_e: "
-                f"{self.id}_rs * (1.00 - {self.id}_e)"
-            ),
-        )
-
-        self._rkw = [
-            f"r_{key}"
-            for key in list(
-                inspect.signature(self.radial.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
-        self._zkw = [
-            f"z_{key}"
-            for key in list(
-                inspect.signature(self.parallel.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
-
-        for key in self.radial.hyper:
-            self.hyper.append(f"radial.{key}")
-
-        for key in self.parallel.hyper:
-            self.hyper.append(f"parallel.{key}")
-
-        self.units.update(
-            {
-                f"radial.{key}": self.radial.units[key]
-                for key in self.radial.units.keys()
-                if key
-                not in [self.radial._scale_radius, self.radial._scale_amp]
-            }
-        )
-        self.units.update(
-            {
-                f"parallel.{key}": self.parallel.units[key]
-                for key in self.parallel.units.keys()
-                if key
-                not in [self.parallel._scale_radius, self.parallel._scale_amp]
-            }
-        )
-
-        self.description.update(
-            {
-                f"radial.{key}": self.radial.description[key]
-                for key in self.radial.description.keys()
-                if key
-                not in [self.radial._scale_radius, self.radial._scale_amp]
-            }
-        )
-        self.description.update(
-            {
-                f"parallel.{key}": self.parallel.description[key]
-                for key in self.parallel.description.keys()
-                if key
-                not in [self.parallel._scale_radius, self.parallel._scale_amp]
-            }
-        )
-
-        self.profile = None
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        keys = _subkeymap(self.radial, "r", "radial")
+        keys.update(_subkeymap(self.parallel, "z", "parallel"))
+        keys.update({key: key for key in ["xc", "yc", "Is", "theta"]})
+        return keys
 
     @property
     def rs(self):  # noqa: D102
@@ -266,14 +220,6 @@ class Bridge(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Bridge profiles with e > 0 are symmetric under "
-            "theta -> theta + pi, so a wider prior range can make the "
-            "posterior multimodal and harder to sample.",
-        )
         self._theta = value
 
     @property
@@ -312,67 +258,30 @@ class Bridge(Component):
         ------
         ValueError
             If any model parameter is set to None or contains a prior
-            distribution instead of a fixed value.
+            distribution instead of a fixed value, or if a sub-profile's
+            scale radius or amplitude was set (set rs, e and Is instead).
 
         Notes
         -----
         The model is computed by evaluating the combined radial and parallel
         profiles on a rotated coordinate grid centered on the bridge position.
         """
-        kwarg = {}
-        for key in list(inspect.signature(self.profile).parameters.keys()):
-            if key not in ["r", "z"]:
-                if key.startswith("r_"):
-                    val = getattr(self.radial, key.replace("r_", ""))
-                elif key.startswith("z_"):
-                    val = getattr(self.parallel, key.replace("z_", ""))
-                else:
-                    continue
+        self._check_internal()
+        kwarg = self._getpars(self._keymap())
+        return self._convolve(img, self._evaluate(img, **kwarg), convolve)
 
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [
-                            getattr(self, p.replace(f"{self.id}_", ""))
-                            for p in params
-                        ]
-                        val = val(*args)
-
-                kwarg[key] = val
-
-        kwarg["xc"] = self.xc
-        kwarg["yc"] = self.yc
-        kwarg["Is"] = self.Is
-        kwarg["theta"] = self.theta
-
-        for key in ["xc", "yc", "Is", "theta"]:
-            if isinstance(kwarg[key], _BoundTo):
-                kwarg[key] = kwarg[key].resolve()
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
+    def _check_internal(self):
+        """Reject values set on the sub-profiles' scale radius or amplitude."""
+        for sub in (self.radial, self.parallel):
+            rs = getattr(sub, sub._scale_radius)
+            amp = getattr(sub, sub._scale_amp)
+            tied = isinstance(rs, _Function) and rs.native
+            if not tied or not (isinstance(amp, numbers.Real) and amp == 1):
                 raise ValueError(
-                    "Priors must be fixed values, not distributions."
+                    f"{type(sub).__name__}.{sub._scale_radius} and "
+                    f".{sub._scale_amp} are set by the {type(self).__name__} "
+                    "from rs, e and Is: set those instead."
                 )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
-
-        mgrid = self._evaluate(img, **kwarg)
-
-        if convolve:
-            if img.psf is None:
-                warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
-                )
-            else:
-                mgrid = img.convolve(mgrid)
-        return mgrid
 
     @staticmethod
     @partial(jax.jit, static_argnames=["grid"])
@@ -394,9 +303,10 @@ class Bridge(Component):
         Returns
         -------
         rgrid : ndarray
-            Coordinate grid along the radial (perpendicular) direction.
+            Absolute distance from the bridge axis, |r| (deg).
         zgrid : ndarray
-            Coordinate grid along the parallel (major axis) direction.
+            Absolute distance along the bridge axis from the centroid,
+            |z| (deg).
 
         Notes
         -----
@@ -414,7 +324,29 @@ class Bridge(Component):
             grid.y - yc
         ) * sint
 
-        return rgrid, zgrid
+        return jp.abs(rgrid), jp.abs(zgrid)
+
+    def _scale_ties(self):
+        """Tie the sub-profiles' scale radii to rs and e, in native units."""
+        ties = {
+            self.parallel: function(_identity, (self, "rs")),
+            self.radial: function(_minor, (self, "rs"), (self, "e")),
+        }
+        for sub, tie in ties.items():
+            tie.native = True
+            setattr(sub, sub._scale_radius, tie)
+
+    @staticmethod
+    def _internal(sub, name, pars, comp_prefix):
+        """Value of a sub-profile's internal scale radius or amplitude."""
+        if name not in (sub._scale_radius, sub._scale_amp):
+            raise KeyError(f"{comp_prefix}: {name} is not in the model.")
+        value = getattr(sub, name)
+        if not isinstance(value, _Function):
+            return value
+        return value(
+            *[pars[f"{comp_prefix}_{key}"] for _, key in value.sources]
+        )
 
     def _build_kwargs(self, pars, comp_prefix):
         """
@@ -433,46 +365,16 @@ class Bridge(Component):
             Keyword arguments for _evaluate including geometric and profile
             parameters with r_ and z_ prefixes.
         """
+        self._check_internal()
         kwarg = {}
-        for key in self._rkw:
-            attr_name = key.replace("r_", "")
-            pars_key = f"{comp_prefix}_radial.{attr_name}"
-            if pars_key in pars:
-                kwarg[key] = pars[pars_key]
+        for out, key in self._keymap().items():
+            if f"{comp_prefix}_{key}" in pars:
+                kwarg[out] = pars[f"{comp_prefix}_{key}"]
             else:
-                val = getattr(self.radial, attr_name)
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [pars[p] for p in params]
-                        val = val(*args)
-                kwarg[key] = val
-
-        for key in self._zkw:
-            attr_name = key.replace("z_", "")
-            pars_key = f"{comp_prefix}_parallel.{attr_name}"
-            if pars_key in pars:
-                kwarg[key] = pars[pars_key]
-            else:
-                val = getattr(self.parallel, attr_name)
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [pars[p] for p in params]
-                        val = val(*args)
-                kwarg[key] = val
-
-        kwarg["xc"] = pars[f"{comp_prefix}_xc"]
-        kwarg["yc"] = pars[f"{comp_prefix}_yc"]
-        kwarg["theta"] = pars[f"{comp_prefix}_theta"]
-        kwarg["Is"] = pars[f"{comp_prefix}_Is"]
-
+                sub, name = key.split(".")
+                kwarg[out] = self._internal(
+                    getattr(self, sub), name, pars, comp_prefix
+                )
         return kwarg
 
     def _evaluate(self, img, **kwarg):
@@ -501,93 +403,8 @@ class Bridge(Component):
         theta = kwarg.pop("theta")
 
         rgrid, zgrid = self.getgrid(img.grid, xc, yc, theta)
-        mgrid = self.profile(rgrid, zgrid, **kwarg)
+        mgrid = self._compiled()(rgrid, zgrid, **kwarg)
         return jp.mean(mgrid, axis=0)
-
-    def parameters(self):
-        """
-        Print a summary of all model parameters.
-
-        Displays model parameters organized by category (base, radial,
-        parallel) along with their units, current values, and descriptions.
-        Hyperparameters are shown in a separate section.
-        """
-        keyout = [key for key in self.units.keys() if key not in self.hyper]
-
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array(
-                    [
-                        len(f"{key} [{self.units[key]}]")
-                        for key in keyout + self.hyper
-                    ]
-                )
-            )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
-                if key.startswith("radial."):
-                    kvalue = getattr(self.radial, key.replace("radial.", ""))
-                elif key.startswith("parallel."):
-                    kvalue = getattr(
-                        self.parallel, key.replace("parallel.", "")
-                    )
-                else:
-                    kvalue = getattr(self, key)
-
-                if kvalue is None:
-                    kvalue = None
-                elif isinstance(kvalue, numpyro.distributions.Distribution):
-                    kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
-                    kvalue = "Tied parameter"
-                else:
-                    kvalue = f"{kvalue:.4E}"
-
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{kvalue}".ljust(10)
-                    + f" | {self.description[key]}"
-                )
-
-            if len(self.hyper) > 0:
-                print("\nHyperparameters")
-                print("=" * 15)
-                for key in self.hyper:
-                    keylen = maxlen - len(f" [{self.units[key]}]")
-                    if key.startswith("radial."):
-                        kvalue = getattr(
-                            self.radial, key.replace("radial.", "")
-                        )
-                    elif key.startswith("parallel."):
-                        kvalue = getattr(
-                            self.parallel, key.replace("parallel.", "")
-                        )
-                    else:
-                        kvalue = getattr(self, key)
-                    kvalue = None if kvalue is None else f"{kvalue:.4E}"
-                    print(
-                        f"{key:<{keylen}} [{self.units[key]}] : "
-                        + f"{kvalue}".ljust(10)
-                        + f" | {self.description[key]}"
-                    )
-        else:
-            print("No parameters defined.")
-
-    def parlist(self):
-        """
-        Return a list of all parameter names.
-
-        Returns
-        -------
-        list of str
-            Parameter names including base, radial, and parallel parameters.
-        """
-        return list(self.units.keys())
 
 
 class SimpleBridge(Bridge):
@@ -624,34 +441,31 @@ class SimpleBridge(Bridge):
     >>> from socca.models import SimpleBridge
     >>> bridge = SimpleBridge()
     >>> bridge.parameters()
-
-    Model parameters
-    ================
-    xc              [deg] : None       | Right ascension of bridge centroid
-    yc              [deg] : None       | Declination of bridge centroid
-    rs              [deg] : None       | Scale radius of the bridge profiles
-    Is            [image] : None       | Scale intensity of the bridge
-    theta           [rad] : 0.0000E+00 | Position angle of bridge major axis
-    e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
-    radial.alpha       [] : 2.0000E+00 | Radial exponent
-    radial.beta        [] : 5.5000E-01 | Slope parameter
+    <BLANKLINE>
+    SimpleBridge
+    ============
+    xc        [deg] : None       | Right ascension of the bridge centroid
+    yc        [deg] : None       | Declination of the bridge centroid
+    rs        [deg] : None       | Scale radius of the bridge profiles
+    Is      [image] : None       | Scale intensity of the bridge profiles
+    theta     [rad] : 0.0000E+00 | Position angle of the bridge major axis
+    e            [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+    radial.alpha [] : 2.0000E+00 | Radial exponent
+    radial.beta  [] : 5.5000E-01 | Slope parameter
     """
 
     def __init__(self, radial=None, parallel=None, **kwargs):
         super().__init__(radial=radial, parallel=parallel, **kwargs)
 
-        _profile = [
-            "rfoo.profile(r,{0})".format(",".join(self._rkw)),
-            "zfoo.profile(z,{0})".format(",".join(self._zkw)),
-        ]
-        _profile = "*".join(_profile)
-        _profile = "lambda rfoo,zfoo,r,z,Is,{0},{1}: Is*{2}".format(
-            ",".join(self._rkw), ",".join(self._zkw), _profile
-        )
-        self.profile = jax.jit(
-            partial(eval(_profile), self.radial, self.parallel)
-        )
         self._initialized = True
+
+    def profile(self, r, z, Is, **kw):
+        """Evaluate Is * f_r(r) * f_z(z)."""
+        return (
+            Is
+            * _subprofile(self.radial, r, kw, "r")
+            * _subprofile(self.parallel, z, kw, "z")
+        )
 
 
 class MesaBridge(Bridge):
@@ -688,28 +502,28 @@ class MesaBridge(Bridge):
     Bridge : Base class with parameter descriptions.
     SimpleBridge : Alternative with multiplicative profile combination.
 
+    References
+    ----------
+    Hincks, A. D., et al., MNRAS, 510, 3335 (2022)
+    https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract
+
     Examples
     --------
     >>> from socca.models import MesaBridge
     >>> bridge = MesaBridge()
     >>> bridge.parameters()
-
-    References
-    ----------
-    Hincks, A. D., et al., MRANS, 510, 3335 (2022)
-    https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract
-
-    Model parameters
-    ================
-    xc              [deg] : None       | Right ascension of bridge centroid
-    yc              [deg] : None       | Declination of bridge centroid
-    rs              [deg] : None       | Scale radius of the bridge profiles
-    Is            [image] : None       | Scale intensity of the bridge
-    theta           [rad] : 0.0000E+00 | Position angle of bridge major axis
-    e                  [] : 5.0000E-01 | Axis ratio of the bridge profiles
-    radial.alpha       [] : 8.0000E+00 | Radial exponent
-    radial.beta        [] : 1.0000E+00 | Slope parameter
-    parallel.alpha     [] : 8.0000E+00 | Power law slope
+    <BLANKLINE>
+    MesaBridge
+    ==========
+    xc          [deg] : None       | Right ascension of the bridge centroid
+    yc          [deg] : None       | Declination of the bridge centroid
+    rs          [deg] : None       | Scale radius of the bridge profiles
+    Is        [image] : None       | Scale intensity of the bridge profiles
+    theta       [rad] : 0.0000E+00 | Position angle of the bridge major axis
+    e              [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+    radial.alpha   [] : 8.0000E+00 | Radial exponent
+    radial.beta    [] : 1.0000E+00 | Slope parameter
+    parallel.alpha [] : 8.0000E+00 | Power law slope
     """
 
     def __init__(self, radial=None, parallel=None, **kwargs):
@@ -726,15 +540,11 @@ class MesaBridge(Bridge):
 
         super().__init__(radial=radial, parallel=parallel, **kwargs)
 
-        _profile = [
-            "1.00/rfoo.profile(r,{0})".format(",".join(self._rkw)),
-            "1.00/zfoo.profile(z,{0})".format(",".join(self._zkw)),
-        ]
-        _profile = "+".join(_profile)
-        _profile = "lambda rfoo,zfoo,r,z,{0},{1}: 1.00/({2})".format(
-            ",".join(self._rkw), ",".join(self._zkw), _profile
-        )
-        self.profile = jax.jit(
-            partial(eval(_profile), self.radial, self.parallel)
-        )
         self._initialized = True
+
+    def profile(self, r, z, Is, **kw):
+        """Evaluate Is / (1 / f_r(r) + 1 / f_z(z))."""
+        return Is / (
+            1.00 / _subprofile(self.radial, r, kw, "r")
+            + 1.00 / _subprofile(self.parallel, z, kw, "z")
+        )

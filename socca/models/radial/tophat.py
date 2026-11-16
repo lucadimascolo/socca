@@ -20,6 +20,8 @@ class TopHat(Profile):
     _scale_radius = "rc"
     _scale_amp = "Ic"
 
+    _steps = ("rc",)  # radii where the profile steps
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -75,3 +77,13 @@ class TopHat(Profile):
         radius and zero emission outside.
         """
         return jp.where(jp.abs(r) < rc, Ic, 0.0)
+
+    @staticmethod
+    def _projection(r, rc, Ic, rcap=jp.inf):
+        """Line-of-sight integral of the profile as a density, capped at rcap."""
+        x = jp.minimum(rc, rcap) ** 2 - r**2
+        return (
+            2.00
+            * Ic
+            * jp.where(x > 0, jp.sqrt(jp.where(x > 0, x, 1.00)), 0.00)
+        )

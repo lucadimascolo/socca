@@ -1,11 +1,8 @@
 """Generalized Navarro-Frenk-White profile."""
 
-import warnings
-
 import jax
 import jax.numpy as jp
 import numpy as np
-import numpyro.distributions
 
 from ... import config
 from ...base import _warn_range
@@ -35,8 +32,8 @@ class gNFW(Profile):
         Controls whether to use the MLP emulator instead of numerical
         integration. Pass ``True`` to use the bundled pre-trained model,
         a file-system path (``str`` or :class:`~pathlib.Path`) to load a
-        custom checkpoint, or ``None`` (default) to use numerical
-        integration. Requires ``flax`` to be installed.
+        custom checkpoint, or ``None`` (default) or ``False`` to use
+        numerical integration. The emulator requires ``flax``.
     interpolate : bool, optional
         Selects the evaluation strategy. If ``True`` (default) the profile
         is computed on a 1D radial grid and the result is interpolated to
@@ -46,9 +43,17 @@ class gNFW(Profile):
     rz : array-like, optional
         Radial grid (in units of rc) for the interpolation path. Only used
         when ``interpolate`` is True. Default is logspace(-7, 2, 1000).
+        It is stored read-only: assign a new grid to change it.
     eps : float, optional
-        Absolute and relative quadrature tolerance. Only used when
-        ``emulator`` is None. Default is 1e-8.
+        Absolute and relative quadrature tolerance. Only used when there
+        is no emulator. Default is 1e-8.
+
+    Notes
+    -----
+    emulator, interpolate, rz and eps can also be set after creation,
+    which recompiles the profile. Inside a Disk or Ellipsoid the 3D gNFW
+    density, equal to Ic at rc, is used instead of its projection, so
+    these settings do not apply there.
     """
 
     _scale_radius = "rc"
@@ -62,16 +67,11 @@ class gNFW(Profile):
         self.beta = kwargs.get("beta", config.gNFW.beta)
         self.gamma = kwargs.get("gamma", config.gNFW.gamma)
 
-        self.rz = np.asarray(
-            kwargs.get("rz", np.logspace(-7, 2, 1000)), dtype=np.float64
-        )
+        self.rz = kwargs.get("rz", np.logspace(-7, 2, 1000))
         self.eps = kwargs.get("eps", 1.00e-08)
         self.interpolate = kwargs.get("interpolate", True)
 
         self.emulator = kwargs.get("emulator", None)
-        self._emulator_model = None
-        if self.emulator is not None:
-            self._emulator_model = gNFW._load_emulator(self.emulator)
 
         self.units.update(
             dict(rc="deg", alpha="", beta="", gamma="", Ic="image")
@@ -189,14 +189,68 @@ class gNFW(Profile):
         else:
             self.profile = jax.jit(_profile)
 
+    def __getstate__(self):
+        """Drop the compiled profile, rebuilt on unpickling."""
+        state = super().__getstate__()
+        state["profile"] = None
+        return state
+
     def __setstate__(self, state):
         """Restore state and rebuild profile from current source."""
-        self.__dict__.update(state)
-        self.rz = np.asarray(self.rz, dtype=np.float64)
-        self._emulator_model = None
-        if self.emulator is not None:
+        super().__setstate__(state)
+        rz = np.array(self.rz)
+        rz.flags.writeable = False  # unpickled arrays are writable again
+        self.__dict__["_rz"] = rz
+        if self.emulator and state.get("_emulator_model") is None:
             self._emulator_model = gNFW._load_emulator(self.emulator)
         self._rebuild_profile()
+
+    def _numerics(self, name, value):
+        """Set a numerical setting, recompiling the profile if built."""
+        self.__dict__[f"_{name}"] = value
+        if "profile" in self.__dict__:
+            self._rebuild_profile()
+
+    @property
+    def emulator(self):  # noqa: D102
+        return self._emulator
+
+    @emulator.setter
+    def emulator(self, value):  # noqa: D102
+        # False, like None, means no emulator (open(False) reads stdin)
+        model = gNFW._load_emulator(value) if value else None
+        self.__dict__["_emulator_model"] = model
+        self._numerics("emulator", value)
+
+    def _numerics_key(self):
+        """Return the settings that change the profile but are not parameters."""
+        return (self.eps, self.interpolate, self.rz.tobytes(), self.emulator)
+
+    @property
+    def rz(self):  # noqa: D102
+        return self._rz
+
+    @rz.setter
+    def rz(self, value):  # noqa: D102
+        rz = np.array(value, dtype=np.float64)
+        rz.flags.writeable = False  # edits in place would not recompile
+        self._numerics("rz", rz)
+
+    @property
+    def eps(self):  # noqa: D102
+        return self._eps
+
+    @eps.setter
+    def eps(self, value):  # noqa: D102
+        self._numerics("eps", value)
+
+    @property
+    def interpolate(self):  # noqa: D102
+        return self._interpolate
+
+    @interpolate.setter
+    def interpolate(self, value):  # noqa: D102
+        self._numerics("interpolate", value)
 
     @property
     def rc(self):  # noqa: D102
@@ -219,17 +273,13 @@ class gNFW(Profile):
 
     @alpha.setter
     def alpha(self, value):  # noqa: D102
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.lower_bound <= 0:
-                wstring = "The alpha prior support includes values"
-        elif value <= 0:
-            wstring = "The alpha parameter is"
-        if wstring is not None:
-            warnings.warn(
-                f"{wstring} less than or equal to 0. "
-                "This might lead to unphysical models."
-            )
+        _warn_range(
+            value,
+            "alpha",
+            lower=0,
+            lower_strict=True,
+            note="This might lead to unphysical models.",
+        )
         self._alpha = value
 
     @property
@@ -238,17 +288,12 @@ class gNFW(Profile):
 
     @beta.setter
     def beta(self, value):  # noqa: D102
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.lower_bound < 3:
-                wstring = "The beta prior support includes values"
-        elif value < 3:
-            wstring = "The beta parameter is"
-        if wstring is not None:
-            warnings.warn(
-                f"{wstring} less than or equal to 3. "
-                "This might lead to unphysical models."
-            )
+        _warn_range(
+            value,
+            "beta",
+            lower=3,
+            note="This might lead to unphysical models.",
+        )
         self._beta = value
 
     @property
@@ -257,18 +302,24 @@ class gNFW(Profile):
 
     @gamma.setter
     def gamma(self, value):  # noqa: D102
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.upper_bound >= 1:
-                wstring = "The gamma prior support includes values"
-        elif value >= 1:
-            wstring = "The gamma parameter is"
-        if wstring is not None:
-            warnings.warn(
-                f"{wstring} greater than or equal to 1. "
-                "This might lead to unphysical models."
-            )
+        _warn_range(
+            value,
+            "gamma",
+            upper=1,
+            upper_strict=True,
+            note="This might lead to unphysical models.",
+        )
         self._gamma = value
+
+    @staticmethod
+    def _density(r, Ic, rc, alpha, beta, gamma):
+        """3D gNFW density, equal to Ic at r = rc; used by Disk and Ellipsoid."""
+        x = r / rc
+        lx = jp.log(jp.where(x > 0, x, 1.00))
+        k = (beta - gamma) / alpha
+        log = -gamma * lx - k * (jp.log1p(jp.exp(alpha * lx)) - jp.log(2.00))
+        zero = jp.where(gamma > 0, jp.inf, jp.where(gamma < 0, 0.00, 2.00**k))
+        return Ic * jp.where(x > 0, jp.exp(log), zero)
 
     @staticmethod
     def _profile_switch(

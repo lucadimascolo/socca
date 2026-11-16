@@ -1,20 +1,37 @@
 """Base class for 2D radial surface brightness profiles."""
 
 from abc import abstractmethod
+import copy
 from functools import partial
 import inspect
-import types
 import warnings
 
 import jax
 import jax.numpy as jp
-import numpyro.distributions
+import numpy as np
 
 from .. import config
-from ..base import Component
-from ..base import _warn_span
-from ...priors import _BoundTo
+from ..base import Component, _outside, _subkeys, _subprofile, _warn_range
 from .truncation import Truncation, HyperTangent
+
+
+def _safe_power(x, p):
+    """Return x**p for x >= 0 and p > 0, with finite gradients at x = 0."""
+    safe = jp.where(x > 0, x, 1.00)
+    return jp.where(x > 0, jp.power(safe, p), 0.00)
+
+
+_TRUNCATION = dict(rt="radius", wt="width")
+
+
+def _check_names(names):
+    """Reject parameter names reserved for the truncation."""
+    for name in names:
+        if name in ("rt", "wt"):
+            raise ValueError(
+                f"'{name}' is reserved for the profile's truncation: give "
+                "this parameter another name."
+            )
 
 
 class Profile(Component):
@@ -42,6 +59,10 @@ class Profile(Component):
             Boxiness parameter (0 = elliptical, >0 = boxy, <0 = disky).
         positive : bool, optional
             Whether to enforce positivity constraint.
+        truncation : Truncation, bool or None, optional
+            Truncation multiplying the profile: True for a default
+            HyperTangent, a Truncation instance, or None/False (default)
+            for none. It adds the parameters rt and wt.
 
     Attributes
     ----------
@@ -54,12 +75,23 @@ class Profile(Component):
     cbox : float
         Boxiness/diskyness parameter.
 
+    Raises
+    ------
+    ValueError
+        If rt or wt is not strictly positive and finite, or the
+        truncation is not a Truncation, True, False or None.
+
     Notes
     -----
     All Profile subclasses must implement the abstract profile() method that
     defines the radial surface brightness distribution.
+
+    rt and wt are reserved for the truncation. Setting a new truncation
+    takes its rt and wt as native values: units declared for them with
+    set_units are reset.
     """
 
+    _periods = {"theta": jp.pi}
     _scale_radius = None
     _scale_amp = None
 
@@ -73,6 +105,7 @@ class Profile(Component):
             Keyword arguments including xc, yc, theta, e, cbox, positive.
             See class docstring for parameter descriptions.
         """
+        _check_names(inspect.signature(type(self).profile).parameters)
         super().__init__(**kwargs)
         self.xc = kwargs.get("xc", config.Profile.xc)
         self.yc = kwargs.get("yc", config.Profile.yc)
@@ -82,7 +115,6 @@ class Profile(Component):
         self.cbox = kwargs.get("cbox", config.Profile.cbox)
 
         self.units.update(dict(xc="deg", yc="deg", theta="rad", e="", cbox=""))
-        self.periodic.update(dict(theta=jp.pi))
 
         self.description.update(
             dict(
@@ -97,6 +129,12 @@ class Profile(Component):
         self._truncation = None
         self.truncation = kwargs.get("truncation", None)
 
+    def addparameter(self, name, value=None, units="", description=""):  # noqa: D102
+        _check_names([name])
+        super().addparameter(name, value, units, description)
+
+    addparameter.__doc__ = Component.addparameter.__doc__
+
     @property
     def truncation(self):  # noqa: D102
         return self._truncation
@@ -110,12 +148,21 @@ class Profile(Component):
                 raise ValueError(
                     "Truncation must be an instance of the Truncation class."
                 )
+            if value._owner is not None and value._owner is not self:
+                raise ValueError(
+                    "This truncation is attached to another profile: attach "
+                    "a copy.copy of it instead."
+                )
+            self._detach(value)
             _init = self._initialized
             self._initialized = False
             self.rt = value.rt
             self.wt = value.wt
             self._initialized = _init
             self.units.update(dict(rt=value.units["rt"], wt=value.units["wt"]))
+            # the new values are native, whatever units the old ones had
+            self._input_units.pop("rt", None)
+            self._input_units.pop("wt", None)
             self.description.update(
                 dict(
                     rt=value.description["rt"],
@@ -123,11 +170,40 @@ class Profile(Component):
                 )
             )
         else:
+            self._detach(value)
+            self._truncation = None
             if hasattr(self, "rt"):
                 self.removeparameter("rt")
             if hasattr(self, "wt"):
                 self.removeparameter("wt")
         self._truncation = value
+        if value is not None:
+            value.__dict__["_owner"] = self
+        if self._wrapper is not None:
+            self._wrapper._retruncate(self)
+
+    def _detach(self, value):
+        """Give a replaced truncation back its rt and wt."""
+        old = self.__dict__.get("_truncation")
+        if old is not None and old is not value:
+            old.__dict__.update(_owner=None, _rt=self.rt, _wt=self.wt)
+
+    def __copy__(self):  # noqa: D105
+        new = super().__copy__()
+        if self._truncation is not None:
+            twin = copy.copy(self._truncation)
+            twin.__dict__["_owner"] = new
+            new.__dict__["_truncation"] = twin
+        return new
+
+    __copy__.__doc__ = Component.__copy__.__doc__
+
+    def __setstate__(self, state):
+        """Restore state and reattach the truncation."""
+        super().__setstate__(state)
+        twin = self.__dict__.get("_truncation")
+        if twin is not None and twin._owner is None:
+            twin.__dict__["_owner"] = self
 
     @property
     def theta(self):  # noqa: D102
@@ -135,15 +211,23 @@ class Profile(Component):
 
     @theta.setter
     def theta(self, value):  # noqa: D102
-        _warn_span(
-            value,
-            "theta",
-            jp.pi,
-            "Profiles with e > 0 are symmetric under theta -> theta + pi, "
-            "so a wider prior range can make the posterior multimodal and "
-            "harder to sample.",
-        )
         self._theta = value
+
+    def __setattr__(self, name, value):
+        """Reject non-positive truncation radii and widths, priors included."""
+        if name in ("rt", "wt"):
+            _warn_range(
+                value,
+                name,
+                lower=0,
+                lower_strict=True,
+                upper=np.inf,
+                upper_strict=True,
+                note=f"The truncation {_TRUNCATION[name]} must be strictly "
+                "positive and finite; set truncation = None for none.",
+                error=True,
+            )
+        super().__setattr__(name, value)
 
     @property
     def e(self):  # noqa: D102
@@ -151,29 +235,15 @@ class Profile(Component):
 
     @e.setter
     def e(self, value):  # noqa: D102
-        if value is None or isinstance(
-            value, (types.LambdaType, types.FunctionType, _BoundTo)
-        ):
-            self._e = value
-            return
-
-        wsuffix = "Ellipticity must be in the range [0, 1)."
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.upper_bound > 1:
-                wstring = "The ellipticity prior support includes values"
-        elif value >= 1:
-            wstring = "The ellipticity parameter is"
-        if wstring is not None:
-            raise ValueError(f"{wstring} greater than 1. {wsuffix}")
-
-        if isinstance(value, numpyro.distributions.Distribution):
-            if value.support.lower_bound < 0:
-                wstring = "The ellipticity prior support includes values"
-        elif value < 0:
-            wstring = "The ellipticity parameter is"
-        if wstring is not None:
-            raise ValueError(f"{wstring} lower than 0. {wsuffix}")
+        _warn_range(
+            value,
+            "e",
+            lower=0,
+            upper=1,
+            upper_strict=True,
+            note="Ellipticity must be in the range [0, 1).",
+            error=True,
+        )
         self._e = value
 
     @abstractmethod
@@ -240,85 +310,13 @@ class Profile(Component):
         >>> img = Image('observation.fits')
         >>> model_map = beta.getmap(img, convolve=True)
         """
-        _keys = list(inspect.signature(self.profile).parameters.keys()) + [
-            "xc",
-            "yc",
-            "theta",
-            "e",
-            "cbox",
-        ]
-        if self.truncation is not None:
-            _keys += ["rt", "wt"]
+        kwarg = self._getpars(self._keymap())
+        return self._convolve(img, self._evaluate(img, **kwarg), convolve)
 
-        kwarg = {key: getattr(self, key) for key in _keys if key != "r"}
-
-        for key, val in kwarg.items():
-            if isinstance(val, _BoundTo):
-                kwarg[key] = val.resolve()
-            elif callable(val):
-                sig = inspect.signature(val)
-                params = list(sig.parameters.keys())
-                if params:
-                    args = [
-                        getattr(self, p.replace(f"{self.id}_", ""))
-                        for p in params
-                    ]
-                    kwarg[key] = val(*args)
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
-
-        mgrid = self._evaluate(img, **kwarg)
-
-        if convolve:
-            if img.psf is None:
-                warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
-                )
-            else:
-                mgrid = img.convolve(mgrid)
-        return mgrid
-
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate.
-        """
-        _keys = list(inspect.signature(self.profile).parameters.keys()) + [
-            "xc",
-            "yc",
-            "theta",
-            "e",
-            "cbox",
-        ]
-        if self.truncation is not None:
-            _keys += ["rt", "wt"]
-
-        return {
-            key.replace(f"{comp_prefix}_", ""): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_")
-            and key.replace(f"{comp_prefix}_", "") in _keys
-        }
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        keys = _subkeys(self) + ["xc", "yc", "theta", "e", "cbox"]
+        return {key: key for key in keys}
 
     def _evaluate(self, img, **kwarg):
         """
@@ -347,17 +345,8 @@ class Profile(Component):
         e = kwarg.pop("e")
         cbox = kwarg.pop("cbox")
 
-        if self.truncation is not None:
-            rt = kwarg.pop("rt")
-            wt = kwarg.pop("wt")
-
         rgrid = self.getgrid(img.grid, xc, yc, theta, e, cbox)
-        mgrid = self.profile(rgrid, **kwarg)
-
-        if self.truncation is not None:
-            mgrid = mgrid * self.truncation.profile(rgrid, rt, wt)
-
-        return jp.mean(mgrid, axis=0)
+        return jp.mean(_subprofile(self, rgrid, kwarg), axis=0)
 
     @staticmethod
     @partial(jax.jit, static_argnames=["grid"])
@@ -417,15 +406,16 @@ class Profile(Component):
 
         xgrid = jp.abs(xgrid) ** (cbox + 2.00)
         ygrid = jp.abs(ygrid / (1.00 - e)) ** (cbox + 2.00)
-        return jp.power(xgrid + ygrid, 1.00 / (cbox + 2.00))
+        return _safe_power(xgrid + ygrid, 1.00 / (cbox + 2.00))
 
     def refactor(self):
         """
         Return a refactored version of the profile with equivalent parameterization.
 
-        For most profiles, this returns a copy of the profile with the same
-        parameters. Some profiles (e.g., PolyExpoRefact) override this to
-        convert to an alternative parameterization.
+        For most profiles, this returns a copy keeping every parameter,
+        unit and setting; ties to the profile itself point to the copy.
+        Some profiles (e.g., PolyExpoRefact) override this to convert to an
+        alternative parameterization.
 
         Returns
         -------
@@ -443,8 +433,8 @@ class Profile(Component):
         >>> beta = Beta(xc=180.5, yc=45.2)
         >>> beta_refactored = beta.refactor()
         """
-        warnings.warn("Nothing to refactor here.")
-        return self.__class__(**self.__dict__)
+        warnings.warn("Nothing to refactor here.", stacklevel=_outside())
+        return self._copy()
 
 
 class CustomProfile(Profile):
@@ -474,6 +464,8 @@ class CustomProfile(Profile):
     - All parameters in the parameters list are initialized to None and must
       be set before use.
     - The profile function should be compatible with JAX (use jax.numpy operations).
+    - rt and wt cannot be parameter names: they are reserved for the
+      truncation (ValueError).
 
     Examples
     --------
@@ -504,6 +496,7 @@ class CustomProfile(Profile):
         **kwargs : dict
             Standard profile parameters (xc, yc, theta, e, cbox).
         """
+        _check_names([p["name"] for p in parameters])
         super().__init__(**kwargs)
 
         for p in parameters:
@@ -513,4 +506,16 @@ class CustomProfile(Profile):
                 {p["name"]: p.get("description", "No description provided")}
             )
 
+        self._function = profile
         self.profile = jax.jit(profile)
+
+    def __getstate__(self):
+        """Drop the compiled profile, rebuilt on unpickling."""
+        state = super().__getstate__()
+        state.pop("profile", None)
+        return state
+
+    def __setstate__(self, state):
+        """Restore state and recompile the profile."""
+        super().__setstate__(state)
+        self.__dict__["profile"] = jax.jit(self._function)

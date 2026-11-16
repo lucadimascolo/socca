@@ -1,21 +1,59 @@
 """Disk model with finite thickness."""
 
 from functools import partial
-import inspect
-import types
 
-import warnings
 
 import jax
 import jax.numpy as jp
-import numpyro.distributions
 
-import numpy as np
 
-from ..base import Component
+from ..base import Component, _claim, _strip, _subkeymap, _subprofile
 from ..radial import Sersic
-from ...priors import _BoundTo
-from .vertical import HyperSecantHeight
+from ..radial.base import Profile, _safe_power
+from .vertical import Height, HyperSecantHeight
+
+_LOS_CHUNK = 16
+
+
+def _los_integrate(density, pars, z, w, chunk=_LOS_CHUNK):
+    """
+    Integrate density(pars, z) along z with the weights w.
+
+    The density has shape (subgrid, len(z), ny, nx). The value is one
+    fused weighted sum; its gradient recomputes the density in chunks of
+    z nodes, so the full cube is never stored.
+    """
+
+    def total(pars, z, w):
+        return jp.einsum("slyx,l->syx", density(pars, z), w)
+
+    @jax.custom_vjp
+    def integrate(pars, z, w):
+        return total(pars, z, w)
+
+    def fwd(pars, z, w):
+        return total(pars, z, w), (pars, z, w)
+
+    def bwd(res, g):
+        pars, z, w = res
+        n = z.size
+        size = min(chunk, n)
+        nchunk = -(-n // size)
+        pad = nchunk * size - n
+        zc = jp.concatenate([z, jp.full(pad, z[-1])]).reshape(nchunk, size)
+        wc = jp.concatenate([w, jp.zeros(pad)]).reshape(nchunk, size)
+
+        def body(acc, zw):
+            _, vjp = jax.vjp(total, pars, *zw)
+            dp, dz, dw = vjp(g)
+            return jax.tree.map(jp.add, acc, dp), (dz, dw)
+
+        zero = jax.tree.map(jp.zeros_like, pars)
+        dp, (dz, dw) = jax.lax.scan(body, zero, (zc, wc))
+        return dp, dz.reshape(-1)[:n], dw.reshape(-1)[:n]
+
+    integrate.defvjp(fwd, bwd)
+    return integrate(pars, z, w)
 
 
 class Disk(Component):
@@ -30,7 +68,8 @@ class Disk(Component):
     ----------
     radial : Profile, optional
         Radial profile defining in-plane surface brightness distribution.
-        Default is Sersic(). Can be any 2D profile (Beta, Exponential, etc.).
+        Default is Sersic(). Can be any 2D profile (Beta, Exponential, etc.);
+        its e and cbox are dropped, as the Disk does not use them.
     vertical : Height, optional
         Vertical profile defining scale height and vertical structure.
         Default is HyperSecantHeight(). Can be HyperSecantHeight or ExponentialHeight.
@@ -43,8 +82,14 @@ class Disk(Component):
         Radial profile component.
     vertical : Height
         Vertical profile component.
-    profile : callable
-        Combined 3D density profile rho(r, z) = radial(r) * vertical(z).
+
+    Raises
+    ------
+    ValueError
+        If a profile is already in a model or part of another Disk,
+        Ellipsoid or Bridge, or the same profile is passed twice.
+    TypeError
+        If radial is not a Profile or vertical not a Height.
 
     Notes
     -----
@@ -54,6 +99,11 @@ class Disk(Component):
     3. Accounts for inclination by rotating the disk before integration
     4. Uses numerical integration (trapezoidal rule) along z-direction
 
+    The vertical profile has unit integral along z, so the radial
+    amplitude is the face-on surface brightness. A truncation of the
+    radial profile is applied on the in-plane (cylindrical) radius of the
+    disk, not on the projected one.
+
     The inclination angle is stored in vertical.inc:
 
     - inc = 0: face-on (looking down on the disk)
@@ -61,10 +111,22 @@ class Disk(Component):
 
     Line-of-sight integration parameters (vertical.losdepth, vertical.losbins)
     control accuracy and computation time. Larger losdepth and more losbins
-    improve accuracy for highly inclined disks.
+    improve accuracy for highly inclined disks. They are hyperparameters,
+    which cannot have priors: losdepth must be finite and positive, losbins
+    an integer >= 2.
+
+    Parameters are namespaced by sub-profile: ``radial.xc``,
+    ``vertical.inc``, with model keys such as ``comp_00_radial.xc``. The
+    sub-profiles have no id and cannot be replaced: create a new Disk.
+
+    ``profile(r, z, **kw)`` is a method evaluating radial(r) * vertical(z).
+    The line-of-sight integral has a custom reverse-mode gradient:
+    jax.grad and jax.hessian work, forward-mode differentiation
+    (jax.jvp, jax.jacfwd) does not.
 
     Examples
     --------
+    >>> import numpy as np
     >>> from socca.models import Disk, Exponential
     >>> from socca.models.disk.vertical import ExponentialHeight
     >>> # Create edge-on exponential disk
@@ -85,11 +147,6 @@ class Disk(Component):
             Vertical profile component. Default is HyperSecantHeight().
         **kwargs : dict
             Additional keyword arguments.
-
-        Notes
-        -----
-        The component ID is synchronized between the Disk, radial, and vertical
-        components to ensure consistent parameter naming in composite models.
         """
         super().__init__(**kwargs)
 
@@ -102,86 +159,41 @@ class Disk(Component):
             radial = Sersic()
         if vertical is None:
             vertical = HyperSecantHeight()
-
-        _radial_exclude = ["e", "cbox"]
+        if not isinstance(radial, Profile) or not isinstance(vertical, Height):
+            raise TypeError(
+                "Disk needs a radial profile (e.g. Sersic) and a vertical "
+                "Height profile."
+            )
+        _claim(radial, vertical, free=["e", "cbox"])
+        _strip(radial, ["e", "cbox"])
 
         self.radial = radial
         self.vertical = vertical
 
         self._namespaces = {"radial": self.radial, "vertical": self.vertical}
-
-        if self.radial.id != self.id:
-            type(self).idcls -= 1
-            idmin = np.minimum(
-                int(self.radial.id.replace("comp_", "")),
-                int(self.id.replace("comp_", "")),
-            )
-            self.id = f"comp_{idmin:02d}"
-            self.radial.id = self.id
-            self.vertical.id = self.id
-
-        self._rkw = [
-            f"r_{key}"
-            for key in list(
-                inspect.signature(self.radial.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
-        self._zkw = [
-            f"z_{key}"
-            for key in list(
-                inspect.signature(self.vertical.profile).parameters.keys()
-            )
-            if key not in ["r", "z"]
-        ]
-
-        _profile = [
-            "rfoo.profile(r,{0})".format(",".join(self._rkw)),
-            "zfoo.profile(z,{0})".format(",".join(self._zkw)),
-        ]
-        _profile = "*".join(_profile)
-        _profile = "lambda rfoo,zfoo,r,z,{0},{1}: {2}".format(
-            ",".join(self._rkw), ",".join(self._zkw), _profile
-        )
-
-        self.profile = jax.jit(
-            partial(eval(_profile), self.radial, self.vertical)
-        )
-
-        for key in self.radial.hyper:
-            self.hyper.append(f"radial.{key}")
-
-        for key in self.vertical.hyper:
-            self.hyper.append(f"vertical.{key}")
-
-        self.units.update(
-            {
-                f"radial.{key}": self.radial.units[key]
-                for key in self.radial.units.keys()
-                if key not in _radial_exclude
-            }
-        )
-        self.units.update(
-            {
-                f"vertical.{key}": self.vertical.units[key]
-                for key in self.vertical.units.keys()
-            }
-        )
-
-        self.description.update(
-            {
-                f"radial.{key}": self.radial.description[key]
-                for key in self.radial.description.keys()
-                if key not in _radial_exclude
-            }
-        )
-        self.description.update(
-            {
-                f"vertical.{key}": self.vertical.description[key]
-                for key in self.vertical.description.keys()
-            }
-        )
+        self._wrap()
+        self._adopt()
         self._initialized = True
+
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        keys = _subkeymap(self.radial, "r", "radial")
+        keys.update(_subkeymap(self.vertical, "z", "vertical"))
+        keys.update(
+            xc="radial.xc",
+            yc="radial.yc",
+            theta="radial.theta",
+            inc="vertical.inc",
+            losdepth="vertical.losdepth",
+            losbins="vertical.losbins",
+        )
+        return keys
+
+    def profile(self, r, z, **kw):
+        """Evaluate the density radial(r) * vertical(z)."""
+        return _subprofile(self.radial, r, kw, "r", True) * _subprofile(
+            self.vertical, z, kw, "z"
+        )
 
     def getmap(self, img, convolve=False):
         """
@@ -205,7 +217,10 @@ class Disk(Component):
         Raises
         ------
         ValueError
-            If any parameter is a prior distribution or set to None.
+            If any parameter is a prior distribution or set to None, a
+            lambda tie names a parameter of another component, or a tie's
+            source has a prior. Use Model.getmap() for lambda ties to
+            other components.
 
         Warns
         -----
@@ -240,109 +255,8 @@ class Disk(Component):
         >>> img = Image('observation.fits')
         >>> disk_map = disk.getmap(img, convolve=True)
         """
-        kwarg = {}
-        for key in list(inspect.signature(self.profile).parameters.keys()):
-            if key not in ["r", "z"]:
-                if key.startswith("r_"):
-                    val = getattr(self.radial, key.replace("r_", ""))
-                elif key.startswith("z_"):
-                    val = getattr(self.vertical, key.replace("z_", ""))
-                else:
-                    continue
-
-                # Evaluate tied parameters
-                if isinstance(val, _BoundTo):
-                    val = val.resolve()
-                elif callable(val):
-                    sig = inspect.signature(val)
-                    params = list(sig.parameters.keys())
-                    if params:
-                        args = [
-                            getattr(self, p.replace(f"{self.id}_", ""))
-                            for p in params
-                        ]
-                        val = val(*args)
-
-                kwarg[key] = val
-
-        # Add geometric parameters
-        kwarg["xc"] = self.radial.xc
-        kwarg["yc"] = self.radial.yc
-        kwarg["theta"] = self.radial.theta
-        kwarg["inc"] = self.vertical.inc
-        kwarg["losdepth"] = self.vertical.losdepth
-        kwarg["losbins"] = self.vertical.losbins
-
-        for key in ["xc", "yc", "theta", "inc", "losdepth", "losbins"]:
-            if isinstance(kwarg[key], _BoundTo):
-                kwarg[key] = kwarg[key].resolve()
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
-
-        mgrid = self._evaluate(img, **kwarg)
-
-        if convolve:
-            if img.psf is None:
-                warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
-                )
-            else:
-                mgrid = img.convolve(mgrid)
-        return mgrid
-
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate including geometric and profile
-            parameters with r_ and z_ prefixes.
-        """
-        # Build profile parameters with r_ and z_ prefixes
-        # Use self._rkw and self._zkw instead of inspect.signature since
-        # the profile is a jax.jit(partial(...)) which doesn't preserve signature
-        kwarg = {
-            key.replace(f"{comp_prefix}_radial.", "r_"): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_radial.")
-            and key.replace(f"{comp_prefix}_radial.", "r_") in self._rkw
-        }
-        kwarg.update(
-            {
-                key.replace(f"{comp_prefix}_vertical.", "z_"): pars[key]
-                for key in pars
-                if key.startswith(f"{comp_prefix}_vertical.")
-                and key.replace(f"{comp_prefix}_vertical.", "z_") in self._zkw
-            }
-        )
-
-        # Add geometric parameters
-        kwarg["xc"] = pars[f"{comp_prefix}_radial.xc"]
-        kwarg["yc"] = pars[f"{comp_prefix}_radial.yc"]
-        kwarg["theta"] = pars[f"{comp_prefix}_radial.theta"]
-        kwarg["inc"] = pars[f"{comp_prefix}_vertical.inc"]
-        kwarg["losdepth"] = pars[f"{comp_prefix}_vertical.losdepth"]
-        kwarg["losbins"] = pars[f"{comp_prefix}_vertical.losbins"]
-
-        return kwarg
+        kwarg = self._getpars(self._keymap())
+        return self._convolve(img, self._evaluate(img, **kwarg), convolve)
 
     def _evaluate(self, img, **kwarg):
         """
@@ -373,23 +287,31 @@ class Disk(Component):
         losdepth = kwarg.pop("losdepth")
         losbins = kwarg.pop("losbins")
 
-        rcube, zcube = self.getgrid(
-            img.grid, xc, yc, losdepth, losbins, theta, inc
-        )
+        # one weighted sum fuses with the density; trapezoid would slice it
+        z = jp.linspace(-losdepth, losdepth, losbins)
         dx = 2.00 * losdepth / (losbins - 1)
-        mgrid = self.profile(rcube, zcube, **kwarg)
-        mgrid = jp.trapezoid(mgrid, dx=dx, axis=1)
+        wlos = jp.full(losbins, dx).at[jp.array([0, -1])].multiply(0.50)
+        pars = dict(xc=xc, yc=yc, theta=theta, inc=inc, kw=kwarg)
+        pars = jax.tree.map(lambda v: jp.asarray(v, dtype=float), pars)
+
+        def density(pars, z):
+            r, zt = self.getgrid(
+                img.grid, pars["xc"], pars["yc"], z, pars["theta"], pars["inc"]
+            )
+            return self._compiled()(r, zt, **pars["kw"])
+
+        mgrid = _los_integrate(density, pars, z, wlos)
         return jp.mean(mgrid, axis=0)
 
     @staticmethod
-    @partial(jax.jit, static_argnames=["grid", "losbins"])
-    def getgrid(grid, xc, yc, losdepth, losbins=200, theta=0.00, inc=0.00):
+    @partial(jax.jit, static_argnames=["grid"])
+    def getgrid(grid, xc, yc, z, theta=0.00, inc=0.00):
         """
         Compute 3D disk coordinates with rotation and inclination.
 
-        Generates 3D coordinate grids (r, z) for disk model evaluation, accounting
-        for position angle and inclination transformations needed for line-of-sight
-        integration through an inclined disk.
+        Generates the cylindrical radius and height of every pixel at the
+        line-of-sight positions z, accounting for the position angle and
+        the inclination of the disk.
 
         Parameters
         ----------
@@ -399,10 +321,9 @@ class Disk(Component):
             Right ascension of disk center (deg).
         yc : float
             Declination of disk center (deg).
-        losdepth : float
-            Half-extent of line-of-sight integration (deg).
-        losbins : int, optional
-            Number of integration points along line of sight. Default is 200.
+        z : ndarray
+            Line-of-sight positions, from the sky plane through the center
+            (deg).
         theta : float, optional
             Position angle of disk major axis, east from north (rad). Default is 0.
         inc : float, optional
@@ -411,11 +332,11 @@ class Disk(Component):
         Returns
         -------
         rcube : ndarray
-            4D array of radial distances from disk center (deg).
-            Shape: (ssize, losbins, ysize, xsize).
+            Radial distances from the disk axis (deg).
+            Shape: (ssize, len(z), ysize, xsize).
         zcube : ndarray
-            4D array of heights above/below disk midplane (deg).
-            Shape: (ssize, losbins, ysize, xsize).
+            Heights above/below disk midplane (deg).
+            Shape: (ssize, len(z), ysize, xsize).
 
         Notes
         -----
@@ -423,7 +344,7 @@ class Disk(Component):
         1. Center coordinates on (xc, yc)
         2. Apply spherical geometry correction (cos(dec))
         3. Rotate by position angle theta
-        4. Create line-of-sight grid from -losdepth to +losdepth
+        4. Place each pixel at the line-of-sight positions z
         5. Apply inclination rotation
         6. Compute cylindrical radius r and height z
 
@@ -431,193 +352,18 @@ class Disk(Component):
 
         - inc = 0: face-on, z-axis points toward observer
         - inc = pi/2: edge-on, disk in plane of sky
-
-        The 4D arrays allow vectorized evaluation of the 3D density function
-        across the entire image with sub-pixel sampling and line-of-sight
-        integration.
-
-        This function is JIT-compiled with static losbins for performance.
         """
-        ssize, ysize, xsize = grid.x.shape
-
-        zt = jp.linspace(-losdepth, losdepth, losbins)
-
         sint = jp.sin(theta)
         cost = jp.cos(theta)
 
         xt = (grid.x - xc) * jp.cos(jp.deg2rad(yc))
         yt = grid.y - yc
-
         xt, yt = -xt * sint - yt * cost, xt * cost - yt * sint
-
-        xt = jp.broadcast_to(
-            xt[:, None, :, :], (ssize, losbins, ysize, xsize)
-        ).copy()
-        yt = jp.broadcast_to(
-            yt[:, None, :, :], (ssize, losbins, ysize, xsize)
-        ).copy()
-        zt = jp.broadcast_to(
-            zt[None, :, None, None], (ssize, losbins, ysize, xsize)
-        ).copy()
+        xt, yt = xt[:, None], yt[:, None]
+        z = z[None, :, None, None]
 
         sini = jp.sin(inc - 0.50 * jp.pi)
         cosi = jp.cos(inc - 0.50 * jp.pi)
+        zt, yt = yt * cosi - z * sini, yt * sini + z * cosi
 
-        zt, yt = yt * cosi - zt * sini, yt * sini + zt * cosi
-
-        return jp.sqrt(xt**2 + yt**2), zt
-
-    def parameters(self):
-        """
-        Print formatted table of disk parameters from radial and vertical components.
-
-        Displays parameters from both the radial and vertical profile components,
-        organized as 'radial.parameter' and 'vertical.parameter'. Separates regular
-        parameters from hyperparameters (integration settings).
-
-        Notes
-        -----
-        Output format:
-
-        Model parameters
-        ================
-        radial.xc        [deg]   : value | Right ascension of centroid
-        radial.yc        [deg]   : value | Declination of centroid
-        radial.rs        [deg]   : value | Scale radius
-        vertical.zs      [deg]   : value | Scale height
-        vertical.inc     [rad]   : value | Inclination angle (0=face-on)
-
-        Hyperparameters
-        ===============
-        vertical.losdepth [deg]  : value | Half line-of-sight extent
-        vertical.losbins  []     : value | Number of integration points
-
-        Hyperparameters control the numerical integration accuracy but are not
-        fitted parameters.
-
-        Examples
-        --------
-        >>> from socca.models import Disk, Exponential
-        >>> from socca.models.disk.vertical import ExponentialHeight
-        >>> import numpy as np
-        >>> radial = Exponential(xc=180.5, yc=45.2, rs=0.02, Is=100)
-        >>> vertical = ExponentialHeight(zs=0.002, inc=np.pi/4)
-        >>> disk = Disk(radial=radial, vertical=vertical)
-        >>> disk.parameters()
-        Model parameters
-        ================
-        radial.xc         [deg]    : 1.8050E+02 | Right ascension of centroid
-        radial.yc         [deg]    : 4.5200E+01 | Declination of centroid
-        ...
-        """
-        keyout = [key for key in self.units.keys() if key not in self.hyper]
-
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array(
-                    [
-                        len(f"{key} [{self.units[key]}]")
-                        for key in keyout + self.hyper
-                    ]
-                )
-            )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
-                if key.startswith("radial."):
-                    kvalue = getattr(self.radial, key.replace("radial.", ""))
-                elif key.startswith("vertical."):
-                    kvalue = getattr(
-                        self.vertical, key.replace("vertical.", "")
-                    )
-                else:
-                    kvalue = getattr(self, key)
-
-                if kvalue is None:
-                    kvalue = None
-                elif isinstance(kvalue, numpyro.distributions.Distribution):
-                    kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                elif isinstance(
-                    kvalue, (types.LambdaType, types.FunctionType, _BoundTo)
-                ):
-                    kvalue = "Tied parameter"
-                else:
-                    kvalue = f"{kvalue:.4E}"
-
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{kvalue}".ljust(10)
-                    + f" | {self.description[key]}"
-                )
-
-            if len(self.hyper) > 0:
-                print("\nHyperparameters")
-                print("=" * 15)
-                for key in self.hyper:
-                    keylen = maxlen - len(f" [{self.units[key]}]")
-                    if key.startswith("radial."):
-                        kvalue = getattr(
-                            self.radial, key.replace("radial.", "")
-                        )
-                    elif key.startswith("vertical."):
-                        kvalue = getattr(
-                            self.vertical, key.replace("vertical.", "")
-                        )
-                    else:
-                        kvalue = getattr(self, key)
-
-                    if kvalue is None:
-                        kvalue = None
-                    elif isinstance(
-                        kvalue, numpyro.distributions.Distribution
-                    ):
-                        kvalue = f"Distribution: {kvalue.__class__.__name__}"
-                    elif isinstance(
-                        kvalue,
-                        (types.LambdaType, types.FunctionType, _BoundTo),
-                    ):
-                        kvalue = "Tied parameter"
-                    else:
-                        kvalue = f"{kvalue:.4E}"
-
-                    print(
-                        f"{key:<{keylen}} [{self.units[key]}] : "
-                        + f"{kvalue}".ljust(10)
-                        + f" | {self.description[key]}"
-                    )
-        else:
-            print("No parameters defined.")
-
-    def parlist(self):
-        """
-        Return list of parameter names from radial and vertical components.
-
-        Collects all parameters from both the radial and vertical profile
-        components, with names prefixed as 'radial.' and 'vertical.'.
-
-        Returns
-        -------
-        list of str
-            Combined list of parameter names from radial and vertical components.
-            Names are prefixed with component type (e.g., 'radial.xc', 'vertical.zs').
-
-        Notes
-        -----
-        This method is used internally by Model.addcomponent() when adding
-        a Disk component to a composite model, ensuring all parameters from
-        both sub-components are registered.
-
-        Examples
-        --------
-        >>> from socca.models import Disk, Exponential
-        >>> from socca.models.disk.vertical import ExponentialHeight
-        >>> radial = Exponential(xc=180.5, yc=45.2, rs=0.02, Is=100)
-        >>> vertical = ExponentialHeight(zs=0.002, inc=0.5)
-        >>> disk = Disk(radial=radial, vertical=vertical)
-        >>> disk.parlist()
-        ['radial.xc', 'radial.yc', 'radial.theta', 'radial.rs', 'radial.Is',
-        'vertical.losdepth', 'vertical.losbins', 'vertical.inc', 'vertical.zs']
-        """
-        return list(self.units.keys())
+        return _safe_power(xt**2 + yt**2, 0.50), zt

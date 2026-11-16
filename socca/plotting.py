@@ -106,6 +106,20 @@ def getframe(wcs):
 
 # Plotting utilities
 # ========================================================
+def _component_indices(fit, positions):
+    """Columns of fit.labels owned by the components at these positions."""
+    fit._checkmodel()
+    mod = fit.mod
+    return np.array(
+        [
+            i
+            for i, key in enumerate(fit.labels)
+            if mod._owner[mod.params.index(key)] in positions
+        ],
+        dtype=int,
+    )
+
+
 class Plotter:
     """
     Visualization interface for model fitting results.
@@ -151,13 +165,14 @@ class Plotter:
         name : str, optional
             Output filename (without extension). If None, displays plot
             interactively instead of saving. Default is None.
-        component : str, int, list, or None, optional
-            Component(s) to plot. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Component(s) whose parameters to plot:
 
-            - None: Plot all components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index
-            - list: Multiple components (names, indices, or objects)
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
         fmt : str, optional
             Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
         sigma : float, optional
@@ -175,6 +190,14 @@ class Plotter:
             Additional keyword arguments passed to corner.corner().
             See corner package documentation for available options.
 
+        Raises
+        ------
+        AttributeError
+            If the fit has no posterior samples (e.g. method='optimizer').
+        ValueError
+            If `component` matches no component of the model or names one
+            twice, or if the model changed after the fitter was created.
+
         Notes
         -----
         - Automatically handles parameter units in axis labels
@@ -188,8 +211,9 @@ class Plotter:
                 f"'{self.fit.method}' method does not produce samples."
             )
 
-        component = self.fit.mod._comp_filter(component)
-        component = [f"comp_{ci:02d}" for ci in component]
+        mod = self.fit.mod
+        positions = mod._comp_filter(component)
+        component = [mod._prefix[ci] for ci in positions]
 
         # Periodic parameters (e.g. a position angle symmetric under
         # theta -> theta + pi) are recentered on their circular mean here,
@@ -235,14 +259,7 @@ class Plotter:
                 labels.append(f"{label}\n")
         labels = np.array(labels)
 
-        indices = np.array(
-            [
-                i
-                for i, lbl in enumerate(labels)
-                if any(lbl.startswith(c) for c in component)
-            ],
-            dtype=int,
-        )
+        indices = _component_indices(self.fit, positions)
 
         if len(indices) == 0:
             raise ValueError(
@@ -312,17 +329,17 @@ class Plotter:
         name : str, optional
             Output filename (with or without extension). Required for saving;
             if None, plot is saved with a default name.
-        component : None, str, int, list, or Profile, optional
-            Model component(s) to include in the comparison. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Model component(s) to include in the comparison:
 
-            - None: Include all model components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for the first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
             This is useful for comparing data against individual model
-            components. Default is None (all components).
+            components.
         fmt : str, optional
             Output file format (e.g., 'pdf', 'png'). Default is 'pdf'.
         fx : float, optional

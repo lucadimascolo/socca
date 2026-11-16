@@ -40,7 +40,21 @@ class Truncation:
         ``"deg"``).
     description : dict
         Human-readable description for each parameter.
+
+    Raises
+    ------
+    ValueError
+        If rt or wt is not strictly positive and finite.
+
+    Notes
+    -----
+    Set ``truncation=None`` on the profile to remove a truncation. On a
+    sub-profile the weight acts on the radius the profile is evaluated
+    at, not the projected one: the in-plane radius in a Disk, the
+    ellipsoidal radius in an Ellipsoid, the absolute distance in a Bridge.
     """
+
+    _owner = None  # the profile it is attached to, which holds rt and wt
 
     def __init__(self, **kwargs):
         self.rt = kwargs.get("rt", config.Truncation.rt)
@@ -49,33 +63,64 @@ class Truncation:
         self.units = dict(rt="deg", wt="deg")
         self.description = dict(rt="Truncation radius", wt="Truncation width")
 
+    def __copy__(self):
+        """Copy with the current rt and wt, attached to no profile."""
+        new = type(self).__new__(type(self))
+        new.__dict__.update(self.__dict__)
+        new.__dict__.update(
+            _owner=None,
+            _rt=self.rt,
+            _wt=self.wt,
+            units=dict(self.units),
+            description=dict(self.description),
+        )
+        return new
+
     @property
     def rt(self):  # noqa: D102
+        if self._owner is not None:
+            return self._owner.rt
         return self._rt
 
     @rt.setter
     def rt(self, value):  # noqa: D102
+        if self._owner is not None:
+            self._owner.rt = value
+            return
         _warn_range(
             value,
             "rt",
             lower=0,
             lower_strict=True,
-            note="The truncation radius must be strictly positive.",
+            upper=float("inf"),
+            upper_strict=True,
+            note="The truncation radius must be strictly positive and "
+            "finite; set a profile's truncation to None for none.",
+            error=True,
         )
         self._rt = value
 
     @property
     def wt(self):  # noqa: D102
+        if self._owner is not None:
+            return self._owner.wt
         return self._wt
 
     @wt.setter
     def wt(self, value):  # noqa: D102
+        if self._owner is not None:
+            self._owner.wt = value
+            return
         _warn_range(
             value,
             "wt",
             lower=0,
             lower_strict=True,
-            note="The truncation width must be strictly positive.",
+            upper=float("inf"),
+            upper_strict=True,
+            note="The truncation width must be strictly positive and "
+            "finite; set a profile's truncation to None for none.",
+            error=True,
         )
         self._wt = value
 
@@ -136,9 +181,9 @@ class Exponential(Truncation):
         array_like
             Truncation weight in ``[0, 1]``, same shape as *r*.
         """
-        num = 1.00 - jp.exp((r - rt) / wt)
-        den = 1.00 - jp.exp(-rt / wt)
-        return jp.clip(num / den, 0.00, None)
+        num = -jp.expm1(jp.minimum((r - rt) / wt, 0.00))
+        den = -jp.expm1(-rt / wt)
+        return num / den
 
 
 class HyperTangent(Truncation):

@@ -1,10 +1,7 @@
 """Point source model component."""
 
-import jax.numpy as jp
-import numpyro.distributions
-
 from .. import config
-from ..base import Component
+from ..base import Component, _outside
 
 import warnings
 
@@ -115,27 +112,9 @@ class Point(Component):
         """
         pass
 
-    def _build_kwargs(self, pars, comp_prefix):
-        """
-        Build keyword arguments for _evaluate from the full parameters dict.
-
-        Parameters
-        ----------
-        pars : dict
-            Full parameters dictionary with prefixed keys.
-        comp_prefix : str
-            Component prefix (e.g., 'comp_00').
-
-        Returns
-        -------
-        dict
-            Keyword arguments for _evaluate.
-        """
-        return {
-            key.replace(f"{comp_prefix}_", ""): pars[key]
-            for key in pars
-            if key.startswith(f"{comp_prefix}_")
-        }
+    def _keymap(self):
+        """Map the keywords of _evaluate to parameter names."""
+        return {key: key for key in self.units}
 
     def _evaluate(self, img, **kwarg):
         """
@@ -213,18 +192,7 @@ class Point(Component):
         >>> img = Image('observation.fits')
         >>> psf_convolved = point.getmap(img, convolve=True)
         """
-        kwarg = {key: getattr(self, key) for key in ["xc", "yc", "Ic"]}
-
-        for key in kwarg.keys():
-            if isinstance(kwarg[key], numpyro.distributions.Distribution):
-                raise ValueError(
-                    "Priors must be fixed values, not distributions."
-                )
-            if kwarg[key] is None:
-                raise ValueError(
-                    f"keyword {key} is set to None. "
-                    f"Please provide a valid value."
-                )
+        kwarg = self._getpars(self._keymap())
 
         mgrid = self._evaluate(img, **kwarg)
 
@@ -233,7 +201,8 @@ class Point(Component):
         if convolve:
             if img.psf is None:
                 warnings.warn(
-                    "No PSF defined, so no convolution will be performed."
+                    "No PSF defined, so no convolution will be performed.",
+                    stacklevel=_outside(),
                 )
             else:
                 kernel = img.convolve.psf_fft

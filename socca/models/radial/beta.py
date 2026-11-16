@@ -5,7 +5,7 @@ import jax.numpy as jp
 
 from .. import config
 from ..base import _warn_range
-from .base import Profile
+from .base import Profile, _safe_power
 
 
 class Beta(Profile):
@@ -100,4 +100,4 @@ class Beta(Profile):
         >>> r = jp.linspace(0, 0.1, 100)
         >>> I = Beta.profile(r, Ic=100.0, rc=0.01, alpha=2.0, beta=0.5)
         """
-        return Ic * jp.power(1.00 + (r / rc) ** alpha, -beta)
+        return Ic * jp.power(1.00 + _safe_power(r / rc, alpha), -beta)

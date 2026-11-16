@@ -7,6 +7,7 @@ import jax.numpy as jp
 import numpy as np
 import numpyro.distributions
 
+from ..models.base import _REFIT, _support_bounds, _whole_periods
 from ..plotting import Plotter
 
 import inspect
@@ -86,9 +87,24 @@ class fitter:
             Physical units for each fitted parameter.
         plot : Plotter
             Plotting interface for visualization of results.
+
+        Raises
+        ------
+        ValueError
+            If the model is incomplete (e.g. a parameter set to None) or
+            its ties are invalid (unknown sources, cycles).
+
+        Notes
+        -----
+        The model is recorded when the fitter is created: if it changes
+        afterwards, run, getmodel, parameters and plot.corner raise
+        ValueError ("The model changed after this fitter was created").
         """
         self.img = img
         self.mod = mod
+        self.mod._sync()
+        self.mod._tieorder()
+        self._modelstate = self.mod._state()
 
         self.img._init_noise()
 
@@ -119,6 +135,18 @@ class fitter:
 
     #   Compute total model
     #   --------------------------------------------------------
+    def _checkmodel(self):
+        """Raise if the model changed since this fitter was created."""
+        self.mod._sync()
+        state = getattr(self, "_modelstate", None)
+        if state is not None and not self.mod._samestate(
+            state, self.mod._state()
+        ):
+            raise ValueError(
+                "The model changed after this fitter was created: create a "
+                "new fitter to use it."
+            )
+
     def _getmodel(self, pp):
         """
         Compute the total model with response and exposure corrections.
@@ -147,7 +175,7 @@ class fitter:
         Response is applied if any element of img.response differs from 1.0.
         Exposure is applied if any element of img.exposure differs from 1.0.
         """
-        return self.mod.getmodel(
+        return self.mod._getmodel(
             self.img,
             pp,
             doresp=self._doresp,
@@ -309,8 +337,8 @@ class fitter:
         Parameters
         ----------
         method : str, optional
-            Sampling method: 'nautilus', 'dynesty', or 'numpyro'.
-            Default is 'nautilus'.
+            Sampling method: 'nautilus', 'dynesty', 'pocomc', 'numpyro',
+            'emcee' or 'optimizer'. Default is 'nautilus'.
         checkpoint : str, optional
             Path to checkpoint file for saving/loading sampler state.
         resume : bool, optional
@@ -320,7 +348,14 @@ class fitter:
             Default is False.
         **kwargs : dict
             Additional keyword arguments passed to the sampler.
+
+        Raises
+        ------
+        ValueError
+            If the method is unknown, or the model changed after this
+            fitter was created.
         """
+        self._checkmodel()
         self.method = method
 
         def log_likelihood(theta):
@@ -400,10 +435,8 @@ class fitter:
                         prior, numpyro.distributions.Distribution
                     ):
                         continue
-                    extent = (
-                        prior.support.upper_bound - prior.support.lower_bound
-                    )
-                    if extent >= period:
+                    # only whole periods wrap onto equivalent values
+                    if _whole_periods(*_support_bounds(prior), period):
                         auto_periodic.append(pi)
                 if auto_periodic:
                     kwargs["periodic"] = auto_periodic
@@ -595,17 +628,17 @@ class fitter:
             - "bkg"/"background" : background component
 
             Default is "all".
-        component : None, str, int, list, or Profile, optional
-            Model component(s) to include in the computation. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Model component(s) to include in the computation:
 
-            - None: Include all model components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for the first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
             This is useful for generating images of individual model
-            components. Default is None (all components).
+            components.
         usebest : bool, optional
             If True, compute model at weighted median parameters.
             If False, compute median model by marginalizing over all
@@ -632,7 +665,9 @@ class fitter:
         Raises
         ------
         ValueError
-            If an unknown model component name is provided in `what`.
+            If an unknown model component name is provided in `what`, if
+            `component` matches no component of the model or names one
+            twice, or if the model changed after this fitter was created.
 
         Notes
         -----
@@ -676,8 +711,10 @@ class fitter:
                         f"Generating {', '.join(labels[:-1])} and {labels[-1]} models"
                     )
 
+        self._checkmodel()
+
         def gm(pp):
-            return self.mod.getmodel(
+            return self.mod._getmodel(
                 self.img if img is None else img, pp, doresp, doexp, component
             )
 
@@ -745,17 +782,17 @@ class fitter:
         name : str or Path
             Output FITS filename. The '.fits' extension is added
             automatically if not present.
-        component : None, str, int, list, or Profile, optional
-            Model component(s) to include in the saved image. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Model component(s) to include in the saved image:
 
-            - None: Include all model components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for the first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
             This is useful for saving images of individual model
-            components. Default is None (all components).
+            components.
         **kwargs : dict
             Additional keyword arguments passed to `getmodel()`.
             Common options include:
@@ -770,6 +807,12 @@ class fitter:
                 Apply response correction. Default is False.
             - doexp : bool, optional
                 Apply exposure map. Default is False.
+
+        Raises
+        ------
+        ValueError
+            If `component` matches no component of the model or names one
+            twice, or if the model changed after this fitter was created.
 
         See Also
         --------
@@ -842,8 +885,8 @@ class fitter:
 
         The output format is::
 
-            comp_00
-            -------
+            Type (id)
+            ---------
             param : best-fit [+upper/-lower]
 
         where upper = 84th percentile - median and lower = median - 16th
@@ -854,6 +897,7 @@ class fitter:
         Requires that the sampler has been run and samples are available.
         Uses importance weights for nested sampling results.
         """
+        self._checkmodel()
         print("\nBest-fit parameters")
         print("=" * 40)
 
@@ -866,14 +910,12 @@ class fitter:
         # Group parameters by component
         components = {}
         for pi, label in enumerate(self.labels):
-            parts = label.rsplit("_", 1)
-            if len(parts) == 2:
-                comp, param = "_".join(label.split("_")[:-1]), parts[-1]
-            else:
-                comp, param = "model", label
-            if comp not in components:
-                components[comp] = []
-            components[comp].append((pi, param))
+            owner = self.mod._owner[self.mod.params.index(label)]
+            prefix = self.mod._prefix[owner]
+            title = f"{self.mod.type[owner]} ({prefix})"
+            components.setdefault(title, []).append(
+                (pi, label[len(prefix) + 1 :])
+            )
 
         # Print grouped by component
         for comp, params in components.items():
@@ -927,6 +969,13 @@ def load(filename):
     fit : fitter
         Restored fitter object with all attributes and state.
 
+    Raises
+    ------
+    ValueError
+        If the pickle was saved by socca 1.4.0 or earlier (e.g. its model,
+        or a removed LogPowerLaw prior), which this version cannot load.
+        Other unpickling errors are raised as they are.
+
     Notes
     -----
     Uses dill for deserialization to handle complex objects like
@@ -944,7 +993,16 @@ def load(filename):
     >>> mraw, msmo, mbkg = fit.getmodel()
     """
     with open(filename, "rb") as f:
-        odict = dill.load(f)
+        try:
+            odict = dill.load(f)
+        except (AttributeError, ImportError) as err:
+            if "socca" not in str(err):
+                raise
+            # pickles of socca 1.4.0 can name what this version removed
+            raise ValueError(
+                f"Could not load {filename} ({type(err).__name__}: {err}). "
+                f"If it was saved by socca 1.4.0 or earlier, {_REFIT}"
+            ) from err
     fit = fitter(img=odict["img"], mod=odict["mod"])
     for key in odict.keys():
         fit.__dict__[key] = odict[key]

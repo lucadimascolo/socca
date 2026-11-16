@@ -14,7 +14,7 @@ Initializing and running the model inference is as simple as creating a `fitter`
 >>> mod = Model()
 >>> #  ... add components to the model and set priors ...
 >>>
->>> img = Image.load('path/to/your/image.fits')
+>>> img = Image('path/to/your/image.fits')
 >>> #  ... set up the image (PSF, noise model, mask, etc.) ...
 >>>
 >>> fit = fitter(mod=mod, img=img)
@@ -22,6 +22,8 @@ Initializing and running the model inference is as simple as creating a `fitter`
 ```
 
 The `fitter` object handles all the necessary bookkeeping, including the construction of the likelihood function based on the noise model and the mapping between the prior distributions and the model parameters.
+
+The fitter is built for the model as it is when the fitter is created. Changing the model afterwards (priors, fixed values, components, units) makes `run()` and the other methods raise an error: create a new fitter instead.
 
 ```{caution}
 An additional sampling backend based on [`numpyro`](https://num.pyro.ai/) NUTS ([No-U-Turn Sampler](https://num.pyro.ai/en/latest/mcmc.html#numpyro.infer.hmc.NUTS)) is included in the codebase but has not been thoroughly tested. It is left available for experimental use and development purposes only. Users interested in trying the `numpyro` backend should be aware that its behavior and results may not be fully validated.
@@ -83,25 +85,22 @@ The `fit.sampler` attribute provides direct access to the underlying sampler obj
 (periodic-parameters)=
 ### Periodic parameters
 
-Some parameters are inherently periodic. A position angle `theta`, for instance, only determines an elliptical or bar-like profile up to a rotation by $\pi$ (`theta` and `theta + \pi` describe the same shape), so a prior spanning the full period leaves "low" and "high" ill-defined right at the wrap boundary. **``socca``** tracks which parameters are periodic, and their period, on each component (e.g. `theta` on [radial profiles](./tutorial_components.md) and `Bridge`, and both `theta` and `rot` on [`Ellipsoid`](./tutorial_components.md), all have a period of $\pi$).
+Some parameters are inherently periodic. A position angle `theta`, for instance, only determines an elliptical or bar-like profile up to a rotation by $\pi$ (`theta` and `theta + \pi` describe the same shape), so a prior spanning the full period leaves "low" and "high" ill-defined right at the wrap boundary. **``socca``** tracks which parameters are periodic, and their period, on each component (e.g. `theta` on [radial profiles](./tutorial_components.md), on a `Disk`'s radial profile and on `Bridge`, and both `theta` and `rot` on [`Ellipsoid`](./tutorial_components.md), all have a period of $\pi$). Periods are expressed in the declared units of the parameter: 180 for a position angle declared in degrees with `set_units(theta="deg")`.
 
-Assigning such a parameter a prior that spans its full period warns immediately, right when the prior is set -- not later when `run()` is called:
+Adding to a model a component whose periodic parameter has a prior spanning a whole number of periods warns -- when the component is added, not later when `run()` is called:
 
 ```python
->>> from socca.models import Beta
+>>> from socca.models import Beta, Model
 >>> from socca.priors import uniform
 >>> import jax.numpy as jp
 >>>
->>> comp = Beta()
+>>> comp = Beta(xc=0.00, yc=0.00, rc=1.00E-03, Ic=1.00)
 >>> comp.theta = uniform(0.00, jp.pi)
-UserWarning: The theta prior spans a full 180-degree period, so it will
-automatically be treated as periodic if sampled with the nautilus,
-dynesty, or pocomc backends. Pass periodic=[...] to run() with this
-parameter's name to choose a different set, or periodic=[] to disable
-this entirely.
+>>> mod = Model(comp)
+UserWarning: The comp_00_theta prior spans whole periods (3.14159 rad), so it will be treated as periodic by the nautilus, dynesty and pocomc backends. Pass periodic=[...] to run() to choose a different set, or periodic=[] to disable this.
 ```
 
-This means that once this component is added to a model and fitted with the `nautilus`, `dynesty`, or `pocomc` backends, the parameter is automatically detected and passed to the sampler as periodic -- telling the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. This detection happens silently at `run()` time; the warning above, at prior-assignment time, is the only heads-up you get about it.
+This means that when the model is fitted with the `nautilus`, `dynesty`, or `pocomc` backends, the parameter is automatically detected and passed to the sampler as periodic -- telling the sampler to treat that dimension as wrapping (so, e.g., proposals near one edge of the prior range can cross over to the other edge) instead of imposing a hard boundary. Only priors spanning a whole number of periods are treated this way; a prior spanning more than one period also warns that it can make the posterior multimodal. This detection happens silently at `run()` time; the warning above, when the component is added, is the only heads-up you get about it.
 
 To override the auto-detected set, pass `periodic=[...]` explicitly to `run()` with the parameter names, exactly as they appear in `fit.labels`:
 
@@ -184,10 +183,12 @@ Multiple components can be requested as a list:
 
 The `component` argument allows generating the model from specific model components only, rather than the full composite model:
 - `None` (default): Include all model components
-- Integer: Single component index (e.g., `component=0` for the first component)
-- List of integers: Multiple component indices (e.g., `component=[0, 2]`)
-- String: Component name (e.g., `component='comp_00'`)
+- Integer: Single component position (e.g., `component=0` for the first component)
+- String: Component id, i.e. its `name=` or `comp_NN` (e.g., `component='comp_00'`)
 - Component object: The component instance itself
+- List: Any mix of the above (e.g., `component=[0, 'halo']`)
+
+A selection that matches no component of the model, or names the same component twice, raises an error.
 
 ```python
 >>> # Get model for only the first component
@@ -279,6 +280,8 @@ This serializes the entire `fit` object, including the model, data, and all samp
 ```python
 >>> fit = socca.load('my_fit_results.pickle')
 ```
+
+Fits saved with **``socca``** 1.4.0 or earlier cannot be loaded by this version: re-run the fit, or load them with 1.4.0 (see the [migration notes](../migration.md)).
 
 ## Checking the results
 

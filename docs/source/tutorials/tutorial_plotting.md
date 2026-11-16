@@ -28,10 +28,12 @@ The `comparison()` method accepts several customization options:
 
 The `component` argument allows comparing the data against specific model components only:
 - `None` (default): Include all model components
-- Integer: Single component index (e.g., `component=0` for the first component)
-- List of integers: Multiple component indices (e.g., `component=[0, 2]`)
-- String: Component name (e.g., `component='comp_00'`)
+- Integer: Single component position (e.g., `component=0` for the first component)
+- String: Component id, i.e. its `name=` or `comp_NN` (e.g., `component='comp_00'`)
 - Component object: The component instance itself
+- List: Any mix of the above (e.g., `component=[0, 2]`)
+
+A selection that matches no component of the model, or names the same component twice, raises an error.
 
 ```python
 >>> # Compare data against only the first component
@@ -76,10 +78,12 @@ The `sigma` argument sets the axis limits based on the specified number of stand
 
 The `component` argument allows selecting which model components to include in the corner plot:
 - `None` (default): Include all components
-- Integer: Single component index (e.g., `component=0` for the first component)
-- List of integers: Multiple component indices (e.g., `component=[0, 2]`)
-- String: Component name (e.g., `component='comp_00'`)
+- Integer: Single component position (e.g., `component=0` for the first component)
+- String: Component id, i.e. its `name=` or `comp_NN` (e.g., `component='comp_00'`)
 - Component object: The component instance itself
+- List: Any mix of the above (e.g., `component=[0, 2]`)
+
+A selection that matches no component of the model, or names the same component twice, raises an error.
 
 ```python
 >>> # Corner plot for only the first component

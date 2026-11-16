@@ -48,8 +48,8 @@ Each radial profile component inherits from the abstract base class `Profile`, w
 >>> comp = Profile()
 >>> comp.parameters()
 
-Model parameters
-================
+Profile
+=======
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -104,17 +104,17 @@ The parameter $\alpha$ controls the radial exponent, with $\alpha = 2$ correspon
 >>> comp = Beta()
 >>> comp.parameters()
 
-Model parameters
-================
+Beta
+====
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Core radius
-Ic  [image] : None       | Central surface brightness
 alpha    [] : 2.0000E+00 | Radial exponent
 beta     [] : 5.5000E-01 | Slope parameter
+Ic  [image] : None       | Central surface brightness
 ```
 
 #### gNFW
@@ -139,19 +139,22 @@ The integral is computed numerically using Gauss-Kronrod adaptive quadrature, as
 >>> comp = gNFW()
 >>> comp.parameters()
 
-Model parameters
-================
+gNFW
+====
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Scale radius
-Ic  [image] : None       | Characteristic surface brightness
 alpha    [] : 1.0510E+00 | Intermediate slope
 beta     [] : 5.4905E+00 | Outer slope
 gamma    [] : 3.0810E-01 | Inner slope
+Ic  [image] : None       | Characteristic surface brightness
 ```
+
+The numerical settings `eps` (quadrature tolerance), `rz` (grid of dimensionless radii), `interpolate` (whether to use that grid) and `emulator` (`True`, a checkpoint path, or `None`/`False`) can also be changed after construction, which recompiles the profile; `rz` is stored read-only, so assign a new grid rather than editing it in place. Inside a `Disk` or an `Ellipsoid`, a `gNFW` contributes its 3D density instead, and none of these settings is used.
+
 
 #### Power
 The `Power` class implements a simple power-law surface brightness profile. The functional form of the profile is given by:
@@ -167,16 +170,16 @@ where $I_c$ is the characteristic surface brightness at the scale radius $r_c$, 
 >>> comp = Power()
 >>> comp.parameters()
 
-Model parameters
-================
+Power
+=====
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Scale radius
-Ic  [image] : None       | Characteristic surface brightness
 alpha    [] : 2.0000E+00 | Power law slope
+Ic  [image] : None       | Characteristic surface brightness
 ```
 
 #### TopHat
@@ -196,13 +199,19 @@ This profile is useful for modeling flat-topped emission regions or as a simple 
 >>> comp = TopHat()
 >>> comp.parameters()
 
-Model parameters
-================
+TopHat
+======
+xc    [deg] : None       | Right ascension of centroid
+yc    [deg] : None       | Declination of centroid
+theta [rad] : 0.0000E+00 | Position angle (east from north)
+e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
+cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Cutoff distance
+Ic  [image] : None       | Surface brightness
 ```
 
 ```{note}
-The `TopHat` profile does not inherit the standard geometric parameters (`xc`, `yc`, `theta`, `e`, `cbox`) from the `Profile` base class. It only defines the cutoff radius `rc`.
+The `TopHat` profile has a sharp edge at `rc`. Inside an `Ellipsoid` it is projected exactly, without the interpolated table used for other profiles.
 ```
 
 (sersic)=
@@ -213,7 +222,7 @@ $$
 I(r) = I_e \exp\left\{-b_n \left[ \left( \frac{r}{r_e} \right)^{1/n} - 1 \right]\right\},
 $$
 
-where $r_e$ is the effective radius enclosing half of the total flux, $I_e$ is the surface brightness at $r_e$, and $n$ is the Sérsic index controlling the concentration of the profile. The constant $b_n$ is defined such that $\Gamma(2n) = 2\gamma(2n, b_n)$, where $\Gamma$ and $\gamma$ are the complete and incomplete Gamma functions, respectively. For computational efficiency, the value of $b_n$ is interpolated at each step of the inference from a precomputed lookup table covering the range $n \in [0.25, 10]$.
+where $r_e$ is the effective radius enclosing half of the total flux, $I_e$ is the surface brightness at $r_e$, and $n$ is the Sérsic index controlling the concentration of the profile. The constant $b_n$ is defined such that $\Gamma(2n) = 2\gamma(2n, b_n)$, where $\Gamma$ and $\gamma$ are the complete and incomplete Gamma functions, respectively. **``socca``** solves for $b_n$ exactly at each evaluation, for $n \in [0.25, 10]$.
 
 The Sérsic profile encompasses several commonly used models as special cases, including the Gaussian ($n=0.5$), the exponential ($n = 1$), and the de Vaucouleurs ($n = 4$) profiles.
 
@@ -222,8 +231,8 @@ The Sérsic profile encompasses several commonly used models as special cases, i
 >>> comp = Sersic()
 >>> comp.parameters()
 
-Model parameters
-================
+Sersic
+======
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -248,8 +257,8 @@ where $I_s$ is the central surface brightness and $r_s$ is the scale radius (sta
 >>> comp = Gaussian()
 >>> comp.parameters()
 
-Model parameters
-================
+Gaussian
+========
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -273,8 +282,8 @@ where $I_s$ is the central surface brightness and $r_s$ is the exponential scale
 >>> comp = Exponential()
 >>> comp.parameters()
 
-Model parameters
-================
+Exponential
+===========
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -301,8 +310,8 @@ where $I_s$ is the central surface brightness, $r_s$ is a characteristic scale r
 >>> comp = PolyExponential()
 >>> comp.parameters()
 
-Model parameters
-================
+PolyExponential
+===============
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -310,11 +319,11 @@ e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
+rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 c1       [] : 0.0000E+00 | Polynomial coefficient 1
 c2       [] : 0.0000E+00 | Polynomial coefficient 2
 c3       [] : 0.0000E+00 | Polynomial coefficient 3
 c4       [] : 0.0000E+00 | Polynomial coefficient 4
-rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 ```
 
 (polyexporefact)=
@@ -322,7 +331,7 @@ rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 The `PolyExpoRefact` class provides a refactored polynomial–exponential profile that is mathematically equivalent to `PolyExponential` but expressed in a form that improves parameter interpretability and reduces the degeneracies among the different polynomial terms:
 
 $$
-I(r) = \left[I_s+\sum_{k=1}^{4} I_k \left(\frac{r}{r_s}\right)^k\right] \exp\!\left(-\frac{r}{r_s}\right),
+I(r) = \left[I_s+\sum_{k=1}^{4} I_k \left(\frac{r}{r_c}\right)^k\right] \exp\!\left(-\frac{r}{r_s}\right),
 $$
 
 ```python
@@ -330,8 +339,8 @@ $$
 >>> comp = PolyExpoRefact()
 >>> comp.parameters()
 
-Model parameters
-================
+PolyExpoRefact
+==============
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -339,11 +348,11 @@ e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rs    [deg] : None       | Scale radius
 Is  [image] : None       | Central surface brightness
+rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 I1  [image] : 0.0000E+00 | Polynomial intensity coefficient 1
 I2  [image] : 0.0000E+00 | Polynomial intensity coefficient 2
 I3  [image] : 0.0000E+00 | Polynomial intensity coefficient 3
 I4  [image] : 0.0000E+00 | Polynomial intensity coefficient 4
-rc    [deg] : 2.7778E-04 | Reference radius for polynomial terms
 ```
 
 #### ModExponential
@@ -358,8 +367,8 @@ $$
 >>> comp = ModExponential()
 >>> comp.parameters()
 
-Model parameters
-================
+ModExponential
+==============
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
@@ -395,7 +404,7 @@ $$
 
 Unlike the exponential variant the weight never reaches exactly zero, but decays rapidly for $r \gg r_t$.
 
-In both cases the final surface brightness is $I(r) \times T(r)$. The parameter $w_t$ controls the sharpness of the transition, such that smaller values yield a steeper cut-off.
+In both cases the final surface brightness is $I(r) \times T(r)$. The parameter $w_t$ controls the sharpness of the transition, such that smaller values yield a steeper cut-off. When the profile is a sub-component of a `Disk`, an `Ellipsoid` or a `Bridge`, its truncation is applied there too: to the in-plane radius in a `Disk`, to the ellipsoidal radius in an `Ellipsoid`, and to the distance from the bridge axis in a `Bridge`.
 
 Truncation can be attached at construction time or set afterwards:
 
@@ -417,17 +426,17 @@ Truncation can be attached at construction time or set afterwards:
 >>>
 >>> comp.parameters()
 
-Model parameters
-================
+Beta
+====
 xc    [deg] : None       | Right ascension of centroid
 yc    [deg] : None       | Declination of centroid
 theta [rad] : 0.0000E+00 | Position angle (east from north)
 e        [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox     [] : 0.0000E+00 | Projected boxiness
 rc    [deg] : None       | Core radius
-Ic  [image] : None       | Central surface brightness
 alpha    [] : 2.0000E+00 | Radial exponent
 beta     [] : 5.5000E-01 | Slope parameter
+Ic  [image] : None       | Central surface brightness
 rt    [deg] : 1.0000E-02 | Truncation radius
 wt    [deg] : 5.0000E-04 | Truncation width
 ```
@@ -435,7 +444,7 @@ wt    [deg] : 5.0000E-04 | Truncation width
 Passing `truncation=True` is shorthand for using `HyperTangent` with its default parameter values. To remove a truncation that was previously set, assign `truncation=None`.
 
 ```{note}
-Truncation parameters `rt` and `wt` are treated as ordinary profile parameters: they can be fixed to a numerical value, assigned a prior distribution for fitting, or tied to another parameter via a lambda function.
+Truncation parameters `rt` and `wt` are treated as ordinary profile parameters: they can be fixed to a numerical value, assigned a prior distribution for fitting, or tied to another parameter with [`function()` or `boundto()`](./tutorial_priors.md). They must be strictly positive and finite, as fixed values and over the support of their priors: to disable a truncation, set `truncation=None` rather than an infinite `rt`. The names `rt` and `wt` are reserved for truncations. A newly attached truncation's values are in degrees, whatever units were declared for the previous one.
 ```
 
 ### Custom radial profiles
@@ -457,12 +466,12 @@ In case none of the built-in `Profile` subclasses adequately describe the desire
 >>> comp = CustomProfile(parameters=parameters, profile=custom_profile)
 >>> comp.parameters()
 
-Model parameters
-================
+CustomProfile
+=============
 xc      [deg] : None       | Right ascension of centroid
 yc      [deg] : None       | Declination of centroid
 theta   [rad] : 0.0000E+00 | Position angle (east from north)
-e          [] : 0.0000E+00 | Projected axis ratio
+e          [] : 0.0000E+00 | Projected ellipticity (1 - axis ratio)
 cbox       [] : 0.0000E+00 | Projected boxiness
 scale [image] : None       | Scaling factor
 ```
@@ -474,15 +483,15 @@ $$
 I(r) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} s(R) \, h(R,z) \, \mathrm{d}l,
 $$
 
-where $R$ and $z$ are the cylindrical coordinates in the disk frame, while $r$ and $l$ denote the projected radius and line-of-sight coordinate in the observer frame, respectively. The transformation between the two coordinate systems depends on the inclination angle of the disk with respect to the line-of-sight direction. A detailed discussion of the coordinate transformations involved in this calculation can be found in [van Asselt et al. (2026)](https://scixplorer.org/abs/2026arXiv260103339V).
+where $R$ and $z$ are the cylindrical coordinates in the disk frame, while $r$ and $l$ denote the projected radius and line-of-sight coordinate in the observer frame, respectively. The vertical profiles are normalized to unit integral along $z$, so that a face-on disk projects exactly onto its radial profile, $I(r) = s(r)$: the amplitude of the radial profile keeps its usual meaning (e.g. the central surface brightness `Is` of an `Exponential`) and is independent of the scale height. The transformation between the two coordinate systems depends on the inclination angle of the disk with respect to the line-of-sight direction. A detailed discussion of the coordinate transformations involved in this calculation can be found in [van Asselt et al. (2026)](https://scixplorer.org/abs/2026arXiv260103339V).
 
 ```python
 >>> from socca.models import Disk
 >>> comp = Disk()
 >>> comp.parameters()
 
-Model parameters
-================
+Disk
+====
 radial.xc         [deg] : None       | Right ascension of centroid
 radial.yc         [deg] : None       | Declination of centroid
 radial.theta      [rad] : 0.0000E+00 | Position angle (east from north)
@@ -491,16 +500,17 @@ radial.Ie       [image] : None       | Surface brightness at re
 radial.ns            [] : 5.0000E-01 | Sersic index
 vertical.inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
 vertical.zs       [deg] : None       | Scale height
+vertical.alpha       [] : 2.0000E+00 | Exponent to the hyperbolic secant
 
 Hyperparameters
 ===============
-vertical.losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+vertical.losdepth [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 vertical.losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
 If compared to any of the radial profile components described in the previous section, it is possible to observe many differences in the model and parameter interface. First of all, the parameters are split between `radial` and `vertical` subgroups. The former contains all the parameters defining the radial profile on the disk plane. These are inherited from the reference radial profile class specified when initializing the `Disk` component. As it will be shown later on in more details, any of the radial profiles described in the previous section can be used. The `vertical` subset instead includes the parameters related to the vertical structure (including the inclination of the disk plane with respect to the line-of-sight direction, `inc`). More details on the specific meaning of each parameter will be provided below. As for the `radial` component, the `vertical` structure can be customized by the user.
 
-Second, the `Disk` class implements a set of hyperparameters that do not enter the inference process, but tune key aspects of the model generation. In this specific case, they control the numerical accuracy of the line-of-sight integration. To ensure computational efficiency, the integration is currently computed via a trapezoid method (as implemented in [jax.numpy.trapezoid](https://docs.jax.dev/en/latest/_autosummary/jax.numpy.trapezoid.html)) over a arbitrary finite extent $[-l_{\mathrm{max}}, +l_{\mathrm{max}}]$. The `Height` hyperparameters include the half line-of-sight extent `losdepth` (i.e., the $l_{\mathrm{max}}$ parameter in the equation above) and the number of integration points `losbins`. Increasing these values improves the accuracy of the model, at the cost of increased computational time.
+Second, the `Disk` class implements a set of hyperparameters that do not enter the inference process, but tune key aspects of the model generation. In this specific case, they control the numerical accuracy of the line-of-sight integration. The integral is computed with the trapezoid rule over the finite extent $[-l_{\mathrm{max}}, +l_{\mathrm{max}}]$, as a single weighted sum; gradients recompute the integrand in chunks of nodes, so they never store the full line-of-sight cube (forward-mode differentiation, e.g. `jax.jvp`, is therefore not available through a `Disk`). The `Height` hyperparameters include the half line-of-sight extent `losdepth` (i.e., the $l_{\mathrm{max}}$ parameter in the equation above), which must be positive and finite, and the number of integration points `losbins`, an integer of at least 2. Both are fixed values: they cannot be given priors. Increasing them improves the accuracy of the model, at the cost of increased computational time.
 
 ```{important}
 When accessing a specific variable, it is important to remember that both the radial and vertical parameters are stored as sub-attributes of the `radial` and `vertical` attributes of the `Disk` component, respectively. For instance, to access the effective radius parameter of the radial profile, one must use `comp.radial.re`, while the scale height of the vertical structure is stored in `comp.vertical.zs`.
@@ -514,13 +524,13 @@ The hyperparameters introduced above as well as the inclincation angle `inc` are
 >>> comp = Height()
 >>> comp.parameters()
 
-Model parameters
-================
+Height
+======
 inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
 
 Hyperparameters
 ===============
-losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+losdepth [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
@@ -534,8 +544,10 @@ Please note that the `Height` subclasses can not be used as standalone model com
 The `HyperSecantHeight` class implements a hyperbolic secant vertical profile raised to a power $\alpha$:
 
 $$
-h(z) = \mathrm{sech}^{\alpha}\left(|z|/z_s\right).
+h(z) = \frac{\mathrm{sech}^{\alpha}\left(|z|/z_s\right)}{z_s\,B(\alpha/2,\,1/2)},
 $$
+
+where the Euler beta function $B$ normalizes the profile to unit integral along $z$ (for $\alpha = 2$, $z_s\,B(1, 1/2) = 2 z_s$).
 
 Here, $z_s$ is the scale height of the disk, and $\alpha$ is an exponent that controls the sharpness of the vertical profile. By default, $\alpha = 2$, corresponding to the squared hyperbolic secant profile commonly used to describe the vertical structure of disk galaxies ([van der Kruit & Searle 1981](https://ui.adsabs.harvard.edu/abs/1981A&A....95..105V)).
 
@@ -544,15 +556,15 @@ Here, $z_s$ is the scale height of the disk, and $\alpha$ is an exponent that co
 >>> comp = HyperSecantHeight()
 >>> comp.parameters()
 
-Model parameters
-================
+HyperSecantHeight
+=================
 inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
 zs       [deg] : None       | Scale height
 alpha       [] : 2.0000E+00 | Exponent to the hyperbolic secant
 
 Hyperparameters
 ===============
-losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
+losdepth [deg] : 2.7778E-03 | Half line-of-sight extent for integration
 losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
@@ -560,24 +572,16 @@ losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 The `ExponentialHeight` class implements an exponential vertical profile. The functional form of this profile is given simply by:
 
 $$
-h(z) = \exp\left(-|z|/z_s\right).
+h(z) = \frac{\exp\left(-|z|/z_s\right)}{2 z_s},
 $$
+
+normalized to unit integral along $z$.
 
 As in the previous case, $z_s$ is the scale height of the disk.
 
 ```python
 >>> from socca.models.disk.vertical import ExponentialHeight
 >>> comp = ExponentialHeight()
-
-Model parameters
-================
-inc      [rad] : 0.0000E+00 | Inclination angle (0=face-on)
-zs       [deg] : None       | Scale height
-
-Hyperparameters
-===============
-losdepth [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
-losbins     [] : 2.0000E+02 | Number of points for line-of-sight integration
 ```
 
 ### Customizing the radial and vertical components
@@ -589,6 +593,8 @@ By default, the radial profile is modeled using a Sérsic profile, while the ver
 >>> comp = Disk(radial=Exponential(), vertical=ExponentialHeight())
 ```
 
+Any truncation of the radial profile is applied to the in-plane (cylindrical) radius of the disk, not to the projected one. A `gNFW` radial profile contributes its 3D density, normalized to `Ic` at $r = r_c$, rather than its projection, and needs no emulator.
+
 ## Ellipsoid model
 The `Ellipsoid` class implements a three-dimensional model for describing triaxial-ellipsoid structures, evaluated via line-of-sight integration in the same spirit as `Disk`. Unlike `Disk`, which combines separate radial and vertical profiles, `Ellipsoid` projects a single ellipsoidal profile, elongated along its major axis and inclined/rotated with respect to the line of sight.
 
@@ -597,18 +603,20 @@ A common use case for `Ellipsoid` is modeling a galactic bar embedded within a h
 ```
 
 $$
-I(x_0, y_0) = \int_{-l_{\mathrm{max}}}^{+l_{\mathrm{max}}} I_e \exp\left\{-b_n\left[m(l)^{1/n}-1\right]\right\} \mathrm{d}l,
+I(x_0, y_0) = \int_{-\infty}^{+\infty} \frac{f\big(m(l)\big)}{2\,(1 - e_{\mathrm{ratio}}\,e)\,r_s}\, \mathrm{d}l,
 $$
 
-where $(x_0, y_0)$ are the sky-plane coordinates of a given pixel, and $m(l)$ is the dimensionless ellipsoidal radius (already normalized by the ellipsoid's semi-axes, so it evaluates to 1 on the ellipsoid's surface) at line-of-sight position $l$:
+where $(x_0, y_0)$ are the sky-plane coordinates of a given pixel, $f$ is the profile of the `radial` sub-component (any radial profile, `Sersic` by default), and $m(l)$ is the ellipsoidal radius, measured along the major axis, at line-of-sight position $l$. The density is divided by $2\,(1 - e_{\mathrm{ratio}}\,e)\,r_s$, twice the shortest semi-axis at the scale radius $r_s$ of the profile (e.g. `re` for `Sersic`), in the same way a `Disk` divides its radial profile by the thickness of its vertical profile: the amplitude (e.g. `Ie`) is thus a surface brightness. A `CustomProfile`, which has no scale radius, is used as the density as is. The ellipsoidal radius is
 
 $$
-m(l) = \sqrt{\left(\frac{x_t(l)}{r_e}\right)^2 + \left(\frac{y_t(l)}{r_{s,1}}\right)^2 + \left(\frac{z_t(l)}{r_{s,2}}\right)^2}, \qquad r_{s,1} = r_e (1 - e), \quad r_{s,2} = r_e (1 - e_{\mathrm{ratio}}\, e).
+m(l) = \sqrt{x_t(l)^2 + \left(\frac{y_t(l)}{1 - e}\right)^2 + \left(\frac{z_t(l)}{1 - e_{\mathrm{ratio}}\, e}\right)^2}.
 $$
 
-$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and then applying the rotation $\mathrm{rot}$ within that already-inclined frame -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above.
+For the default `Sersic` profile, $f(m) = I_e \exp\{-b_n[(m/r_e)^{1/n}-1]\}$. If `losdepth` is finite (it is infinite by default), the integral is restricted to $m \le$ `losdepth`.
 
-The ellipsoid has one major semi-axis, $r_e$, along $x_t$, and two minor semi-axes along $y_t$ and $z_t$ that need not be equal. $e$ sets the ellipticity between the major axis and the $y_t$ minor axis -- the plane $(x_t, y_t)$ is exactly the plane visible in projection when the ellipsoid is seen face-on ($\mathrm{inc}=0$), so $e$ is the ellipticity of the face-on projected ellipse. $e_{\mathrm{ratio}} \in [0, 1]$ then sets the $z_t$ minor axis's ellipticity as a fraction of $e$ (default 1, making both minor axes equal -- a prolate/oblate spheroid rather than a fully triaxial ellipsoid).
+$(x_t(l), y_t(l), z_t(l))$ are ellipsoid-frame coordinates obtained from $(x_0, y_0, l)$ by rotating by the position angle $\theta$, inclining by $\mathrm{inc}$, and then applying the rotation $\mathrm{rot}$ within that already-inclined frame -- so the line-of-sight coordinate $l$ enters through this transform rather than appearing on its own, in the same way $R$ and $z$ implicitly depend on $l$ in the Disk model above. As for `Disk`, $\theta$ is the position angle of the line of nodes, about which the ellipsoid is inclined, and $\mathrm{rot}$ rotates the major axis away from it: for $\mathrm{rot} = 0$ the major axis lies along the line of nodes, so $\theta$ is also its position angle.
+
+The ellipsoid has one major axis along $x_t$ and two minor axes along $y_t$ and $z_t$ that need not be equal. $e$ sets the ellipticity between the major axis and the $y_t$ minor axis -- the plane $(x_t, y_t)$ is exactly the plane visible in projection when the ellipsoid is seen face-on ($\mathrm{inc}=0$), so $e$ is the ellipticity of the face-on projected ellipse. $e_{\mathrm{ratio}} \in [0, 1]$ then sets the $z_t$ minor axis's ellipticity as a fraction of $e$ (default 1, making both minor axes equal -- a prolate/oblate spheroid rather than a fully triaxial ellipsoid).
 
 ```{caution}
 Because inclining mixes the line-of-sight coordinate into $x_t$ *before* $\mathrm{rot}$ is applied, $\mathrm{rot}$ is **not** simply an additive offset to $\theta$ (i.e. equivalent to using $\theta + \mathrm{rot}$ as the position angle) except in the face-on case $\mathrm{inc} = 0$. For $\mathrm{inc} \neq 0$, it is a genuine rotation of the ellipsoid within its own already-inclined frame -- e.g. letting a bar's long axis point in a different direction than the disk's line of nodes, even though both share the same inclination.
@@ -619,26 +627,28 @@ Because inclining mixes the line-of-sight coordinate into $x_t$ *before* $\mathr
 >>> comp = Ellipsoid()
 >>> comp.parameters()
 
-Model parameters
-================
+Ellipsoid
+=========
 radial.re   [deg] : None       | Effective radius
 radial.Ie [image] : None       | Surface brightness at re
 radial.ns      [] : 5.0000E-01 | Sersic index
 xc          [deg] : None       | Right ascension of centroid
 yc          [deg] : None       | Declination of centroid
-theta       [rad] : 0.0000E+00 | Position angle (east from north)
+theta       [rad] : 0.0000E+00 | Position angle of the line of nodes (east from north)
 e              [] : 0.0000E+00 | Ellipticity between the major axis and the first (in-plane) minor axis
 eratio         [] : 1.0000E+00 | Ratio of the second (vertical) minor axis's ellipticity to e
 inc         [rad] : 0.0000E+00 | Inclination angle (0=face-on); Typically inherited from a Disk object
-rot         [rad] : 0.0000E+00 | Rotation applied after inclining, in the ellipsoid's own tilted frame
+rot         [rad] : 0.0000E+00 | Rotation of the major axis from the line of nodes, in the tilted frame
 
 Hyperparameters
 ===============
-losdepth    [deg] : 2.7778E-03 | Half line-of-sigt extent for integration
-losbins        [] : 2.0000E+02 | Number of points for line-of-sight integration
+losdepth    [deg] : INF        | Maximum ellipsoidal radius for integration
+losbins        [] : 1.2800E+02 | Number of nodes for line-of-sight integration
 ```
 
-Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-components, `Ellipsoid` only delegates the brightness-shape parameters (`re`, `Ie`, `ns` for the default `Sersic` profile) to its `radial` sub-component. Position, orientation, both ellipticities, inclination, rotation, and the line-of-sight integration hyperparameters (`xc`, `yc`, `theta`, `e`, `eratio`, `inc`, `rot`, `losdepth`, `losbins`) live directly on `Ellipsoid` itself:
+Along any line of sight, $m^2 = a\,(l - l_0)^2 + m_{\mathrm{min}}^2$, with $a$ set by the orientation, so the integral is the Abel projection of the density at $m_{\mathrm{min}}$, divided by $\sqrt{a}$. **``socca``** tabulates this projection once per evaluation, with `losbins` Gauss-Legendre nodes, so the cost hardly depends on the image size. A `TopHat` uses its exact projection instead. Truncated profiles, whose edges the table would smooth, are integrated along each pixel's line of sight, split exactly at the truncation: this is accurate, but about twice as slow as a `Disk` (four to five times for gradients). A `gNFW` contributes its 3D density, as in a `Disk`.
+
+Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-components, `Ellipsoid` only delegates the brightness-shape parameters (e.g. `re`, `Ie`, `ns` for the default `Sersic` profile) to its `radial` sub-component, which can be any radial profile. Position, orientation, both ellipticities, inclination, rotation, and the line-of-sight integration hyperparameters (`xc`, `yc`, `theta`, `e`, `eratio`, `inc`, `rot`, `losdepth`, `losbins`) live directly on `Ellipsoid` itself:
 
 ```python
 >>> from socca.models import Ellipsoid, Sersic
@@ -650,16 +660,17 @@ Unlike `Disk`, whose parameters are split across `radial` and `vertical` sub-com
 ```
 
 ```{important}
-If `xc`, `yc`, `theta`, or `e` are set on the `radial` profile before it is passed to `Ellipsoid` (and not also passed as an `Ellipsoid` keyword argument), `Ellipsoid` inherits that value; if both are set, `Ellipsoid`'s value takes precedence and a warning is raised. Either way, `radial` no longer carries these parameters afterwards -- they belong to `Ellipsoid` alone.
+If `xc`, `yc`, `theta`, or `e` are set on the `radial` profile before it is passed to `Ellipsoid` (and not also passed as an `Ellipsoid` keyword argument), `Ellipsoid` inherits that value, with its declared unit; if both are set, `Ellipsoid`'s value takes precedence and a warning is raised. Either way, `radial` no longer carries these parameters afterwards -- they belong to `Ellipsoid` alone.
 ```
 
 ```{note}
-`e` and `eratio` warn (rather than raise) if set, or given a prior distribution whose support reaches, outside `[0, 1)` and `[0, 1]` respectively, since those combinations still evaluate but describe unphysical or degenerate shapes. `theta` and `rot` similarly warn if given a prior spanning more than 180°, since an ellipsoid with `e > 0` is symmetric under a 180° rotation and a wider range can make the posterior multimodal. The same kind of range/span validation applies throughout **``socca``**'s other model components: scale/effective/core radii (e.g. `re`, `rs`, `rc`, `zs`) must be strictly positive, and every other ellipticity parameter (`Profile.e`, `Bridge.e`) and position angle (`Profile.theta`, `Bridge.theta`) follows the same pattern. Tied (`boundto()`) values are not checked, since their eventual numerical value isn't known until evaluation time.
+`e` and `eratio` warn (rather than raise) if set, or given a prior distribution whose support reaches, outside `[0, 1)` and `[0, 1]` respectively, since those combinations still evaluate but describe unphysical or degenerate shapes. `theta` and `rot` have a period of 180° (in their declared units, see `set_units`), since an ellipsoid with `e > 0` is symmetric under a 180° rotation: when the component is added to a model, a prior spanning more than one period warns that it can make the posterior multimodal, and a prior spanning a whole number of periods warns that the nautilus, dynesty and pocomc backends will treat it as periodic. The same kind of range/span validation applies throughout **``socca``**'s other model components: scale/effective/core radii (e.g. `re`, `rs`, `rc`, `zs`) warn if not strictly positive, truncation radii and widths raise, and every other ellipticity parameter (`Profile.e`, `Bridge.e`) and position angle (`Profile.theta`, `Bridge.theta`) follows the same pattern. Tied (`boundto()`) values are not checked, since their eventual numerical value isn't known until evaluation time.
 ```
 
 As mentioned above, a galactic bar is typically embedded within, and shares the same orientation as, a host `Disk`. In that case, the `Ellipsoid`'s position, position angle, and inclination are commonly tied to those of the `Disk` component using [`boundto()`](./tutorial_priors.md):
 
 ```python
+>>> import socca
 >>> from socca.models import Disk, Ellipsoid
 >>>
 >>> disk = Disk()
@@ -688,7 +699,7 @@ All bridge models share a common set of geometric parameters inherited from the 
 - `theta`: Position angle of the bridge major axis (measured east from north)
 - `e`: Projected ellipticity (1 - axis ratio) controlling the relative extent of radial vs. parallel profiles
 
-The scale radius `rs` is applied directly to the parallel profile, while the radial profile uses `rs * (1 - e)` to create an elongated structure.
+The scale radius `rs` is applied directly to the parallel profile, while the radial profile uses `rs * (1 - e)` to create an elongated structure. Both profiles are evaluated on absolute distances from the bridge axes. The scale radius and amplitude of each sub-profile (e.g. `rc` and `Ic` of a `Beta`) are set by the bridge from `rs`, `e` and `Is`: setting them on a sub-profile raises an error when the bridge is evaluated.
 
 ### SimpleBridge
 The `SimpleBridge` class combines radial and parallel profiles multiplicatively, producing a surface brightness distribution of the form:
@@ -704,16 +715,16 @@ This creates structures where the emission is the product of the two independent
 >>> comp = SimpleBridge()
 >>> comp.parameters()
 
-Model parameters
-================
-xc              [deg] : None       | Right ascension of the bridge centroid
-yc              [deg] : None       | Declination of the bridge centroid
-rs              [deg] : None       | Scale radius of the bridge profiles
-Is            [image] : None       | Scale intensity of the bridge profiles
-theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
-e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
-radial.alpha       [] : 2.0000E+00 | Radial exponent
-radial.beta        [] : 5.5000E-01 | Slope parameter
+SimpleBridge
+============
+xc        [deg] : None       | Right ascension of the bridge centroid
+yc        [deg] : None       | Declination of the bridge centroid
+rs        [deg] : None       | Scale radius of the bridge profiles
+Is      [image] : None       | Scale intensity of the bridge profiles
+theta     [rad] : 0.0000E+00 | Position angle of the bridge major axis
+e            [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+radial.alpha [] : 2.0000E+00 | Radial exponent
+radial.beta  [] : 5.5000E-01 | Slope parameter
 ```
 
 ### MesaBridge
@@ -730,17 +741,17 @@ This creates smooth transitions between a flat central region and declining edge
 >>> comp = MesaBridge()
 >>> comp.parameters()
 
-Model parameters
-================
-xc              [deg] : None       | Right ascension of the bridge centroid
-yc              [deg] : None       | Declination of the bridge centroid
-rs              [deg] : None       | Scale radius of the bridge profiles
-Is            [image] : None       | Scale intensity of the bridge profiles
-theta           [rad] : 0.0000E+00 | Position angle of the bridge major axis
-e                  [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
-radial.alpha       [] : 8.0000E+00 | Radial exponent
-radial.beta        [] : 1.0000E+00 | Slope parameter
-parallel.alpha     [] : 8.0000E+00 | Power law slope
+MesaBridge
+==========
+xc          [deg] : None       | Right ascension of the bridge centroid
+yc          [deg] : None       | Declination of the bridge centroid
+rs          [deg] : None       | Scale radius of the bridge profiles
+Is        [image] : None       | Scale intensity of the bridge profiles
+theta       [rad] : 0.0000E+00 | Position angle of the bridge major axis
+e              [] : 5.0000E-01 | Projected ellipticity of the bridge profiles
+radial.alpha   [] : 8.0000E+00 | Radial exponent
+radial.beta    [] : 1.0000E+00 | Slope parameter
+parallel.alpha [] : 8.0000E+00 | Power law slope
 ```
 
 This model is an adaptation of the intracluster bridge parameterization introduced by [Hincks et al. (2022)](https://scixplorer.org/abs/2022MNRAS.510.3335H/abstract).
@@ -756,6 +767,15 @@ Both `SimpleBridge` and `MesaBridge` allow customization of the radial and paral
 ```{note}
 The `PolyExpoRefact`, `Background`, and `Point` profiles are not supported as bridge components due to their special parameter handling requirements.
 ```
+
+## Sub-profiles of composite components
+
+`Disk`, `Ellipsoid` and the bridges own their sub-profiles, and check them before changing anything:
+
+- a profile belongs to one component: wrapping a profile that is already part of another component, or that is already in a model, raises an error, as does adding a wrapped profile to a model. To reuse a profile, wrap a copy made with `copy.copy` (a `copy.deepcopy` keeps the profile's id in its model, so it cannot be wrapped);
+- sub-profiles cannot be replaced after construction (e.g. `disk.radial = Sersic()` raises): create a new component instead;
+- each wrapper accepts only sub-profiles of the right kind (a radial profile, and a `Height` profile for the `vertical` of a `Disk`);
+- parameters that the wrapper owns or ignores are removed from its sub-profiles (e.g. `xc`, `yc`, `theta`, `e` and `cbox` of an `Ellipsoid`'s radial profile, `e` and `cbox` of a `Disk`'s).
 
 ## Other components
 **``socca``** also includes a few additional model components that do not fall into the radial profile category or its finite-thickness disk generalization.
@@ -774,11 +794,11 @@ where $I_{c}$ is the peak surface brightness (or total flux) and $(x_c,y_c)$ den
 >>> comp = Point()
 >>> comp.parameters()
 
-Model parameters
-================
-xc   [deg] : None       | Right ascension
-yc   [deg] : None       | Declination
-Ic [image] : None       | Peak surface brightness
+Point
+=====
+xc   [deg] : None | Right ascension
+yc   [deg] : None | Declination
+Ic [image] : None | Peak surface brightness
 ```
 
 ```{caution}
@@ -808,19 +828,19 @@ $$
 >>> comp = Background()
 >>> comp.parameters()
 
-Model parameters
-================
+Background
+==========
 rs [deg] : 2.7778E-04 | Reference radius for polynomial terms
 a0    [] : None       | Polynomial coefficient 0
 a1x   [] : 0.0000E+00 | Polynomial coefficient 1 in x
 a1y   [] : 0.0000E+00 | Polynomial coefficient 1 in y
-a2xx  [] : 0.0000E+00 | Polynomial coefficient 2 in x*x
-a2xy  [] : 0.0000E+00 | Polynomial coefficient 2 in x*y
-a2yy  [] : 0.0000E+00 | Polynomial coefficient 2 in y*y
-a3xxx [] : 0.0000E+00 | Polynomial coefficient 3 in x*x*x
-a3xxy [] : 0.0000E+00 | Polynomial coefficient 3 in x*x*y
-a3xyy [] : 0.0000E+00 | Polynomial coefficient 3 in x*y*y
-a3yyy [] : 0.0000E+00 | Polynomial coefficient 3 in y*y*y
+a2xx  [] : 0.0000E+00 | Polynomial coefficient 2 in x·x
+a2xy  [] : 0.0000E+00 | Polynomial coefficient 2 in x·y
+a2yy  [] : 0.0000E+00 | Polynomial coefficient 2 in y·y
+a3xxx [] : 0.0000E+00 | Polynomial coefficient 3 in x·x·x
+a3xxy [] : 0.0000E+00 | Polynomial coefficient 3 in x·x·y
+a3xyy [] : 0.0000E+00 | Polynomial coefficient 3 in x·y·y
+a3yyy [] : 0.0000E+00 | Polynomial coefficient 3 in y·y·y
 ```
 
 ```{warning}

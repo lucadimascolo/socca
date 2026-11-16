@@ -1,10 +1,12 @@
 """Exponential disk profiles and variants."""
 
+import copy
 import jax
 import jax.numpy as jp
 
 from .. import config
-from ..base import _warn_range
+from ..base import _fixed, _repoint, _warn_range
+from ...priors import function
 from .base import Profile
 
 
@@ -221,6 +223,10 @@ class PolyExponential(Exponential):
 # PolyExpoRefact
 # Mancera Pina et al., A&A, 689, A344 (2024)
 # --------------------------------------------------------
+def _ratio(numerator, denominator):
+    return numerator / denominator
+
+
 class PolyExpoRefact(Exponential):
     """
     Refactored polynomial exponential profile with intensity coefficients.
@@ -339,7 +345,10 @@ class PolyExpoRefact(Exponential):
         Notes
         -----
         This conversion preserves the exact same surface brightness profile
-        but expresses it using normalized polynomial coefficients.
+        but expresses it using normalized polynomial coefficients. With
+        fixed Is and Ii, the ci are fixed values. Otherwise the Ii are kept
+        as extra parameters (with their priors or ties) and each ci is a
+        function of Ii and Is, so the model is unchanged.
 
         Examples
         --------
@@ -348,14 +357,36 @@ class PolyExpoRefact(Exponential):
         >>> prof_equiv = prof.refactor()
         >>> # prof_equiv is PolyExponential with c1=0.1, c2=0.05, c3=0, c4=0
         """
-        kwargs = {
-            key: getattr(self, key)
-            for key in ["xc", "yc", "theta", "e", "Is", "rs", "rc"]
-        }
-        for ci in range(1, 5):
-            kwargs.update({f"c{ci}": getattr(self, f"I{ci}") / kwargs["Is"]})
+        new = PolyExponential(positive=self.positive, name=self.name)
+        new.truncation = copy.copy(self.truncation)
+        coeffs = [f"c{ci}" for ci in range(1, 5)]
+        intensities = [f"I{ci}" for ci in range(1, 5)]
+        for key in self.parlist():
+            value = _repoint(getattr(self, key), self, new)
+            if key in new.units and key not in coeffs:
+                setattr(new, key, value)
+            elif key not in intensities:
+                new.addparameter(
+                    key, value, self.units[key], self.description.get(key, "")
+                )
+            if key in self._input_units:
+                new._input_units[key] = self._input_units[key]
 
-        return PolyExponential(**kwargs)
+        values = [getattr(self, key) for key in ["Is"] + intensities]
+        if all(_fixed(value) for value in values):
+            for coeff, value in zip(coeffs, values[1:]):
+                setattr(new, coeff, value / values[0])
+            return new
+
+        for coeff, key in zip(coeffs, intensities):
+            new.addparameter(
+                key,
+                _repoint(getattr(self, key), self, new),
+                self.units[key],
+                self.description[key],
+            )
+            setattr(new, coeff, function(_ratio, (new, key), (new, "Is")))
+        return new
 
 
 # Modified Exponential

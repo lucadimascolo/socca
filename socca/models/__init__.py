@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt
+import copy
 import inspect
 import types
 import warnings
@@ -9,11 +9,21 @@ import numpy as np
 
 import numpyro.distributions
 
-from socca.units import conversion_factor as _cfactor
 
-from ..priors import _BoundTo
+from ..priors import _TIED, _BoundTo, _Function
 from . import config
-from .base import Component
+from .base import (
+    _a,
+    _too_old,
+    Component,
+    _check_name,
+    _format_rows,
+    _format_value,
+    _getdotted,
+    _outside,
+    _warn_span,
+    _whole,
+)
 from .misc import Point, Background
 from .disk import Disk
 from .ellipsoid import Ellipsoid
@@ -56,6 +66,8 @@ __all__ = [
     "Background",
     # disk
     "Disk",
+    # ellipsoid
+    "Ellipsoid",
     # bridge
     "SimpleBridge",
     "MesaBridge",
@@ -90,6 +102,7 @@ def zoo():
     - ModExponential: Modified exponential profile
     - Point: Point source model
     - Background: Polynomial background model
+    - SimpleBridge, MesaBridge: Bridge/filament models
     - Disk: 3D disk model with finite thickness
     - Ellipsoid: 3D triaxial-ellipsoid model evaluated via line-of-sight
       integration (e.g. a galactic bar)
@@ -98,6 +111,9 @@ def zoo():
     --------
     >>> import socca.models as models
     >>> models.zoo()
+    <BLANKLINE>
+    Radial models
+    =============
     Beta
     gNFW
     Power
@@ -108,10 +124,24 @@ def zoo():
     PolyExponential
     PolyExpoRefact
     ModExponential
+    <BLANKLINE>
+    Filaments
+    =========
+    SimpleBridge
+    MesaBridge
+    <BLANKLINE>
+    Disk-like model
+    ===============
+    Disk
+    <BLANKLINE>
+    Ellipsoid-like model
+    ====================
+    Ellipsoid
+    <BLANKLINE>
+    Other models
+    ============
     Point
     Background
-    Disk
-    Ellipsoid
     """
     print("\nRadial models")
     print("=============")
@@ -133,9 +163,9 @@ def zoo():
         print(m)
 
     print("\nFilaments")
-    print("============")
+    print("=========")
     models = [
-        "SharpBridge",
+        "SimpleBridge",
         "MesaBridge",
     ]
 
@@ -165,6 +195,33 @@ def zoo():
 # ========================================================
 # General model structure
 # --------------------------------------------------------
+def _period(prof, name):
+    """Return the native period of a (possibly dotted) parameter, or None."""
+    if name in prof.periodic:
+        return prof.periodic[name]
+    sub, local = prof._sub(name)
+    if sub is not None:
+        return sub.periodic.get(local)
+    return None
+
+
+def _warn_lambda(key):
+    """Warn that a lambda tie is deprecated."""
+    warnings.warn(
+        f"Tying {key} with a lambda is deprecated and will be removed: "
+        "use socca.priors.function() instead.",
+        FutureWarning,
+        stacklevel=_outside(),
+    )
+
+
+def _snapshot(value):
+    """Copy a fixed array value, so later in-place edits are seen."""
+    if isinstance(value, (np.ndarray, jax.Array)):
+        return np.array(value)
+    return value
+
+
 class Model:
     """
     Composite model container for combining multiple profile components.
@@ -208,33 +265,63 @@ class Model:
         units : dict
             Dictionary mapping parameter names to their physical units.
         periodic : dict
-            Dictionary mapping parameter names to their period, for
-            parameters that are periodic (e.g. an elliptical profile's
-            ``theta``). Keys absent from this dict are not periodic.
+            Dictionary mapping parameter names to their period, in their
+            declared units (see Component.set_units), for parameters that
+            are periodic (e.g. an elliptical profile's ``theta``). Keys
+            absent from this dict are not periodic.
 
         Examples
         --------
         >>> from socca.models import Model, Beta
         >>> # Create empty model and add component later
         >>> model = Model()
-        >>> model.addcomponent(Beta())
+        >>> model.addcomponent(Beta(xc=180.5, yc=45.2, rc=0.01, Ic=1.0))
         >>> # Or initialize with a profile directly
-        >>> model = Model(Beta())
+        >>> model = Model(Beta(xc=180.5, yc=45.2, rc=0.01, Ic=1.0))
+        >>> model
+        Model
+          Beta (comp_00)
         """
         self.ncomp = 0
         self.priors = {}
         self.params = []
         self.paridx = []
         self.positive = []
-        self.components = []
+        self.components = ()
         self.tied = []
         self.type = []
         self.units = {}
         self.periodic = {}
         self.conversions = {}
+        self._prefix = ()
+        self._owner = []
+        self._positive = ()
+        self._lambdas = {}
+        self._warned = set()
 
         if prof is not None:
-            self.addcomponent(prof, positive)
+            self._addcomponent(prof, positive)
+
+    def __setstate__(self, state):
+        """Restore a pickled model, refusing those saved by socca 1.4.0."""
+        if "_prefix" not in state:
+            raise _too_old("model")
+        self.__dict__.update(state)
+        for key in ("components", "_prefix", "_positive"):
+            self.__dict__[key] = tuple(self.__dict__[key])
+        # rekey on the ids of the unpickled lambdas
+        self._lambdas = {id(p): (p, f) for p, f in self._lambdas.values()}
+
+    def __copy__(self):
+        """Copy the model's tables; the components themselves are shared."""
+        new = Model.__new__(Model)
+        new.__dict__.update(
+            {
+                k: copy.copy(v) if isinstance(v, (list, dict, set)) else v
+                for k, v in self.__dict__.items()
+            }
+        )
+        return new
 
     # Add a new component to the model
     # --------------------------------------------------------
@@ -244,8 +331,9 @@ class Model:
 
         This method incorporates a new profile component into the model, handling
         parameter registration, prior assignments, and constraint management.
-        Components are indexed sequentially and their parameters are prefixed
-        with the component index.
+        Parameters are prefixed with the component id: its ``name=`` if
+        given, else ``comp_NN`` with the lowest free number from the
+        model's current count.
 
         Parameters
         ----------
@@ -259,12 +347,31 @@ class Model:
         ------
         ValueError
             If any parameter in the profile is set to None without a valid
-            value or prior distribution.
+            value or prior distribution, if the component is already in the
+            model or is a sub-profile wrapped by a Disk, Ellipsoid or
+            Bridge, if one of its sub-profiles is already in the model, if
+            its id is already used, if two parameters share a model key, or
+            if a hyperparameter is not fixed.
+        KeyError
+            If a lambda tie argument matches no parameter of the model, or
+            several (when the model is used: getmap, getmodel, fitter).
+
+        Warns
+        -----
+        UserWarning
+            If a prior on a periodic parameter spans a whole number of
+            periods (sampled as periodic by nautilus, dynesty and pocomc)
+            or more than one period.
+        FutureWarning
+            If a parameter is tied with a lambda (use priors.function).
 
         Notes
         -----
-        - Parameters are stored with names like 'comp_00_xc', 'comp_01_rc', etc.
-        - Parameters can be fixed values, prior distributions, or tied (functions).
+        - Parameters are stored as '<id>_<parameter>' (e.g. 'comp_00_xc'),
+          where the id is the component's name, or 'comp_NN' from its
+          position in the model. The component's ``id`` is set to it.
+        - Parameters can be fixed values, prior distributions, or tied
+          (socca.priors.function or boundto).
         - Only parameters with prior distributions are considered free parameters
           during fitting.
         - Tied parameters are evaluated as functions of other parameters.
@@ -274,142 +381,305 @@ class Model:
         >>> from socca.models import Model, Beta, Point
         >>> model = Model()
         >>> # Add a Beta profile
-        >>> model.addcomponent(Beta(xc=180.5, yc=45.2, rc=0.01))
+        >>> model.addcomponent(Beta(xc=180.5, yc=45.2, rc=0.01, Ic=1.0))
         >>> # Add a point source
-        >>> model.addcomponent(Point(xc=180.6, yc=45.3), positive=True)
+        >>> model.addcomponent(Point(xc=180.6, yc=45.3, Ic=1.0), positive=True)
         >>> print(model.ncomp)
         2
+        >>> model
+        Model
+          Beta (comp_00)
+          Point (comp_01)
         """
-        self.type.append(prof.__class__.__name__)
-        self.positive.append(prof.positive if positive is None else positive)
-        for p in prof.parlist():
-            par = eval(f"prof.{p}")
+        self._addcomponent(prof, positive)
 
-            if par is None:
+    def _addcomponent(self, prof, positive):
+        """Add a component; see addcomponent()."""
+        if any(c is prof for c in self.components):
+            raise ValueError(
+                f"This {type(prof).__name__} is already in the model."
+            )
+        if prof._wrapper is not None:
+            raise ValueError(
+                f"This {type(prof).__name__} is part of "
+                f"{_a(type(prof._wrapper).__name__)}: add the "
+                f"{type(prof._wrapper).__name__} instead."
+            )
+        _whole(prof)
+        subs = getattr(prof, "_namespaces", {}).values()
+        if any(sub is c for sub in subs for c in self.components):
+            raise ValueError(
+                f"A sub-component of this {type(prof).__name__} is already "
+                "in the model."
+            )
+        prefix = prof.name
+        if prefix is None:
+            n = self.ncomp
+            while f"comp_{n:02d}" in self._prefix:
+                n += 1
+            prefix = f"comp_{n:02d}"
+        if prefix in self._prefix:
+            raise ValueError(
+                f"The id '{prefix}' is already used in this model: give "
+                f"this {type(prof).__name__} another name."
+            )
+
+        old = (prof.id, self.components, self._prefix, self._positive)
+        self.components += (prof,)
+        self._prefix += (prefix,)
+        self._positive += (positive,)
+        prof.id = prefix
+        try:
+            self._sync()
+        except Exception:
+            prof.id, self.components, self._prefix, self._positive = old
+            raise
+
+    def _legacy(self, par):
+        """Return a lambda tie with jax.numpy available as jp."""
+        cached = self._lambdas.get(id(par))
+        if cached is not None and cached[0] is par:
+            return cached[1]
+        _glb = {
+            name: par.__globals__[name]
+            for name in par.__code__.co_names
+            if name in par.__globals__
+        }
+        _glb["jp"] = jp
+        _glb.setdefault("__builtins__", __builtins__)
+        new = types.FunctionType(
+            par.__code__,
+            _glb,
+            par.__name__,
+            par.__defaults__,
+            par.__closure__,
+        )
+        new.__dict__.update(par.__dict__)
+        self._lambdas[id(par)] = (par, new)
+        return new
+
+    def _sync(self, strict=True):
+        """
+        Rebuild the parameter tables from the components.
+
+        Called when a component is added and whenever the model is used
+        (getmap, parameters, fitter), so changes made to the components
+        after adding them are followed: values, priors, ties, units and
+        truncations. With strict=False (listings), unset values are
+        allowed.
+        """
+        tables = dict(
+            type=[],
+            positive=[],
+            params=[],
+            _owner=[],
+            priors={},
+            paridx=[],
+            tied=[],
+            units={},
+            conversions={},
+            periodic={},
+        )
+        notes = []
+        for nc, (prof, prefix) in enumerate(
+            zip(self.components, self._prefix)
+        ):
+            if strict and prof._wrapper is not None:
                 raise ValueError(
-                    f"Parameter {p} in component {self.ncomp:02d} is set "
-                    f"to None. Please provide a valid value or prior."
+                    f"The {type(prof).__name__} '{prefix}' is now part of a "
+                    f"{type(prof._wrapper).__name__}: a component can "
+                    "belong to one model entry only."
                 )
+            positive = self._positive[nc]
+            tables["type"].append(prof.__class__.__name__)
+            tables["positive"].append(
+                prof.positive if positive is None else positive
+            )
+            for p in prof.parlist():
+                par = _getdotted(prof, p)
+                key = f"{prefix}_{p}"
+                if key in tables["priors"]:
+                    raise ValueError(
+                        f"Two parameters share the model key {key}: rename "
+                        "a component or the parameter."
+                    )
 
-            if isinstance(par, (types.LambdaType, types.FunctionType)):
-                _glb = {
-                    name: par.__globals__[name]
-                    for name in par.__code__.co_names
-                    if name in par.__globals__
-                }
-                _glb["jp"] = jp
-                _glb.setdefault("__builtins__", __builtins__)
-                par = types.FunctionType(
-                    par.__code__,
-                    _glb,
-                    par.__name__,
-                    par.__defaults__,
-                    par.__closure__,
+                if par is None and strict:
+                    raise ValueError(
+                        f"Parameter {p} in component {prefix} is set "
+                        f"to None. Please provide a valid value or prior."
+                    )
+                if (
+                    strict
+                    and p in prof.hyper
+                    and isinstance(
+                        par, (numpyro.distributions.Distribution, *_TIED)
+                    )
+                ):
+                    raise ValueError(
+                        f"{key} is a hyperparameter, not fitted: set it to a "
+                        "fixed value."
+                    )
+
+                unit = prof._input_unit(p)
+                factor = prof._factor(p)
+                period = _period(prof, p)
+                if period is not None:
+                    period = period / factor
+                    notes.append((_warn_span, par, key, (period, unit)))
+
+                if isinstance(par, types.FunctionType):
+                    notes.append((_warn_lambda, par, key, ()))
+                    par = self._legacy(par)
+
+                tables["params"].append(key)
+                tables["_owner"].append(nc)
+                tables["priors"][key] = par
+                if isinstance(par, numpyro.distributions.Distribution):
+                    tables["paridx"].append(len(tables["params"]) - 1)
+                tables["tied"].append(isinstance(par, _TIED))
+                tables["units"][key] = unit
+                if factor != 1.0:
+                    tables["conversions"][key] = factor
+                if period is not None:
+                    tables["periodic"][key] = period
+
+        for warn, par, key, args in notes:
+            tag = (warn.__name__, key, id(par), args)
+            if tag not in self._warned:
+                if warn is _warn_span:
+                    warn(par, key, *args)
+                else:
+                    warn(key)
+                self._warned.add(tag)
+
+        self.__dict__.update(tables)
+        self.ncomp = len(self.components)
+
+    def _state(self):
+        """Return a snapshot of the parameter tables, to detect changes."""
+        return (
+            tuple(self.params),
+            tuple(self.positive),
+            tuple(_snapshot(self.priors[key]) for key in self.params),
+            tuple(sorted(self.conversions.items())),
+            tuple(
+                (
+                    type(getattr(prof, "truncation", None)),
+                    getattr(prof, "_numerics_key", tuple)(),
                 )
+                for comp in self.components
+                for prof in [comp, *getattr(comp, "_namespaces", {}).values()]
+            ),
+        )
 
-            self.params.append(f"comp_{self.ncomp:02d}_{p}")
-            self.priors.update({f"comp_{self.ncomp:02d}_{p}": par})
-            if isinstance(par, numpyro.distributions.Distribution):
-                self.paridx.append(len(self.params) - 1)
+    @staticmethod
+    def _samestate(old, new):
+        """Whether two snapshots match: values by value, priors by identity."""
+        if old[:2] != new[:2] or old[3:] != new[3:]:
+            return False
 
-            if isinstance(
-                par, (types.LambdaType, types.FunctionType, _BoundTo)
-            ):
-                self.tied.append(True)
-            else:
-                self.tied.append(False)
+        def same(a, b):
+            if isinstance(a, (int, float, np.number, np.ndarray)):
+                return isinstance(
+                    b, (int, float, np.number, np.ndarray)
+                ) and np.array_equal(a, b)
+            return a is b
 
-            key = f"comp_{self.ncomp:02d}_{p}"
-            native_unit = prof.units[p]
-            input_unit = prof._input_units.get(p, native_unit)
-            if input_unit != native_unit:
-                self.conversions[key] = _cfactor(input_unit, native_unit)
-            self.units[key] = input_unit
-            if p in prof.periodic:
-                self.periodic[key] = prof.periodic[p]
-
-        self.components.append(prof)
-        self.ncomp += 1
+        return all(same(a, b) for a, b in zip(old[2], new[2]))
 
     def parameters(self, freeonly=False):
         """
-        Print a formatted table of model parameters with their values and units.
+        Print the model parameters, grouped by component.
 
-        This method displays all model parameters, showing fixed values, prior
-        distributions, or tied parameter relationships in a human-readable format.
+        Each component is listed under a ``Type (id)`` line. The model key
+        of a parameter, used in ``fit.labels``, is the id followed by
+        ``_`` and the parameter name (e.g. ``comp_00_xc``,
+        ``core_radial.xc``).
 
         Parameters
         ----------
         freeonly : bool, optional
-            If True, only display parameters with prior distributions (free
-            parameters to be fitted). If False (default), display all parameters
-            including fixed values and tied parameters.
-
-        Notes
-        -----
-        Parameter values are displayed as:
-
-        - Fixed values: shown in scientific notation (e.g., 1.5000E-02)
-        - Prior distributions: shown as "Distribution: DistributionName"
-        - Tied parameters: shown as "Tied parameter"
-
-        The output format is:
-        parameter_name [units] : value
+            If True, only list parameters with prior distributions.
+            Default is False.
 
         Examples
         --------
+        >>> from socca import priors
         >>> from socca.models import Model, Beta
-        >>> import numpyro.distributions as dist
-        >>> model = Model(Beta(xc=dist.Uniform(180, 181), yc=45.2, rc=0.01))
+        >>> beta = Beta(xc=priors.uniform(180, 181), yc=45.2, rc=0.01, Ic=1.0)
+        >>> model = Model(beta)
         >>> model.parameters()
-        Model parameters
-        ================
-        comp_00_xc   [deg]   : Distribution: Uniform
-        comp_00_yc   [deg]   : 4.5200E+01
-        comp_00_rc   [deg]   : 1.0000E-02
-        ...
-        >>> model.parameters(freeonly=True)
-        Model parameters
-        ================
-        comp_00_xc   [deg]   : Distribution: Uniform
+        <BLANKLINE>
+        Beta (comp_00)
+        ==============
+        xc    [deg] : Uniform [180, 181] | Right ascension of centroid
+        yc    [deg] : 4.5200E+01         | Declination of centroid
+        theta [rad] : 0.0000E+00         | Position angle (east from north)
+        e        [] : 0.0000E+00         | Projected ellipticity (1 - axis ratio)
+        cbox     [] : 0.0000E+00         | Projected boxiness
+        rc    [deg] : 1.0000E-02         | Core radius
+        alpha    [] : 2.0000E+00         | Radial exponent
+        beta     [] : 5.5000E-01         | Slope parameter
+        Ic  [image] : 1.0000E+00         | Central surface brightness
         """
-        keyout = []
-        for key in self.params:
-            if freeonly:
-                if isinstance(
-                    self.priors[key], numpyro.distributions.Distribution
-                ):
-                    keyout.append(key)
-            else:
-                keyout.append(key)
-
-        if len(keyout) > 0:
-            maxlen = np.max(
-                np.array([len(f"{key} [{self.units[key]}]") for key in keyout])
-            )
-
-            print("\nModel parameters")
-            print("=" * 16)
-            for key in keyout:
-                keylen = maxlen - len(f" [{self.units[key]}]")
+        self._sync(strict=False)
+        blocks = []
+        for nc, prefix in enumerate(self._prefix):
+            comp = self.components[nc]
+            rows, hyper = [], []
+            for key, owner in zip(self.params, self._owner):
                 par = self.priors[key]
-                if par is None:
-                    keyval = None
-                elif isinstance(par, numpyro.distributions.Distribution):
-                    keyval = f"Distribution: {par.__class__.__name__}"
-                elif isinstance(
-                    par, (types.LambdaType, types.FunctionType, _BoundTo)
+                if owner != nc or (
+                    freeonly
+                    and not isinstance(par, numpyro.distributions.Distribution)
                 ):
-                    keyval = "Tied parameter"
-                else:
-                    keyval = f"{par:.4E}"
-                print(
-                    f"{key:<{keylen}} [{self.units[key]}] : "
-                    + f"{keyval}".ljust(10)
+                    continue
+                name = key[len(prefix) + 1 :]
+                (hyper if name in comp.hyper else rows).append(
+                    (
+                        name,
+                        self.units[key],
+                        _format_value(par, self._source_label),
+                        comp.description.get(name, ""),
+                    )
                 )
+            if rows or hyper:
+                blocks.append((f"{self.type[nc]} ({prefix})", rows, hyper))
 
-        else:
-            print("No parameters defined.")
+        if not blocks:
+            print("No free parameters." if freeonly else "No parameters.")
+            return
+        lines = _format_rows(
+            [row for _, rows, hyper in blocks for row in rows + hyper]
+        )
+        for title, rows, hyper in blocks:
+            print(f"\n{title}\n" + "=" * len(title))
+            if rows:
+                print("\n".join(lines[: len(rows)]))
+            lines = lines[len(rows) :]
+            if hyper:
+                print("\nHyperparameters\n" + "-" * 15)
+                print("\n".join(lines[: len(hyper)]))
+            lines = lines[len(hyper) :]
+
+    def __repr__(self):
+        """List the model components with their ids."""
+        self._sync(strict=False)
+        lines = [
+            f"{ctype} ({prefix})"
+            for ctype, prefix in zip(self.type, self._prefix)
+        ]
+        return "\n".join(["Model"] + ["  " + line for line in lines])
+
+    def _source_label(self, comp, name):
+        """Label of a tie source: the component id and parameter name."""
+        try:
+            key = self._keyof(comp, name)
+            prefix = self._prefix[self._owner[self.params.index(key)]]
+        except ValueError:
+            return f"{type(comp).__name__}.{name} (not in model)"
+        return f"{prefix}.{key[len(prefix) + 1 :]}"
 
     # Get the model map with fixed parameters
     # --------------------------------------------------------
@@ -451,7 +721,7 @@ class Model:
 
         Notes
         -----
-        - All model parameters must be fixed values (float or int).
+        - All model parameters must be fixed values (any numeric type).
         - Tied parameters are automatically evaluated from their dependencies.
         - For use during fitting with sampled parameters, use getmodel() instead.
 
@@ -466,32 +736,18 @@ class Model:
         >>> # Get PSF-convolved model
         >>> convolved_map = model.getmap(img, convolve=True)
         """
-        pars = {}
-        for ki, key in enumerate(self.params):
-            if isinstance(self.priors[key], (float, int)):
-                pars[key] = self.priors[key]
-            elif isinstance(
+        self._sync()
+        for key in self.params:
+            if isinstance(
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 raise ValueError(
                     f"Parameter {key} is a distribution. "
-                    f"Use getmap() with sampled values instead."
+                    f"Use getmodel() with sampled values instead."
                 )
 
-        for ki, key in enumerate(self.params):
-            if self.tied[ki]:
-                if isinstance(self.priors[key], _BoundTo):
-                    pars[key] = pars[self.priors[key].key]
-                else:
-                    kwarg = list(
-                        inspect.signature(self.priors[key]).parameters.keys()
-                    )
-                    kwarg = {k: pars[k] for k in kwarg}
-                    pars[key] = self.priors[key](**kwarg)
-                    del kwarg
-
-        mraw, msmo, mbkg, _ = self.getmodel(
-            img, pars, doresp=False, doexp=False
+        mraw, msmo, mbkg, _ = self._getmodel(
+            img, [], doresp=False, doexp=False
         )
 
         if not addbackground:
@@ -503,67 +759,161 @@ class Model:
             if addbackground:
                 warnings.warn(
                     "The background component is added only to the "
-                    "convolved map. Returning the raw map without background."
+                    "convolved map. Returning the raw map without background.",
+                    stacklevel=_outside(),
                 )
             return mraw
 
+    def _keyof(self, comp, attr):
+        """Return the model key of a component object's parameter."""
+        for c, prefix in zip(self.components, self._prefix):
+            if c is comp:
+                return f"{prefix}_{attr}"
+            for name, sub in getattr(c, "_namespaces", {}).items():
+                if sub is comp:
+                    return f"{prefix}_{name}.{attr}"
+        raise ValueError(
+            f"A tie refers to a {type(comp).__name__} that is not in this "
+            "model."
+        )
+
+    def _tieargs(self, key):
+        """Return the model keys a tied parameter depends on."""
+        tie = self.priors[key]
+        if isinstance(tie, _Function):
+            return [self._keyof(comp, name) for comp, name in tie.sources]
+        args = []
+        for name in inspect.signature(tie).parameters:
+            match = [
+                k for k in self.params if name in (k, k.replace(".", "_"))
+            ]
+            if not match:
+                raise KeyError(
+                    f"Tie argument '{name}' of {key} matches no parameter "
+                    "of this model."
+                )
+            if len(match) > 1:
+                raise KeyError(
+                    f"Tie argument '{name}' of {key} matches several "
+                    f"parameters ({', '.join(match)}): use "
+                    "socca.priors.function() instead."
+                )
+            args.append(match[0])
+        return args
+
+    def _resolve_ties(self, pars):
+        """
+        Evaluate tied parameters in dependency order, in place.
+
+        pars holds native values. Functions take and return declared
+        units (see Component.set_units); boundto copies the value.
+        """
+        scale = self.conversions
+        deps, order = self._tieorder()
+        for key in order:
+            tie = self.priors[key]
+            if isinstance(tie, _BoundTo):
+                pars[key] = pars[deps[key][0]]
+            elif getattr(tie, "native", False):
+                pars[key] = tie(*[pars[dep] for dep in deps[key]])
+            else:
+                args = [pars[dep] / scale.get(dep, 1.0) for dep in deps[key]]
+                pars[key] = tie(*args) * scale.get(key, 1.0)
+
+    def _tieorder(self):
+        """
+        Return the tie dependencies and an evaluation order.
+
+        Raises if a tie refers to a component outside the model, to an
+        unknown parameter, or if ties form a cycle.
+        """
+        deps = {
+            key: self._tieargs(key)
+            for key, tied in zip(self.params, self.tied)
+            if tied
+        }
+        for key, args in deps.items():
+            for dep in args:
+                if dep not in self.priors:
+                    raise ValueError(
+                        f"{key} is tied to {dep}, which is not a parameter "
+                        "of this model."
+                    )
+        order = []
+
+        def visit(key, chain):
+            if key in order:
+                return
+            if key in chain:
+                raise ValueError(
+                    "Circular tie: " + " -> ".join(chain + [key]) + "."
+                )
+            for dep in deps[key]:
+                if dep in deps:
+                    visit(dep, chain + [key])
+            order.append(key)
+
+        for key in deps:
+            visit(key, [])
+        return deps, order
+
     def _comp_filter(self, component=None):
         """
-        Parse component identifiers into a list of integer indices.
-
-        This internal method normalizes various component identifier formats
-        into a consistent list of integer indices for use in model
-        computation and filtering.
+        Parse component selections into a list of model positions.
 
         Parameters
         ----------
-        component : None, str, int, list, or Profile, optional
-            Component identifier(s) to parse. Can be:
-
-            - None: returns all component indices [0, 1, 2, ...]
-            - str: parsed to integer (e.g., 'comp_00' -> [0])
-            - int: returned as single-element list (e.g., 0 -> [0])
-            - list: each element converted individually (can mix types)
-            - Profile object with `id` attribute: converted using the id
+        component : None, int, str, Component, or list of these, optional
+            None selects every component. An int is a position in the
+            model, a str an id (e.g. 'comp_01' or a name), and a
+            component object is found by identity.
 
         Returns
         -------
         list of int
-            List of component indices.
+            Positions of the selected components.
+
+        Raises
+        ------
+        ValueError
+            If a selection matches no component of the model, or names
+            a component more than once.
 
         Examples
         --------
-        >>> model._comp_filter(None)  # All components
+        >>> model._comp_filter(None)
         [0, 1, 2]
-        >>> model._comp_filter(0)  # Single index
-        [0]
-        >>> model._comp_filter([0, 2])  # Multiple indices
+        >>> model._comp_filter([0, "comp_02"])
         [0, 2]
-        >>> model._comp_filter('comp_01')  # String format
-        [1]
         """
         if component is None:
-            component = [int(ci) for ci in range(self.ncomp)]
-        elif isinstance(component, int):
+            return list(range(self.ncomp))
+        if not isinstance(component, (list, tuple)):
             component = [component]
-        elif isinstance(component, str):
-            component = component.replace("comp", "").replace("_", "")
-            component = [int(component)]
-        elif isinstance(component, (list, tuple)):
-            component_ = []
-            for c in component:
-                if isinstance(c, int):
-                    component_.append(c)
-                elif isinstance(c, str):
-                    c_ = c.replace("comp", "").replace("_", "")
-                    component_.append(int(c_))
-                elif hasattr(c, "id"):
-                    c_ = c.id.replace("comp", "").replace("_", "")
-                    component_.append(int(c_))
-                    del c_
-            component = component_
-            del component_
-        return component
+        positions = []
+        for c in component:
+            if isinstance(c, (int, np.integer)) and not isinstance(c, bool):
+                if not 0 <= c < self.ncomp:
+                    raise ValueError(f"No component at position {c}.")
+                positions.append(int(c))
+            elif isinstance(c, str):
+                cid = _check_name(c)
+                if cid not in self._prefix:
+                    raise ValueError(f"No component with id '{c}'.")
+                positions.append(self._prefix.index(cid))
+            else:
+                match = [i for i, m in enumerate(self.components) if m is c]
+                if not match:
+                    raise ValueError(
+                        f"This {type(c).__name__} is not in the model."
+                    )
+                positions.append(match[0])
+        if len(set(positions)) < len(positions):
+            raise ValueError(
+                f"The selection {component!r} names a component more "
+                "than once."
+            )
+        return positions
 
     # Get the model map
     # --------------------------------------------------------
@@ -588,16 +938,14 @@ class Model:
             Default is False.
         doexp : bool, optional
             If True, multiply by the exposure map (img.exposure). Default is False.
-        component : None, str, int, list, or Profile, optional
-            Component(s) to include in the model computation. Can be:
+        component : None, str, int, Component, or list of these, optional
+            Component(s) to include in the model computation:
 
-            - None: Include all components (default)
-            - str: Single component name (e.g., 'comp_00')
-            - int: Component index (e.g., 0 for first component)
-            - list: Multiple components as names, indices, or Profile objects
-            - Profile: Object with `id` attribute specifying the component
-
-            Default is None (all components).
+            - None: all components (default)
+            - str: a component id, its ``name=`` or ``comp_NN``
+            - int: a position in the model (e.g., 0 for the first)
+            - Component: a component of the model, matched by identity
+            - list: several of the above
 
         Returns
         -------
@@ -624,38 +972,46 @@ class Model:
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from astropy.io import fits
+        >>> from astropy.wcs import WCS
+        >>> from socca import priors
+        >>> from socca.data import Image
         >>> from socca.models import Model, Beta
-        >>> import numpyro.distributions as dist
-        >>> model = Model(Beta(xc=dist.Uniform(180, 181), yc=45.2))
-        >>> img = Image('observation.fits')
+        >>> wcs = WCS(naxis=2)
+        >>> wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+        >>> wcs.wcs.crval = [180.5, 45.2]
+        >>> wcs.wcs.crpix = [16.5, 16.5]
+        >>> wcs.wcs.cdelt = [-1e-3, 1e-3]
+        >>> hdu = fits.PrimaryHDU(np.zeros((32, 32)), header=wcs.to_header())
+        >>> img = Image(hdu)
+        >>> beta = Beta(xc=priors.uniform(180, 181), yc=45.2, rc=0.01, Ic=1.0)
+        >>> model = Model(beta)
         >>> # During fitting, pp contains sampled parameter values
         >>> pp = [180.5]  # value for xc
-        >>> mraw, msmo, mbkg, mneg = model.getmodel(img, pp, doresp=True, doexp=True)
+        >>> mraw, msmo, mbkg, mneg = model.getmodel(img, pp)
+        >>> mraw.shape
+        (32, 32)
         """
+        self._sync()
+        return self._getmodel(img, pp, doresp, doexp, component)
+
+    def _getmodel(self, img, pp, doresp=False, doexp=False, component=None):
+        """Compute the model images; the tables must already be synced."""
         pars = {}
         for ki, key in enumerate(self.params):
-            if isinstance(self.priors[key], (float, int)):
-                pars[key] = self.priors[key]
-            elif isinstance(
+            if isinstance(
                 self.priors[key], numpyro.distributions.Distribution
             ):
                 pars[key], pp = pp[0], pp[1:]
+            elif not self.tied[ki]:
+                pars[key] = self.priors[key]
 
         for key, factor in self.conversions.items():
             if key in pars:
                 pars[key] = pars[key] * factor
 
-        for ki, key in enumerate(self.params):
-            if self.tied[ki]:
-                if isinstance(self.priors[key], _BoundTo):
-                    pars[key] = pars[self.priors[key].key]
-                else:
-                    kwarg = list(
-                        inspect.signature(self.priors[key]).parameters.keys()
-                    )
-                    kwarg = {k: pars[k] for k in kwarg}
-                    pars[key] = self.priors[key](**kwarg)
-                    del kwarg
+        self._resolve_ties(pars)
 
         mbkg = jp.zeros(img.data.shape)
         mraw = jp.zeros(img.data.shape)
@@ -666,7 +1022,7 @@ class Model:
         comp_ = self._comp_filter(component)
 
         for nc in comp_:
-            kwarg = self.components[nc]._build_kwargs(pars, f"comp_{nc:02d}")
+            kwarg = self.components[nc]._build_kwargs(pars, self._prefix[nc])
             mone = self.components[nc]._evaluate(img, **kwarg)
 
             if self.positive[nc] and self.type[nc] != "Point":
@@ -722,6 +1078,3 @@ class Model:
         msmo = msmo + mbkg
 
         return mraw, msmo, mbkg, mneg
-
-
-Component.idcls = 0

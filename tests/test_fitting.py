@@ -168,6 +168,95 @@ class TestFitter:
         mod = models.Model(gaussian)
         return fitting.fitter(img, mod)
 
+    def test_model_change_detected_without_resync(self, simple_fitter):
+        """The fitter notices a model change made after its creation."""
+        simple_fitter.mod.components[0].rs = 0.006
+        with pytest.raises(ValueError, match="model changed"):
+            simple_fitter.getmodel()
+        with pytest.raises(ValueError, match="model changed"):
+            simple_fitter.parameters()
+
+    def test_array_values_compared_by_value(self, simple_fitter):
+        """Fixed array values are compared by value, not by identity."""
+        comp = simple_fitter.mod.components[0]
+        value = np.array(0.005)
+        comp.rs = value
+        fit = fitting.fitter(simple_fitter.img, simple_fitter.mod)
+        comp.rs = np.array(0.005)  # equal, so not a change
+        fit._checkmodel()
+        comp.rs = value
+        value[...] = 0.006
+        with pytest.raises(ValueError, match="model changed"):
+            fit._checkmodel()
+
+    def test_old_fit_refused(self, simple_fitter, tmp_path, monkeypatch):
+        """Fits from socca 1.4.0 raise a clear error when loaded."""
+        getstate = models.base.Component.__getstate__
+
+        def old(self):
+            state = getstate(self)
+            del state["_format"]  # as socca 1.4.0 pickled it
+            return state
+
+        monkeypatch.setattr(models.base.Component, "__getstate__", old)
+        simple_fitter.dump(tmp_path / "old.pickle")
+        monkeypatch.undo()
+        with pytest.raises(ValueError, match="socca 1.4.0 or earlier"):
+            fitting.load(tmp_path / "old.pickle")
+
+    def test_unreadable_fit_message(self, tmp_path, monkeypatch):
+        """Fits that fail to unpickle point to socca 1.4.0."""
+        import dill
+
+        def gone():
+            pass
+
+        gone.__module__, gone.__qualname__ = "socca.models", "Model._gone"
+        monkeypatch.setattr(models.Model, "_gone", gone, raising=False)
+        with open(tmp_path / "old.pickle", "wb") as f:
+            dill.dump({"f": gone}, f, byref=True)
+        monkeypatch.undo()
+        with pytest.raises(ValueError, match="pip install socca==1.4.0"):
+            fitting.load(tmp_path / "old.pickle")
+
+    def test_unrelated_load_errors_unchanged(self, simple_fitter, tmp_path):
+        """A corrupt file raises its own error, without the 1.4.0 hint."""
+        import pickle
+
+        simple_fitter.dump(tmp_path / "fit.pickle")
+        data = (tmp_path / "fit.pickle").read_bytes()
+        (tmp_path / "cut.pickle").write_bytes(data[: len(data) // 2])
+        with pytest.raises(Exception) as err:
+            fitting.load(tmp_path / "cut.pickle")
+        assert "1.4.0" not in str(err.value)
+        assert isinstance(err.value, (EOFError, pickle.UnpicklingError))
+
+    def test_truncation_swap_detected(self, simple_fitter):
+        """Swapping a truncation for another type is a model change."""
+        trunc = models.radial.truncation
+        comp = simple_fitter.mod.components[0]
+        comp.truncation = trunc.HyperTangent(rt=0.01, wt=0.001)
+        fit = fitting.fitter(simple_fitter.img, simple_fitter.mod)
+        comp.truncation = trunc.Exponential(rt=0.01, wt=0.001)
+        with pytest.raises(ValueError, match="model changed"):
+            fit._checkmodel()
+
+    def test_loaded_fitter_matches_its_model(self, simple_fitter, tmp_path):
+        """A dumped and loaded fitter does not see its model as changed."""
+        simple_fitter.dump(tmp_path / "fit.pickle")
+        fitting.load(tmp_path / "fit.pickle")._checkmodel()
+
+    def test_loaded_fitter_with_lambda(self, simple_fitter, tmp_path):
+        """A loaded fitter with a lambda tie does not see its model as changed."""
+        comp = simple_fitter.mod.components[0]
+        tied = models.Gaussian(
+            xc=lambda comp_00_xc: comp_00_xc, yc=comp.yc, rs=0.005, Is=1.0
+        )
+        simple_fitter.mod.addcomponent(tied)
+        fit = fitting.fitter(simple_fitter.img, simple_fitter.mod)
+        fit.dump(tmp_path / "fit.pickle")
+        fitting.load(tmp_path / "fit.pickle")._checkmodel()
+
     def test_initialization(self, simple_fitter):
         """Test fitter initialization."""
         assert simple_fitter.img is not None
@@ -442,6 +531,36 @@ class TestPeriodicAutoDetection:
 
         assert not any("periodic" in m.lower() for m in msgs)
         assert mock_cls.call_args.kwargs["periodic"] == [theta_idx]
+
+    @pytest.mark.parametrize("turns, wraps", [(2.0, True), (1.5, False)])
+    def test_auto_periodic_needs_whole_periods(self, simple_hdu, turns, wraps):
+        """Only priors spanning whole periods wrap onto equivalent values."""
+        import socca.fitting.methods.nautilus as nautilus_mod
+
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        gaussian = models.Gaussian(
+            xc=simple_hdu.header["CRVAL1"],
+            yc=simple_hdu.header["CRVAL2"],
+            rs=0.005,
+            Is=priors.uniform(0.0, 20.0),
+            theta=priors.uniform(0.0, turns * np.pi),
+        )
+        fit = fitting.fitter(img=img, mod=models.Model(gaussian))
+        n_free = len(fit.labels)
+        with patch.object(
+            nautilus_mod.nautilus, "Sampler", autospec=True
+        ) as mock_cls:
+            inst = mock_cls.return_value
+            inst.posterior.return_value = (
+                np.zeros((5, n_free)),
+                np.zeros(5),
+                None,
+            )
+            inst.log_z = -1.0
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                fit.run(method="nautilus", n_live=10)
+        assert ("periodic" in mock_cls.call_args.kwargs) == wraps
 
     def test_explicit_periodic_overrides_auto_detection(self, periodic_fitter):
         """Passing periodic= explicitly suppresses auto-detection and is forwarded as-is."""
@@ -1033,3 +1152,39 @@ class TestEmceeSpecific:
         assert isinstance(multi_param_fitter.sampler, emcee.EnsembleSampler)
         assert multi_param_fitter.sampler.iteration == 100
         assert multi_param_fitter.sampler.nwalkers == 10
+
+
+def test_parameters_grouped_by_id(simple_hdu, capsys):
+    """fit.parameters groups by component id, even with underscores."""
+    import types
+
+    img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+    comp = models.Gaussian(
+        name="my_core", xc=180.0, yc=45.0, rs=0.005, Is=priors.uniform(0, 1)
+    )
+    comp.addparameter("rs_scale", priors.uniform(0.0, 1.0))
+    fit = fitting.fitter(img, models.Model(comp))
+    fit.method = "optimizer"
+    fit.results = types.SimpleNamespace(parameters=np.array([0.5, 0.25]))
+    fit.parameters()
+    out = capsys.readouterr().out
+    assert "Gaussian (my_core)" in out
+    assert "rs_scale" in out
+
+
+def test_corner_selection_by_owner(simple_hdu):
+    """Selecting a component does not pick others sharing its prefix."""
+    from socca.plotting import _component_indices
+
+    img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+    disk = models.Beta(name="disk", xc=priors.uniform(179.9, 180.1), yc=45.0)
+    bar = models.Beta(
+        name="disk_bar", xc=priors.uniform(179.9, 180.1), yc=45.0
+    )
+    for comp in (disk, bar):
+        comp.rc, comp.Ic = 0.01, 1.0
+    mod = models.Model(disk)
+    mod.addcomponent(bar)
+    fit = fitting.fitter(img, mod)
+    assert list(_component_indices(fit, mod._comp_filter("disk"))) == [0]
+    assert list(_component_indices(fit, mod._comp_filter("disk_bar"))) == [1]

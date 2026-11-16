@@ -1,25 +1,37 @@
 """Sersic profile for modeling elliptical galaxies and bulges."""
 
-import warnings
-
 import jax
 import jax.numpy as jp
-import numpyro.distributions
-
-import numpy as np
-from scipy.special import gammaincinv
+from jax.scipy.special import gammainc, gammaln
 
 from .. import config
 from ..base import _warn_range
-from .base import Profile
+from .base import Profile, _safe_power
 
 
-# Precompute Sersic bn values for interpolation
-n_ = np.linspace(0.25, 10.00, 1000)
-b_ = gammaincinv(2.00 * n_, 0.5)
+@jax.custom_jvp
+def _bn(ns):
+    """Solve P(2 ns, bn) = 1/2 by Newton steps in log bn."""
+    a = 2.00 * ns
+    big = a - 1.00 / 3.00 + 4.00 / (405.00 * ns) + 46.00 / (25515.00 * ns**2)
+    small = jp.exp((jp.log(0.50) + gammaln(a + 1.00)) / a)
+    u = jp.log(jp.where(ns < 0.50, small, big))
 
-n_ = jp.array(n_)
-b_ = jp.array(b_)
+    def step(u, _):
+        f = gammainc(a, jp.exp(u)) - 0.50
+        return u - f / jp.exp(a * u - jp.exp(u) - gammaln(a)), None
+
+    u, _ = jax.lax.scan(step, u, None, length=6)
+    return jp.exp(u)
+
+
+@_bn.defjvp
+def _bn_jvp(primals, tangents):
+    (ns,), (dns,) = primals, tangents
+    bn, a = _bn(ns), 2.00 * ns
+    dpda = jax.grad(gammainc)(a, bn)
+    dpdb = jp.exp((a - 1.00) * jp.log(bn) - bn - gammaln(a))
+    return bn, -2.00 * dpda / dpdb * dns
 
 
 class Sersic(Profile):
@@ -73,20 +85,14 @@ class Sersic(Profile):
 
     @ns.setter
     def ns(self, value):  # noqa: D102
-        wstring = None
-        if isinstance(value, numpyro.distributions.Distribution):
-            if (
-                value.support.upper_bound > 10.00
-                or value.support.lower_bound < 0.25
-            ):
-                wstring = "The ns prior support includes values"
-        elif value < 0.25 or value > 10.00:
-            wstring = "The ns parameter falls"
-        if wstring is not None:
-            raise ValueError(
-                f"{wstring} outside the range [0.25,10.] "
-                "This might lead to inaccurate interpolation."
-            )
+        _warn_range(
+            value,
+            "ns",
+            lower=0.25,
+            upper=10.0,
+            note="Sersic indices outside [0.25, 10] are not supported.",
+            error=True,
+        )
         self._ns = value
 
     @staticmethod
@@ -124,7 +130,8 @@ class Sersic(Profile):
         I(r) = Ie * exp(-bn * [(r/re)^(1/ns) - 1])
 
         where bn is chosen such that re encloses half the total light.
-        The parameter bn is approximated numerically and interpolated.
+        bn solves P(2 ns, bn) = 1/2, with P the regularized lower
+        incomplete gamma function.
 
         Common special cases:
 
@@ -146,6 +153,6 @@ class Sersic(Profile):
         >>> # de Vaucouleurs profile for elliptical galaxy
         >>> I = Sersic.profile(r, Ie=50.0, re=0.02, ns=4.0)
         """
-        bn = jp.interp(ns, n_, b_)
-        se = jp.power(r / re, 1.00 / ns) - 1.00
+        bn = _bn(ns)
+        se = _safe_power(r / re, 1.00 / ns) - 1.00
         return Ie * jp.exp(-bn * se)

@@ -10,12 +10,6 @@ import socca.priors as priors
 from socca.units import conversion_factor
 
 
-@pytest.fixture(autouse=True)
-def reset_idcls():
-    """Reset Component ID counter before each test."""
-    models.Component.idcls = 0
-
-
 class TestConversionFactor:
     """Tests for socca.units.conversion_factor."""
 

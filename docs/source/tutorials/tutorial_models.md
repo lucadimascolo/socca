@@ -105,7 +105,7 @@ where:
 - `model_background`: the background component only
 - `mask_negative`: a mask indicating pixels where positivity constraints were violated
 
-The `params` array must contain the parameter values in the order expected by the model. This order is determined by how components were added to the model and can be inspected via the `parameters()` method of the `Model` object:
+The `params` array must contain the values of the free parameters (those with priors), in the order in which they appear in the model. This order follows how components were added to the model; the keys of all parameters are in `model.params`, and those of the free parameters in `[model.params[i] for i in model.paridx]` (the same as `fit.labels` for a fitter). The `parameters()` method of the `Model` object lists them by component:
 
 ```python
 >>> from socca.models import Model, Sersic, Exponential
@@ -124,25 +124,59 @@ The `params` array must contain the parameter values in the order expected by th
 >>>
 >>> model.parameters() # Print all parameters (fixed and free)
 
-Model parameters
+Sersic (comp_00)
 ================
-comp_00_xc    [deg] : 0.0000E+00
-comp_00_yc    [deg] : 0.0000E+00
-comp_00_theta [rad] : 0.0000E+00
-comp_00_e        [] : 0.0000E+00
-comp_00_cbox     [] : 0.0000E+00
-comp_00_re    [deg] : Distribution: LogUniform
-comp_00_Ie  [image] : Distribution: LogUniform
-comp_00_ns       [] : 1.0000E+00
+xc    [deg] : 0.0000E+00                | Right ascension of centroid
+yc    [deg] : 0.0000E+00                | Declination of centroid
+theta [rad] : 0.0000E+00                | Position angle (east from north)
+e        [] : 0.0000E+00                | Projected ellipticity (1 - axis ratio)
+cbox     [] : 0.0000E+00                | Projected boxiness
+re    [deg] : LogUniform [0.0001, 0.01] | Effective radius
+Ie  [image] : LogUniform [0.01, 100]    | Surface brightness at re
+ns       [] : 1.0000E+00                | Sersic index
 
 >>> model.parameters(freeonly=True) # Print only free parameters (those with priors)
 
-Model parameters
+Sersic (comp_00)
 ================
-comp_00_re    [deg] : Distribution: LogUniform
-comp_00_Ie  [image] : Distribution: LogUniform
+re   [deg] : LogUniform [0.0001, 0.01] | Effective radius
+Ie [image] : LogUniform [0.01, 100]    | Surface brightness at re
+
+>>> model.params[5:7]
+['comp_00_re', 'comp_00_Ie']
 ```
 
-Each label follows the pattern `<component_id>_<parameter_name>`, where `component_id` is the default name (e.g., `comp_00`, `comp_01`, ...) assigned by **``socca``** when initializing the corresponding component. This ordering is consistent throughout the inference process and must be respected when manually constructing parameter arrays for `getmodel()`.
+Each key follows the pattern `<component_id>_<parameter_name>`. For the sub-profiles of a `Disk`, an `Ellipsoid` or a bridge, the parameter name is dotted, e.g. `comp_00_radial.re` or `comp_00_vertical.zs`. This ordering is consistent throughout the inference process and must be respected when manually constructing parameter arrays for `getmodel()`.
 
 In practice, when working with fitted models, the `fitter` object provides the more convenient `getmodel()` method (see the ["Running the model inference"](./tutorial_fitting.md) tutorial), which automatically uses the best-fit or median posterior parameters.
+
+## Component ids and names
+
+A component gets its id when it is added to a model: its `name`, if one was given at construction, or otherwise `comp_NN`, with the lowest number not yet used in that model (`comp_00`, `comp_01`, ...). A name must be a Python identifier; an integer or `comp_N` is normalized to `comp_NN`. Ids are unique within a model, and adding a component whose id is already used raises an error. A component that has not been added to a model has `id = None`.
+
+```python
+>>> halo = Exponential(name="halo", xc=0.00, yc=0.00, rs=2.00E-03, Is=0.50)
+>>> model.addcomponent(halo)
+>>> halo.id
+'halo'
+>>> model.params[-3:]
+['halo_cbox', 'halo_rs', 'halo_Is']
+```
+
+Ids are also used to select components, e.g. in `fit.getmodel(component=...)`, which accepts ids, positions or the component objects themselves.
+
+## Units
+
+Parameters are stored in native units (degrees for positions and radii, radians for angles), but can be given in other units with `set_units`:
+
+```python
+>>> comp = Sersic()
+>>> comp.set_units(re="arcsec", theta="deg")
+>>> comp.re = 3.60  # arcsec
+```
+
+Priors, fixed values and ties are then expressed in the declared units, and periodic parameters have their period in those units (e.g. 180 for a position angle in degrees). On a `Disk`, an `Ellipsoid` or a bridge, the units of a sub-profile parameter can be declared on the sub-profile itself or on the wrapper with its dotted name, e.g. `disk.set_units(**{"radial.re": "arcsec"})`.
+
+## Changing components after adding them
+
+A model reads its components whenever it is used, so values, priors, ties, units and truncations changed after `addcomponent()` are taken into account. A fitter, instead, is built for the model as it was when the fitter was created: if the model changes afterwards, the fitter raises an error, and a new fitter must be created.

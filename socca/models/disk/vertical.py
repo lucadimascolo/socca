@@ -3,9 +3,13 @@
 from abc import abstractmethod
 
 import jax
+import jax.scipy.special
 import jax.numpy as jp
+import numpy as np
+import numpyro.distributions
 
 from .. import config
+from ...priors import _TIED
 from ..base import Component, _warn_range
 
 
@@ -24,9 +28,11 @@ class Height(Component):
         inc : float, optional
             Inclination angle in radians (0 = face-on, pi/2 = edge-on).
         losdepth : float, optional
-            Half-extent of line-of-sight integration in degrees.
+            Half-extent of line-of-sight integration in degrees; finite
+            and positive.
         losbins : int, optional
-            Number of integration points along the line of sight.
+            Number of integration points along the line of sight; an
+            integer >= 2.
         positive : bool, optional
             Whether to enforce positivity constraint.
 
@@ -35,18 +41,40 @@ class Height(Component):
     inc : float
         Inclination angle (rad).
     losdepth : float
-        Half line-of-sight depth for numerical integration (deg).
+        Half line-of-sight depth for numerical integration (deg,
+        hyperparameter).
     losbins : int
         Number of points for line-of-sight integration (hyperparameter).
+
+    Raises
+    ------
+    ValueError
+        If losdepth is not finite and positive, or losbins is not an
+        integer >= 2.
 
     Notes
     -----
     - Subclasses must implement the abstract profile(z) method
-    - The profile should return the density as a function of height z
+    - The profile should return the density as a function of height z,
+      with unit integral along z
+    - losdepth and losbins are hyperparameters: fixed values, no priors
     - losdepth and losbins control the numerical integration accuracy
     - Larger losdepth needed for extended vertical distributions
     - More losbins increase accuracy but decrease speed
     """
+
+    def __setattr__(self, name, value):
+        """Reject an infinite losdepth: the Disk spaces its nodes over it."""
+        fixed = not isinstance(
+            value, (numpyro.distributions.Distribution, *_TIED, type(None))
+        )
+        if name == "losdepth" and fixed:
+            if not np.isfinite(np.asarray(value, dtype=float)).all():
+                raise ValueError(
+                    "A Disk's losdepth must be finite: its line-of-sight "
+                    "nodes are spread over [-losdepth, losdepth]."
+                )
+        super().__setattr__(name, value)
 
     def __init__(self, **kwargs):
         """
@@ -69,7 +97,7 @@ class Height(Component):
 
         self.description.update(
             dict(
-                losdepth="Half line-of-sigt extent for integration",
+                losdepth="Half line-of-sight extent for integration",
                 losbins="Number of points for line-of-sight integration",
                 inc="Inclination angle (0=face-on)",
             )
@@ -88,7 +116,7 @@ class Height(Component):
         Returns
         -------
         ndarray
-            Density at height z (normalized).
+            Density at height z, with unit integral along z.
 
         Notes
         -----
@@ -131,9 +159,10 @@ class HyperSecantHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = sech(abs(z)/zs)^alpha
+    rho(z) = sech(abs(z)/zs)^alpha / (zs B(alpha/2, 1/2))
 
-    Common cases:
+    with B the beta function, so that it has unit integral along z.
+    alpha <= 0 warns. Common cases:
 
     - alpha = 1: Simple sech profile
     - alpha = 2: sech^2 profile (isothermal disk)
@@ -177,6 +206,21 @@ class HyperSecantHeight(Height):
         )
         self._zs = value
 
+    @property
+    def alpha(self):  # noqa: D102
+        return self._alpha
+
+    @alpha.setter
+    def alpha(self, value):  # noqa: D102
+        _warn_range(
+            value,
+            "alpha",
+            lower=0,
+            lower_strict=True,
+            note="The exponent must be strictly positive.",
+        )
+        self._alpha = value
+
     @staticmethod
     @jax.jit
     def profile(z, zs, alpha):
@@ -195,14 +239,19 @@ class HyperSecantHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: sech(abs(z)/zs)^alpha.
+            Density at height z: sech(abs(z)/zs)^alpha / (zs B(alpha/2, 1/2)),
+            normalised to unit integral along z.
 
         Notes
         -----
         Uses absolute value of z to ensure symmetry about the midplane.
         """
-        factor = jp.cosh(jp.abs(z) / zs)
-        return 1.00 / factor**alpha
+        u = jp.abs(z) / zs
+        norm = zs * jp.exp(jax.scipy.special.betaln(0.50 * alpha, 0.50))
+        return (
+            jp.exp(alpha * (jp.log(2.00) - u - jp.log1p(jp.exp(-2.00 * u))))
+            / norm
+        )
 
 
 # Exponential height
@@ -235,11 +284,12 @@ class ExponentialHeight(Height):
     -----
     The profile is defined as:
 
-    rho(z) = exp(-abs(z)/zs)
+    rho(z) = exp(-abs(z)/zs) / (2 zs)
 
-    This simple exponential profile is appropriate for thin stellar disks
-    and is the vertical analog of the exponential radial profile. The scale
-    height zs is typically much smaller than the radial scale length.
+    so that it has unit integral along z. This simple exponential profile
+    is appropriate for thin stellar disks and is the vertical analog of
+    the exponential radial profile. The scale height zs is typically much
+    smaller than the radial scale length.
 
     The exponential profile has a sharp peak at the midplane and falls off
     more rapidly than sech profiles, making it suitable for thin disks.
@@ -291,10 +341,11 @@ class ExponentialHeight(Height):
         Returns
         -------
         ndarray
-            Density at height z: exp(-abs(z)/zs).
+            Density at height z: exp(-abs(z)/zs) / (2 zs), normalised to unit
+            integral along z.
 
         Notes
         -----
         Uses absolute value of z to ensure symmetry about the midplane.
         """
-        return jp.exp(-jp.abs(z) / zs)
+        return jp.exp(-jp.abs(z) / zs) / (2.00 * zs)

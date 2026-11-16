@@ -206,5 +206,5 @@ class Ellipsoid:
     eratio: float = 1.00
     inc: float = 0.00
     rot: float = 0.00
-    losdepth: float = 10.00 / 60.00 / 60.00
-    losbins: int = 200
+    losdepth: float = float("inf")
+    losbins: int = 128
