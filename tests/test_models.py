@@ -392,6 +392,22 @@ class TestSersic:
         result = models.Sersic.profile(r, Ie=Ie, re=re, ns=1.0)
         assert float(result[0]) == pytest.approx(Ie, rel=0.01)
 
+    def test_bn_exact(self):
+        """Test that bn and its derivative match scipy across the range."""
+        from scipy.special import gammaincinv
+
+        from socca.models.radial.sersic import _bn
+
+        ns = np.geomspace(0.25, 10.0, 200)
+        bn = np.asarray(jax.vmap(_bn)(jp.asarray(ns)))
+        np.testing.assert_allclose(bn, gammaincinv(2.0 * ns, 0.5), rtol=1e-12)
+        h = 1e-6 * ns
+        fd = (
+            gammaincinv(2 * (ns + h), 0.5) - gammaincinv(2 * (ns - h), 0.5)
+        ) / (2 * h)
+        grad = np.asarray(jax.vmap(jax.grad(_bn))(jp.asarray(ns)))
+        np.testing.assert_allclose(grad, fd, rtol=1e-6)
+
 
 class TestExponential:
     """Tests for Exponential profile."""

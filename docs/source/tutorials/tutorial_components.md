@@ -213,7 +213,7 @@ $$
 I(r) = I_e \exp\left\{-b_n \left[ \left( \frac{r}{r_e} \right)^{1/n} - 1 \right]\right\},
 $$
 
-where $r_e$ is the effective radius enclosing half of the total flux, $I_e$ is the surface brightness at $r_e$, and $n$ is the Sérsic index controlling the concentration of the profile. The constant $b_n$ is defined such that $\Gamma(2n) = 2\gamma(2n, b_n)$, where $\Gamma$ and $\gamma$ are the complete and incomplete Gamma functions, respectively. For computational efficiency, the value of $b_n$ is interpolated at each step of the inference from a precomputed lookup table covering the range $n \in [0.25, 10]$.
+where $r_e$ is the effective radius enclosing half of the total flux, $I_e$ is the surface brightness at $r_e$, and $n$ is the Sérsic index controlling the concentration of the profile. The constant $b_n$ is defined such that $\Gamma(2n) = 2\gamma(2n, b_n)$, where $\Gamma$ and $\gamma$ are the complete and incomplete Gamma functions, respectively. **``socca``** solves for $b_n$ exactly at each evaluation, for $n \in [0.25, 10]$.
 
 The Sérsic profile encompasses several commonly used models as special cases, including the Gaussian ($n=0.5$), the exponential ($n = 1$), and the de Vaucouleurs ($n = 4$) profiles.
 
