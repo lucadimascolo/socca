@@ -146,6 +146,15 @@ class TestCircularQuantile:
         # Recentered samples no longer straddle the wrap boundary.
         assert recentered.max() - recentered.min() < 1.0
 
+    def test_origin(self):
+        """Quantiles and mean are wrapped into [origin, origin + period)."""
+        theta = np.random.default_rng(2).normal(-0.02, 0.01, 5000)
+        weights = np.ones_like(theta) / theta.size
+        q = circular_quantile(theta, weights, np.pi, [0.5], -np.pi / 2)
+        assert q[0] == pytest.approx(-0.02, abs=1e-3)
+        _, mean = circular_recenter(theta, weights, np.pi, -np.pi / 2)
+        assert mean == pytest.approx(-0.02, abs=1e-3)
+
 
 class TestFitter:
     """Tests for fitter class."""
@@ -506,6 +515,42 @@ class TestPeriodicAutoDetection:
             samples[:, other_idx], [0.16, 0.50, 0.84], weights
         )
         np.testing.assert_allclose(qvals[other_idx], expected_other)
+
+    @pytest.mark.parametrize(
+        "low, high, circular",
+        [
+            (-np.pi / 2, np.pi / 2, True),
+            (-0.3, 0.3, False),
+            (0.0, 3.1416, False),
+        ],
+    )
+    def test_periodic_median_in_prior_range(
+        self, simple_hdu, low, high, circular
+    ):
+        """A theta posterior just below 0 keeps its sign, wrapping or not."""
+        img = data.Image(simple_hdu, noise=noise.Normal(sigma=0.1))
+        gaussian = models.Gaussian(
+            xc=simple_hdu.header["CRVAL1"],
+            yc=simple_hdu.header["CRVAL2"],
+            rs=0.005,
+            Is=10.0,
+            theta=priors.uniform(low, high),
+        )
+        fit = fitting.fitter(img=img, mod=models.Model(gaussian))
+        theta = np.random.default_rng(3).normal(-0.02, 0.01, 4000)
+        if low >= 0:
+            theta = theta % np.pi
+        fit.samples, fit.weights = theta[:, None], np.ones(4000) / 4000
+        assert (fit._circular()[0] is not None) == circular
+        median = fit.getquantiles([0.5])[0, 0]
+        expected = np.pi - 0.02 if low >= 0 else -0.02
+        assert median == pytest.approx(expected, abs=2e-3)
+
+        with patch("socca.plotting.corner.corner") as corner_mock:
+            with patch("socca.plotting.plt.show"):
+                fit.plot.corner()
+        plotted = corner_mock.call_args.kwargs["data"][:, 0]
+        assert np.median(plotted) == pytest.approx(expected, abs=2e-3)
 
     def test_nautilus_auto_injects_periodic(self, periodic_fitter):
         """A full-period theta prior gets forwarded as periodic=[...] to nautilus.Sampler, without warning again at run() time (the warning already fired when theta's prior was set)."""

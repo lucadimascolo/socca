@@ -123,7 +123,7 @@ def weighted_quantile(a, quantiles, weights, axis=0):
 
 # Circular (periodic) statistics
 # --------------------------------------------------------
-def circular_recenter(samples, weights, period):
+def circular_recenter(samples, weights, period, origin=0.00):
     """
     Shift and wrap samples so their circular mean sits at the range center.
 
@@ -143,6 +143,8 @@ def circular_recenter(samples, weights, period):
     period : float
         Period of the quantity (e.g. ``jp.pi`` for a position angle
         symmetric under ``theta -> theta + pi``).
+    origin : float, optional
+        Start of the range the mean is wrapped into. Default is 0.
 
     Returns
     -------
@@ -150,24 +152,25 @@ def circular_recenter(samples, weights, period):
         ``samples``, shifted by the circular mean and wrapped into
         ``[-period/2, period/2)``.
     mean : float
-        The circular mean of ``samples``, in the original ``[0, period)``
-        range.
+        The circular mean of ``samples``, in ``[origin, origin + period)``.
     """
     phi = 2.00 * np.pi * np.asarray(samples) / period
     cosbar = np.average(np.cos(phi), weights=weights)
     sinbar = np.average(np.sin(phi), weights=weights)
-    mean = (np.arctan2(sinbar, cosbar) * period / (2.00 * np.pi)) % period
+    mean = np.arctan2(sinbar, cosbar) * period / (2.00 * np.pi)
+    mean = (mean - origin) % period + origin
     recentered = (samples - mean + period / 2.00) % period - period / 2.00
     return recentered, mean
 
 
-def circular_quantile(samples, weights, period, quantiles):
+def circular_quantile(samples, weights, period, quantiles, origin=0.00):
     """
     Weighted quantiles of a periodic quantity, correct across its wrap boundary.
 
     Computed by recentering on the circular mean (see `circular_recenter`),
     taking ordinary weighted quantiles of the recentered (non-wrapping)
-    samples, then shifting back and wrapping into ``[0, period)``.
+    samples, then shifting back and wrapping into
+    ``[origin, origin + period)``.
 
     Parameters
     ----------
@@ -179,21 +182,23 @@ def circular_quantile(samples, weights, period, quantiles):
         Period of the quantity (e.g. ``jp.pi`` for a position angle).
     quantiles : array_like
         Quantiles to compute, in ``[0, 1]``.
+    origin : float, optional
+        Start of the range the quantiles are wrapped into. Default is 0.
 
     Returns
     -------
     ndarray
-        The requested quantiles, each wrapped into ``[0, period)``.
+        The requested quantiles, each wrapped into
+        ``[origin, origin + period)``.
 
     Notes
     -----
-    Because each returned value is wrapped independently into
-    ``[0, period)``, a plain difference between two returned quantiles
-    (e.g. for an upper/lower error bar) can come out negative when the
-    interval straddles the wrap boundary. Callers needing such a
-    difference should wrap it too:
+    Because each returned value is wrapped independently, a plain
+    difference between two returned quantiles (e.g. for an upper/lower
+    error bar) can come out negative when the interval straddles the wrap
+    boundary. Callers needing such a difference should wrap it too:
     ``(qhi - qlo + period / 2.00) % period - period / 2.00``.
     """
-    recentered, mean = circular_recenter(samples, weights, period)
+    recentered, mean = circular_recenter(samples, weights, period, origin)
     q = weighted_quantile(recentered, quantiles, weights)
-    return (np.asarray(q) + mean) % period
+    return (np.asarray(q) + mean - origin) % period + origin

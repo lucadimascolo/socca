@@ -116,7 +116,7 @@ Integer indices into `fit.labels` are also accepted (and are what actually gets 
 ```
 
 ```{note}
-This only changes how the *sampler* proposes/bounds periodic dimensions during sampling. It does not affect how results are summarized afterwards: `fit.getquantiles()`, `parameters()`, and `fit.plot.corner()` always use `fit.periodic` (derived once from the model's periodicity metadata, independent of what was passed to `run()`) to compute circular-aware quantiles and recenter posterior plots on the circular mean. See {ref}`Printing best-fit parameters <printing-best-fit-parameters>` below and the {ref}`Corner plot <corner-plot>` guide.
+This only changes how the *sampler* proposes/bounds periodic dimensions during sampling. It does not affect how results are summarized afterwards: `fit.getquantiles()`, `parameters()`, and `fit.plot.corner()` use circular-aware quantiles, and recenter posterior plots on the circular mean, for the parameters in `fit.periodic` whose prior spans a whole number of periods (the only ones whose samples can wrap), independent of what was passed to `run()`. See {ref}`Printing best-fit parameters <printing-best-fit-parameters>` below and the {ref}`Corner plot <corner-plot>` guide.
 ```
 
 ### Point-estimate optimization
@@ -310,7 +310,7 @@ re    :  4.1755E-04 [+3.3501E-06/-3.2982E-06]
 Ie    :  3.0145E-01 [+2.9658E-03/-2.9120E-03]
 ```
 
-Both median value and uncertainties for each parameter are computed from the weighted posterior samples stored in `fit.samples` and `fit.weights`. For {ref}`periodic parameters <periodic-parameters>` (listed in `fit.periodic`), these are computed with a circular-aware quantile that recenters the samples on their circular mean before taking quantiles, so a posterior straddling the wrap boundary (e.g. clustered around `theta = 0` &equiv; `theta = pi`) is still summarized correctly instead of spuriously spanning most of the period.
+Both median value and uncertainties for each parameter are computed from the weighted posterior samples stored in `fit.samples` and `fit.weights`. For {ref}`periodic parameters <periodic-parameters>` (listed in `fit.periodic`), whose prior spans whole periods, these are computed with a circular-aware quantile that recenters the samples on their circular mean before taking quantiles, so a posterior straddling the wrap boundary (e.g. clustered around `theta = 0` &equiv; `theta = pi`) is still summarized correctly instead of spuriously spanning most of the period. The values are reported within the prior's range, `[low, low + period)`: with a `uniform(-pi/2, pi/2)` prior on `theta`, a posterior around 0 has a median near 0, not near `pi`.
 
 The underlying quantiles can also be retrieved directly via `fit.getquantiles()`, which returns an array of shape `(n_free_parameters, n_quantiles)` and dispatches to the same circular-aware logic per parameter:
 

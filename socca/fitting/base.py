@@ -425,19 +425,9 @@ class fitter:
                 "dynesty",
                 "pocomc",
             ):
-                auto_periodic = []
-                for pi, idx in enumerate(self.mod.paridx):
-                    period = self.periodic[pi]
-                    if period is None:
-                        continue
-                    prior = self.mod.priors[self.mod.params[idx]]
-                    if not isinstance(
-                        prior, numpyro.distributions.Distribution
-                    ):
-                        continue
-                    # only whole periods wrap onto equivalent values
-                    if _whole_periods(*_support_bounds(prior), period):
-                        auto_periodic.append(pi)
+                auto_periodic = [
+                    i for i, c in enumerate(self._circular()) if c is not None
+                ]
                 if auto_periodic:
                     kwargs["periodic"] = auto_periodic
 
@@ -573,11 +563,11 @@ class fitter:
         """
         Compute weighted posterior quantiles for each free parameter.
 
-        Parameters declared periodic (`self.periodic`, e.g. a position
-        angle symmetric under theta -> theta + pi) use `circular_quantile`
-        so the result is correct even when the posterior straddles the
-        wrap boundary; all other parameters use an ordinary weighted
-        quantile.
+        Periodic parameters (`self.periodic`, e.g. a position angle
+        symmetric under theta -> theta + pi) whose prior spans whole
+        periods, so that samples can wrap, use `circular_quantile`, with
+        results in [low, low + period) of the prior; all other parameters
+        use an ordinary weighted quantile.
 
         Parameters
         ----------
@@ -592,12 +582,33 @@ class fitter:
         """
         return np.array(
             [
-                circular_quantile(samp, self.weights, period, quantiles)
-                if period is not None
+                circular_quantile(
+                    samp, self.weights, circ[0], quantiles, circ[1]
+                )
+                if circ is not None
                 else weighted_quantile(samp, quantiles, self.weights)
-                for period, samp in zip(self.periodic, self.samples.T)
+                for circ, samp in zip(self._circular(), self.samples.T)
             ]
         )
+
+    def _circular(self):
+        """(period, prior low) of parameters whose samples can wrap, else None.
+
+        Only priors spanning whole periods wrap onto equivalent values.
+        """
+        out = []
+        for period, label in zip(self.periodic, self.labels):
+            prior = self.mod.priors[label]
+            if period is None or not isinstance(
+                prior, numpyro.distributions.Distribution
+            ):
+                out.append(None)
+                continue
+            low, high = _support_bounds(prior)
+            out.append(
+                (period, low) if _whole_periods(low, high, period) else None
+            )
+        return out
 
     #   Generate best-fit/median model
     #   --------------------------------------------------------
@@ -906,6 +917,7 @@ class fitter:
             if self.method == "optimizer"
             else self.getquantiles([0.16, 0.50, 0.84])
         )
+        circular = self._circular()
 
         # Group parameters by component
         components = {}
@@ -931,10 +943,10 @@ class fitter:
                         f"{param:<{max_len}} : {self.results.parameters[pi]:11.4E}"
                     )
                 else:
-                    period = self.periodic[pi]
                     p16, p50, p84 = qvals[pi]
 
-                    if period is not None:
+                    if circular[pi] is not None:
+                        period = circular[pi][0]
                         upper = (p84 - p50 + period / 2.00) % period - (
                             period / 2.00
                         )
