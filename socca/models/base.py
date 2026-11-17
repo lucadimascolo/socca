@@ -79,6 +79,16 @@ def _support_bounds(prior):
     )
 
 
+def _isnan(value):
+    """Whether a number or numeric array value contains NaN."""
+    if value is None or isinstance(value, str):
+        return False
+    try:
+        return bool(np.isnan(np.asarray(value, dtype=float)).any())
+    except (TypeError, ValueError):
+        return False
+
+
 _PACKAGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -616,6 +626,8 @@ class Component:
                 f"{value!r}: tie it with socca.priors.function(func, "
                 "(component, 'name'), ...) instead."
             )
+        if not name.startswith("_") and _isnan(value):
+            raise ValueError(f"{name} cannot be NaN.")
         if name == "name":
             value = _check_name(value)
             if self.id is not None and value != self.name:

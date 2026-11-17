@@ -2082,6 +2082,16 @@ class TestUnitsAndChecks:
         vertical = models.disk.vertical.HyperSecantHeight(zs=1e-3, inc=0.5)
         return models.Disk(radial=radial, vertical=vertical)
 
+    @pytest.mark.parametrize("name", ["xc", "rc", "Ic", "e", "theta"])
+    def test_nan_refused(self, name):
+        """A NaN value raises, on parameters with or without range checks."""
+        beta = models.Beta(xc=180.0, yc=45.0, rc=0.005, Ic=1.0, beta=0.6)
+        with pytest.raises(ValueError, match=f"{name} cannot be NaN"):
+            setattr(beta, name, np.nan)
+        with pytest.raises(ValueError, match="cannot be NaN"):
+            setattr(beta, name, np.array([0.1, np.nan]))
+        setattr(beta, name, None)
+
     @pytest.mark.parametrize(
         "make",
         [
